@@ -1,0 +1,59 @@
+---
+
+- hosts: all
+  roles:
+    - setup
+  become: yes
+
+- hosts: hashiclients
+  roles:
+    - consul
+  become: yes
+
+- hosts: hashiservers
+  roles:
+    - docker
+    - { role: consul, consul_is_server: yes }
+    - { role: nomad, nomad_is_server: yes }
+  become: yes
+
+- hosts: all
+  roles:
+    - prometheus_node_exporter
+  become: yes
+
+- hosts: docker_client_only
+  roles:
+    - docker
+    - nomad
+  become: yes
+
+- hosts: disk_sharing
+  roles:
+    - attached_disk_sharing
+  become: yes
+
+- hosts: kill_radios
+  roles:
+    - kill_radios
+  become: yes
+
+- hosts: metrics_storage
+  roles:
+    - prometheus
+  become: yes
+
+- hosts: audio_sharing
+  roles:
+    - airplay_audio
+  become: yes
+
+- hosts: cameras
+  roles:
+    - rtsp_cams
+  become: yes
+
+- hosts: all
+  roles:
+    - unbound
+  become: yes

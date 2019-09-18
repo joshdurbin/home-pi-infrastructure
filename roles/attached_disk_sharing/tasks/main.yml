@@ -1,0 +1,34 @@
+---
+
+- name: create mount for drive
+  file:
+    path: /mnt/platter_drive
+    state: directory
+
+- name: Update fstab
+  lineinfile:
+    dest: /etc/fstab
+    line: "UUID={{ attached_volume_uuid }} /mnt/platter_drive   ext4 defaults,nofail  0    0"
+
+- name: install samba and dependencies
+  apt:
+    name: "{{ packages }}"
+  vars:
+    packages:
+      - samba
+      - samba-common-bin
+
+- name: add mount to samba
+  lineinfile:
+    dest: /etc/samba/smb.conf
+    line: '{{ item }}'
+  with_items:
+    - "[platter_drive]"
+    -   comment = Attached Platter Drive
+    -   path = /mnt/platter_drive
+    -   writeable=Yes
+    -   create mask=0777
+    -   directory mask=0777
+    -   public=yes
+  notify:
+    - reload samba

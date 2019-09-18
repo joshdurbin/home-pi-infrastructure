@@ -1,0 +1,16 @@
+---
+
+- name: install prometheus node exporter
+  apt:
+    pkg:
+      - prometheus-node-exporter
+    state: present  
+  tags:
+    - prometheus
+
+- name: register prometheus node exporter with consul
+  community.general.consul:
+    service_name: prometheus-node-exporter
+    service_port: 9100
+  tags:
+    - prometheus

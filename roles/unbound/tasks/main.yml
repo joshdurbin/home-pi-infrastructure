@@ -1,0 +1,55 @@
+---
+
+- name: install unbound
+  apt:
+    pkg:
+      - unbound
+    state: present
+  tags:
+    - unbound
+
+- name: configure unbound
+  copy:
+    src: unbound.conf
+    dest: /etc/unbound/unbound.conf
+    mode: 644
+  notify:
+    - reload unbound
+  tags:
+    - unbound
+
+- block:
+
+  - name: configure unbound external forwarder for systemd
+    copy:
+      src: unbound_external_forwarder.service
+      dest: "{{ systemd_dir }}/unbound_external_forwarder.service"
+      mode: 644
+    tags:
+      - unbound_external_forwarder
+
+  - name: configure unbound external forwarder
+    template:
+      src: unbound_external_forwarder.conf.j2
+      dest: /etc/unbound/unbound_external_forwarder.conf.tpl
+      mode: 644
+    tags:
+      - unbound_external_forwarder
+
+  - name: configure unbound external forwarder consul-template block
+    blockinfile:
+      path: /etc/consul-template/defined-templates.hcl
+      insertafter: EOF
+      block: |
+        template {
+          source = "/etc/unbound/unbound_external_forwarder.conf.tpl"
+          destination = "/etc/unbound/unbound_external_forwarder.conf"
+          command = "systemctl restart unbound_external_forwarder"
+        }
+    notify:
+      - reload consul-template
+      - reload unbound_external_forwarder
+    tags:
+      - unbound_external_forwarder
+
+  when: is_external_forwarder

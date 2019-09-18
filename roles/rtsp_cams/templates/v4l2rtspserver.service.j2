@@ -1,0 +1,12 @@
+[Unit]
+Description=V4L2 RTSP server
+
+[Service]
+Type=simple
+ExecStart=v4l2rtspserver -F{{ uv4l_framerate }} -W {{ uv4l_width }} -H {{ uv4l_height }} -P 8555 /dev/video0
+Restart=on-abnormal
+User=pi
+Group=pi
+
+[Install]
+WantedBy=multi-user.target

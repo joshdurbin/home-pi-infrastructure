@@ -1,0 +1,6 @@
+---
+- name: reload samba
+  service:
+    name: smbd
+    daemon_reload: true
+    state: restarted

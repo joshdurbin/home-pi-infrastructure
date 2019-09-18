@@ -1,0 +1,16 @@
+---
+- name: reload unbound
+  service:
+    name: unbound
+    daemon_reload: true
+    state: restarted
+- name: reload unbound_external_forwarder
+  service:
+    name: unbound_external_forwarder
+    daemon_reload: true
+    state: restarted
+- name: reload consul-template
+  service:
+    name: consul-template
+    daemon_reload: true
+    state: restarted

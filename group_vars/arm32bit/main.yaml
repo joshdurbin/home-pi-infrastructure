@@ -1,0 +1,7 @@
+arch: "arm"
+consul_arch: "armelv5"
+consul_template_url: "https://github.com/joshdurbin/hashi-armelv5-binaries/raw/master/consul-template-v0.25.1-{{ consul_arch }}.zip"
+consul_checksum: "sha256:32b8aebe32879eac6073d3b228ef28a5c49d1bb03d50acfcb5efb00c2674b37e"
+consul_template_checksum: "sha256:db1500b571faa6981eb45c28c9ae5708a2e436351871e9a2303a57d78b2f7454"
+nomad_checksum: "sha256:bb133b8dd0442fe59a884a0db19373d0680f27af00d5b1ae73d4487a586327db"
+vault_checksum: "sha256:1c83e5695b5a62559b67af269a827c0452d69e63dbfaac80abc0ba6e3f8d7d26"

@@ -1,0 +1,109 @@
+---
+
+- block:
+
+  - name: Add uv4l_repo apt key
+    apt_key:
+      url: http://www.linux-projects.org/listing/uv4l_repo/lpkey.asc
+      state: present
+    tags:
+      - raspicam
+
+  - name: Add uv4l_repo APT repository
+    apt_repository:
+      repo: deb http://www.linux-projects.org/listing/uv4l_repo/raspbian/stretch stretch main
+      state: present
+      update_cache: true
+    tags:
+      - raspicam
+
+  - name: Update and upgrade apt packages
+    apt:
+      update_cache: yes
+    tags:
+      - raspicam
+
+  - name: Install uv4l
+    apt:
+      name: "{{ packages }}"
+      install_recommends: no
+    vars:
+      packages:
+        - cmake
+        - liblog4cpp5-dev
+        - libv4l-dev
+        - git
+        - vim
+        - uv4l
+        - uv4l-server
+        - uv4l-raspicam
+        - uv4l-raspicam-extras
+    tags:
+      - raspicam
+
+- name: configure uv4l
+  template:
+    src: "uv4l-raspicam.conf.j2"
+    dest: "/etc/uv4l/uv4l-raspicam.conf"
+    mode: u=rw,g=r,o=r
+  notify:
+    - reload uv4l_raspicam
+  tags:
+    - raspicam
+
+- name: configure uv4l for systemd
+  copy:
+    src: uv4l_raspicam.service
+    dest: "{{ systemd_dir }}/uv4l_raspicam.service"
+    mode: 644
+  notify:
+    - reload uv4l_raspicam
+  tags:
+    - raspicam
+
+- stat:
+    path: "/usr/local/bin/v4l2rtspserver"
+  register: preexisting
+  tags:
+    - raspicam
+
+- block:
+
+  - name: git checkout of v4l2rtspserver
+    git:
+      repo: 'https://github.com/mpromonet/v4l2rtspserver.git'
+      dest: '/tmp/v4l2rtspserver'
+      version: master
+    tags:
+      - raspicam
+
+  - name: build v4l2rtspserver
+    command: '{{ item }}'
+    args:
+      chdir: '/tmp/v4l2rtspserver'
+    with_items:
+      - cmake .
+      - make
+      - make install
+      - ldconfig
+    tags:
+      - raspicam
+
+  when: preexisting.stat.exists != true
+
+- name: configure v4l2rtspserver for systemd
+  template:
+    src: v4l2rtspserver.service.j2
+    dest: "{{ systemd_dir }}/v4l2rtspserver.service"
+    mode: 644
+  notify:
+    - reload v4l2rtspserver
+  tags:
+    - raspicam
+
+- name: register camera endpoint by location
+  community.general.consul:
+    service_name: "{{ cam_name }}"
+    service_port: 8555
+  tags:
+    - raspicam

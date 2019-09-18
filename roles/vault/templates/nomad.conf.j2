@@ -1,0 +1,35 @@
+bind_addr = "0.0.0.0"
+data_dir = "/var/lib/vault"
+region = "{{ nomad_dc }}"
+datacenter = "{{ nomad_dc }}"
+name = "{{ ansible_hostname }}.node"
+log_level = "DEBUG"
+enable_debug = true
+
+advertise {
+  http = "{{ ansible_default_ipv4.address }}"
+  rpc  = "{{ ansible_default_ipv4.address }}"
+  serf = "{{ ansible_default_ipv4.address }}"
+}
+
+ports {
+  http = {{ nomad_http_port }}
+  rpc  = {{ nomad_rpc_port }}
+  serf = {{ nomad_serf_port }}
+}
+
+consul {
+  address = "{{ ansible_default_ipv4.address }}:8500"
+}
+
+{% if consul_is_server %}
+server {
+  enabled = true
+  bootstrap_expect = {{ nomad_bootstrap_expect }}
+  rejoin_after_leave = true
+  encrypt = "{{ nomad_gossip_tls }}"
+}
+{% endif %}
+client {
+  enabled = true
+}

@@ -1,0 +1,70 @@
+rpi-4b-1 ansible_host=192.168.1.13 ansible_user=pi ansible_python_interpreter=/usr/bin/python2
+rpi-4b-2 ansible_host=192.168.1.14 ansible_user=pi ansible_python_interpreter=/usr/bin/python2
+rpi-4b-3 ansible_host=192.168.1.18 ansible_user=pi ansible_python_interpreter=/usr/bin/python2
+rpi-3bplus-1 ansible_host=192.168.1.15 ansible_user=pi ansible_python_interpreter=/usr/bin/python2
+rpi-zero-1 ansible_host=192.168.1.16 ansible_user=pi ansible_python_interpreter=/usr/bin/python2
+rpi-zero-2 ansible_host=192.168.1.19 ansible_user=pi ansible_python_interpreter=/usr/bin/python2
+
+[arm64bit]
+rpi-4b-1
+rpi-4b-2
+rpi-4b-3
+
+[pi4]
+rpi-4b-1
+rpi-4b-2
+rpi-4b-3
+
+[pi3bplus]
+rpi-3bplus-1
+
+[pizerow]
+rpi-zero-1
+rpi-zero-2
+
+[arm32bit]
+rpi-zero-1
+rpi-zero-2
+
+[adblocking]
+rpi-4b-1
+
+[docker_client_only]
+rpi-3bplus-1
+
+[hashiclients]
+rpi-3bplus-1
+rpi-zero-1
+rpi-zero-2
+
+[hashiservers]
+rpi-4b-1
+rpi-4b-2
+rpi-4b-3
+
+[disk_sharing]
+rpi-4b-1
+rpi-4b-2
+
+[audio_sharing]
+rpi-3bplus-1
+
+[cameras]
+rpi-zero-1
+rpi-zero-2
+
+[kill_audio]
+rpi-4b-1
+rpi-4b-2
+rpi-4b-3
+rpi-zero-1
+rpi-zero-2
+
+[kill_radios]
+rpi-4b-1
+rpi-4b-2
+rpi-4b-3
+rpi-3bplus-1
+
+[metrics_storage]
+rpi-4b-2

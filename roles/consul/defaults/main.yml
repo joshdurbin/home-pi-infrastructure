@@ -1,0 +1,12 @@
+---
+consul_install_path: /usr/local/consul
+consul_dc: pi
+consul_dns_domain: consul
+consul_bind: "0.0.0.0"
+consul_client: "{{ ansible_default_ipv4.address }}"
+consul_advertise: "{{ ansible_default_ipv4.address }}"
+consul_is_server: no
+consul_retry_join: "{{ groups['hashiservers'] | map('extract', hostvars, ['ansible_host']) | list }}"
+consul_bootstrap_expect: "{{ groups['hashiservers'] | length }}"
+consul_disable_remote_exec: "true"
+consul_template_install_path: /usr/local/consul-template

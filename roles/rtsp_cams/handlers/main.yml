@@ -1,0 +1,12 @@
+---
+- name: reload uv4l_raspicam
+  service:
+    name: uv4l_raspicam
+    daemon_reload: true
+    state: restarted
+
+- name: reload v4l2rtspserver
+  service:
+    name: v4l2rtspserver
+    daemon_reload: true
+    state: restarted

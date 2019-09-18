@@ -1,0 +1,54 @@
+{
+  "addresses": {
+    "dns": "{{ consul_bind }}",
+    "grpc": "{{ consul_bind }}",
+    "http": "{{ consul_bind }}",
+    "https": "{{ consul_bind }}"
+  },
+  "ports": {
+    "dns": 8600,
+    "grpc": 8502,
+    "http": 8500,
+    "https": 8501,
+    "serf_lan": 8301,
+    "serf_wan": 8302
+  },
+  "datacenter": "{{ consul_dc }}",
+  "telemetry": {
+    "disable_hostname": true,
+    "prometheus_retention_time": "40s"
+  },
+  "advertise_addr": "{{ consul_advertise }}",
+  "node_name": "{{ ansible_hostname }}",
+  "rejoin_after_leave": true,
+  "domain": "{{ consul_dns_domain }}",
+  "retry_join": {{ consul_retry_join | to_json }},
+{% if consul_is_server %}
+  "server": true,
+  "bootstrap_expect": {{ consul_bootstrap_expect }},
+  "verify_incoming": false,
+  "verify_outgoing": false,
+  "verify_server_hostname": false,
+  "ca_file": "/etc/ssl/certs/consul-agent-ca.pem",
+  "cert_file": "/etc/ssl/certs/pi-server-consul-0.pem",
+  "key_file": "/etc/ssl/private/pi-server-consul-0-key.pem",
+  "auto_encrypt": {
+    "allow_tls": true
+  },
+{% else %}
+  "verify_incoming": true,
+  "verify_outgoing": true,
+  "verify_server_hostname": true,
+  "ca_file": "/etc/ssl/certs/consul-agent-ca.pem",
+  "cert_file": "/etc/ssl/certs/pi-client-consul-0.pem",
+  "key_file": "/etc/ssl/private/pi-client-consul-0-key.pem",
+{% endif %}
+{% if consul_gossip_tls is defined %}
+  "encrypt": "{{ consul_gossip_tls }}",
+{% endif %}
+  "data_dir": "/var/lib/consul",
+{% if consul_is_server %}
+  "ui": true,
+{% endif %}
+  "disable_remote_exec": {{ consul_disable_remote_exec }}
+}

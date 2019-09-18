@@ -1,0 +1,257 @@
+---
+
+- stat:
+    path: "{{ consul_install_path }}/{{ consul_version }}/"
+  register: preexisting
+  tags:
+    - consul
+
+- name: get consul version
+  shell: "consul version | awk 'NR==1{print $2; exit}'"
+  register: consul_version_shell_result
+  when: preexisting.stat.exists == true
+  tags:
+    - consul
+
+- set_fact: reported_consul_version="{{ consul_version_shell_result.stdout }}"
+  when: preexisting.stat.exists == true
+  tags:
+    - consul
+
+- stat:
+    path: "{{ consul_template_install_path }}/{{ consul_template_version }}/"
+  register: preexistingconsultemplate
+  tags:
+    - consul-template
+    -
+- name: get consul-template version
+  shell: "consul-template -v 2>&1 >/dev/null | awk '{print $2}'"
+  register: consul_template_version_shell_result
+  when: preexistingconsultemplate.stat.exists == true
+  tags:
+    - consul-template
+
+- set_fact: reported_consul_template_version="{{ consul_template_version_shell_result.stdout }}"
+  when: preexistingconsultemplate.stat.exists == true
+  tags:
+    - consul-template
+
+- block:
+
+  - name: download consul
+    get_url:
+      url: "https://releases.hashicorp.com/consul/{{ consul_version }}/consul_{{ consul_version }}_linux_{{ consul_arch }}.zip"
+      dest: /tmp/consul.zip
+      mode: 0777
+      checksum: "{{ consul_checksum }}"
+    tags:
+      - consul
+
+  - name: create the consul install paths
+    file:
+      path: "{{ item }}"
+      state: directory
+      mode: 0755
+    with_items:
+      - "{{ consul_install_path }}/{{ consul_version }}"
+      - /etc/consul
+    tags:
+      - consul
+
+  - name: decompress consul archive
+    unarchive:
+      src: /tmp/consul.zip
+      dest: "{{ consul_install_path }}/{{ consul_version }}"
+      remote_src: yes
+    tags:
+      - consul
+
+  - name: link the versioned consul to the local bin
+    file:
+      src: "{{ consul_install_path }}/{{ consul_version }}/consul"
+      dest: /usr/local/bin/consul
+      owner: root
+      group: root
+      state: link
+    tags:
+      - consul
+
+  - name: remove the consul temp archives
+    file:
+      path: "{{ item }}"
+      state: absent
+    with_items:
+      - /tmp/consul.zip
+    tags:
+      - consul
+
+  when: (preexisting.stat.exists != true) or (reported_consul_version != consul_version_v_prefix)
+
+- block:
+
+    - name: download consul-template
+      get_url:
+        url: "{{consul_template_url}}"
+        dest: /tmp/consul-template.zip
+        mode: 0777
+        checksum: "{{ consul_template_checksum }}"
+      tags:
+        - consul-template
+
+    - name: create the consul-template install paths
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: 0755
+      with_items:
+        - "{{ consul_template_install_path }}/{{ consul_template_version }}"
+        - /etc/consul-template
+      tags:
+        - consul-template
+
+    - name: decompress consul-template archive
+      unarchive:
+        src: /tmp/consul-template.zip
+        dest: "{{ consul_template_install_path }}/{{ consul_template_version }}"
+        remote_src: yes
+      tags:
+        - consul-template
+
+    - name: link the versioned consul-template to the local bin
+      file:
+        src: "{{ consul_template_install_path }}/{{ consul_template_version }}/consul-template"
+        dest: /usr/local/bin/consul-template
+        owner: root
+        group: root
+        state: link
+      tags:
+        - consul-template
+
+    - name: remove the consul-template temp archives
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - /tmp/consul-template.zip
+      tags:
+        - consul-template
+
+  when: (preexistingconsultemplate.stat.exists != true) or (reported_consul_template_version != consul_template_version_v_prefix)
+
+- block:
+
+  - name: install ca and certs for consul client
+    copy:
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+      mode: "{{ item.mode }}"
+    with_items:
+      - src: consul-agent-ca.pem
+        dest: "/etc/ssl/certs/consul-agent-ca.pem"
+        mode: u=rw,g=r,o=r
+      - src: pi-client-consul-0.pem
+        dest: "/etc/ssl/certs/pi-client-consul-0.pem"
+        mode: u=rw,g=r,o=r
+      - src: pi-client-consul-0-key.pem
+        dest: "/etc/ssl/private/pi-client-consul-0-key.pem"
+        mode: u=rw,g=r
+    notify:
+      - reload consul
+      - reload consul-template
+    when: not consul_is_server
+    tags:
+      - consul
+
+  - name: install ca and certs for consul server
+    copy:
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+      mode: "{{ item.mode }}"
+    with_items:
+      - src: consul-agent-ca.pem
+        dest: "/etc/ssl/certs/consul-agent-ca.pem"
+        mode: u=rw,g=r,o=r
+      - src: pi-server-consul-0.pem
+        dest: "/etc/ssl/certs/pi-server-consul-0.pem"
+        mode: u=rw,g=r,o=r
+      - src: pi-server-consul-0-key.pem
+        dest: "/etc/ssl/private/pi-server-consul-0-key.pem"
+        mode: u=rw,g=r
+    notify:
+      - reload consul
+      - reload consul-template
+    when: consul_is_server
+    tags:
+      - consul
+
+  - name: configure consul and consul-template for systemd
+    copy:
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+      mode: 644
+    with_items:
+      - src: consul.service
+        dest: "{{ systemd_dir }}/consul.service"
+      - src: consul-template.service
+        dest: "{{ systemd_dir }}/consul-template.service"
+    notify:
+      - reload consul
+    tags:
+      - consul
+      - reload consul-template
+
+  - name: configure consul and consul-template
+    template:
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+      mode: u=rw,g=r,o=r
+    with_items:
+      - src: consul.json.j2
+        dest: /etc/consul/consul.json
+      - src: consul-template.hcl.j2
+        dest: /etc/consul-template/consul-template.hcl
+    notify:
+      - reload consul
+      - reload consul-template
+    tags:
+      - consul
+
+  - stat:
+      path: /etc/consul-template/defined-templates.hcl
+    register: preexisting_defined_templates
+    tags:
+      - consul
+
+  - name: ensure defined-templates file exists but do not overrite
+    copy:
+      content: ""
+      dest: /etc/consul-template/defined-templates.hcl
+      force: no
+      group: root
+      owner: root
+      mode: u=rw,g=r,o=r
+    when: not preexisting_defined_templates.stat.exists
+
+  - name: enable consul and consul-template
+    service:
+      name: "{{ item }}"
+      enabled: yes
+      state: started
+    with_items:
+      - consul
+      - consul-template
+    tags:
+      - consul
+
+- block:
+    - name: install pip
+      apt:
+        pkg:
+          - python-pip
+        state: present
+
+    - name: install pip packages
+      pip:
+        name:
+          - python-consul
+          - requests

@@ -1,0 +1,9 @@
+---
+cloudflaredname: cloudflared
+pihole: pihole
+unbound: unbound
+webpassword: noads
+cloudflaredport: 5401
+unboundport: 5400
+grifanauser: admin
+grifanauserpass: asdfasdfasdf123

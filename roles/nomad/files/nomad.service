@@ -1,0 +1,16 @@
+[Unit]
+Description=Nomad is an easy-to-use, flexible, and performant workload orchestrator that can deploy a mix of microservice, batch, containerized, and non-containerized applications.
+Documentation=http://nomadproject.io
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=root
+Group=root
+Restart=on-failure
+ExecStart=/usr/local/bin/nomad agent -config=/etc/nomad/nomad.hcl -log-json
+ExecReload=/bin/kill -HUP $MAINPID
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

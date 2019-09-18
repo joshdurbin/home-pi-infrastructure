@@ -1,0 +1,155 @@
+---
+
+- stat:
+    path: "{{ nomad_install_path }}/{{ nomad_version }}/"
+  register: preexisting
+  tags:
+    - nomad
+
+- name: get nomad version
+  shell: "nomad version | awk '{print $2}'"
+  register: nomad_version_shell_result
+  when: preexisting.stat.exists == true
+  tags:
+    - nomad
+
+- set_fact: reported_nomad_version="{{ nomad_version_shell_result.stdout }}"
+  when: preexisting.stat.exists == true
+  tags:
+    - nomad
+
+- block:
+
+  - name: download nomad
+    get_url:
+      url: "https://releases.hashicorp.com/nomad/{{ nomad_version }}/nomad_{{ nomad_version }}_linux_{{ arch }}.zip"
+      dest: /tmp/nomad.zip
+      mode: 0777
+      checksum: "{{ nomad_checksum }}"
+    tags:
+      - nomad
+
+  - name: create the install paths
+    file:
+      path: "{{ item }}"
+      state: directory
+      mode: 0755
+    with_items:
+      - "{{ nomad_install_path }}/{{ nomad_version }}"
+      - /etc/nomad
+    tags:
+      - nomad
+
+  - name: decompress archive
+    unarchive:
+      src: /tmp/nomad.zip
+      dest: "{{ nomad_install_path }}/{{ nomad_version }}"
+      remote_src: yes
+    tags:
+      - nomad
+
+  - name: link the versioned nomad to the local bin
+    file:
+      src: "{{ nomad_install_path }}/{{ nomad_version }}/nomad"
+      dest: /usr/local/bin/nomad
+      owner: root
+      group: root
+      state: link
+    tags:
+      - nomad
+
+  - name: remove the temp archives
+    file:
+      path: "{{ item }}"
+      state: absent
+    with_items:
+      - /tmp/nomad.zip
+    tags:
+      - nomad
+
+  when: (preexisting.stat.exists != true) or (reported_nomad_version != nomad_version_v_prefix)
+
+- block:
+
+  - name: install ca and certs for nomad client
+    copy:
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+      mode: "{{ item.mode }}"
+    with_items:
+      - src: nomad-ca.pem
+        dest: "/etc/ssl/certs/nomad-ca.pem"
+        mode: u=rw,g=r,o=r
+      - src: client.pem
+        dest: "/etc/ssl/certs/client.pem"
+        mode: u=rw,g=r,o=r
+      - src: client-key.pem
+        dest: "/etc/ssl/private/client-key.pem"
+        mode: u=rw,g=r
+    notify:
+      - reload nomad
+    when: not nomad_is_server
+    tags:
+      - nomad
+
+  - name: install ca and certs for nomad server
+    copy:
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+      mode: "{{ item.mode }}"
+    with_items:
+      - src: nomad-ca.pem
+        dest: "/etc/ssl/certs/nomad-ca.pem"
+        mode: u=rw,g=r,o=r
+      - src: server.pem
+        dest: "/etc/ssl/certs/server.pem"
+        mode: u=rw,g=r,o=r
+      - src: server-key.pem
+        dest: "/etc/ssl/private/server-key.pem"
+        mode: u=rw,g=r
+    notify:
+      - reload nomad
+    when: nomad_is_server
+    tags:
+      - nomad
+
+  - name: install ca and certs for nomad cli
+    copy:
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+      mode: "{{ item.mode }}"
+    with_items:
+      - src: cli.pem
+        dest: "/etc/ssl/certs/cli.pem"
+        mode: u=rw,g=r,o=r
+      - src: cli-key.pem
+        dest: "/etc/ssl/private/cli-key.pem"
+        mode: u=rw,g=r,o=r
+    tags:
+      - nomad
+
+  - name: configure for systemd
+    copy:
+      src: nomad.service
+      dest: "{{ systemd_dir }}/nomad.service"
+      mode: 644
+    notify:
+      - reload nomad
+    tags:
+      - nomad
+
+  - name: configure nomad
+    template:
+      src: nomad.hcl.j2
+      dest: /etc/nomad/nomad.hcl
+      mode: u=rw,g=r,o=r
+    notify:
+      - reload nomad
+    tags:
+      - nomad
+  - name: register nomad
+    community.general.consul:
+      service_name: nomad
+      service_port: 9100
+    tags:
+      - nomad
