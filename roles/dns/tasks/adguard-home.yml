@@ -1,0 +1,121 @@
+---
+
+- block:
+
+  - name: create group
+    ansible.builtin.group:
+      name: "{{ adguard_group }}"
+      state: present
+    tags:
+      - adguard-home
+
+  - name: create user
+    ansible.builtin.user:
+      name: "{{ adguard_username }}"
+      shell: /bin/bash
+      groups: "{{ adguard_group }}"
+      create_home: no
+      append: yes
+      state: present
+    tags:
+      - adguard-home
+
+  - name: create directories
+    file:
+      path: "{{ item }}"
+      state: directory
+      mode: 0755
+      owner: "{{ adguard_username }}"
+      group: "{{ adguard_group }}"
+    with_items:
+      - "{{ adguard_workingdir }}"
+    tags:
+      - adguard-home
+
+  - name: configure for systemd
+    template:
+      src: adguard-home.service.j2
+      dest: "{{ systemd_dir }}/adguard-home.service"
+      mode: 644
+    notify:
+      - reload adguard-home
+    tags:
+      - adguard-home
+
+  - name: configure adguard
+    template:
+      src: adguard_config.yaml.j2
+      dest: "{{ adguard_config_path }}"
+      owner: "{{ adguard_username }}"
+      group: "{{ adguard_group }}"
+      mode: "u+rw,g+rw,o+r"
+    notify:
+      - reload adguard-home
+    tags:
+      - adguard-home
+
+  - name: register adguard UI with consul
+    community.general.consul:
+      service_name: adguard
+      service_port: 80
+    tags:
+      - adguard-home
+
+  - stat:
+      path: "{{adguard_destination}}"
+    register: preexisting
+    tags:
+      - adguard-home
+
+  - name: get version
+    shell: "{{adguard_destination}} --version | rev | cut -d' ' -f1 | rev"
+    register: version_result
+    when: preexisting.stat.exists == true
+    tags:
+      - adguard-home
+
+  - set_fact: version_result="{{ version_result.stdout }}"
+    when: preexisting.stat.exists == true
+    tags:
+      - adguard-home
+
+  - block:
+
+      - name: download
+        get_url:
+          url: "https://github.com/AdguardTeam/AdGuardHome/releases/download/{{adguard_download_version}}/AdGuardHome_linux_{{arch}}.tar.gz"
+          dest: "{{ adguard_tmp }}"
+          mode: 0777
+          checksum: "{{ adguard_download_checksum }}"
+        tags:
+          - adguard-home
+
+      - name: decompress archive
+        unarchive:
+          src: "{{ adguard_tmp }}"
+          dest: /tmp
+          remote_src: yes
+        tags:
+          - adguard-home
+
+      - name: copy tmp to /usr/local/bin
+        copy:
+          remote_src: yes
+          src: /tmp/AdGuardHome/AdGuardHome
+          dest: "{{ adguard_destination }}"
+          owner: "{{adguard_username}}"
+          group: "{{adguard_group}}"
+          mode: "u+xr,g+xr,o+r"
+
+      - name: cleanup temp
+        file:
+          path: "{{ item }}"
+          state: absent
+        with_items:
+          - "{{ adguard_tmp }}"
+          - /tmp/AdGuardHome
+        tags:
+          - adguard-home
+
+    when: (preexisting.stat.exists != true) or (version_result != adguard_download_version)
+  when: (adguard_dns_server is defined) and (adguard_dns_server == true)

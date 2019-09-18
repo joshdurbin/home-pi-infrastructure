@@ -1,0 +1,57 @@
+---
+
+- name: Install Docker dependencies
+  apt:
+    name: "{{ packages }}"
+  vars:
+    packages:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+      - software-properties-common
+  tags:
+    - docker
+
+- name: Add Docker apt key
+  apt_key:
+    url: https://download.docker.com/linux/debian/gpg
+    state: present
+  tags:
+    - docker
+
+- name: Add Docker APT repository
+  apt_repository:
+    repo: deb [arch={{arch}}] https://download.docker.com/linux/debian {{ansible_distribution_release}} stable
+    state: present
+    update_cache: true
+  tags:
+    - docker
+
+- name: Update and upgrade apt packages
+  apt:
+    update_cache: yes
+  tags:
+    - docker
+
+- name: Install Docker
+  apt:
+    name: "{{ packages }}"
+    install_recommends: no
+  vars:
+    packages:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+  tags:
+    - docker
+
+# the post scripts for the docker-ce package will fail, reboot the boxes and run this playbook again
+
+- name: adding pi user to docker group
+  user:
+    name: pi
+    group: docker
+    append: yes
+  tags:
+    - docker

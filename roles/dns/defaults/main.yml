@@ -1,0 +1,44 @@
+---
+unbound_port: 53
+unbound_threads:
+unbound_cache_size:
+
+consul_port: 8600
+consul_zone: consul
+consul_binding: 127.0.0.1
+
+adguard_web_port: 80
+adguard_web_binding: 0.0.0.0
+adguard_dns_port: 5400
+adguard_dns_binding_ipv4: 127.0.0.1
+adguard_dns_binding_ipv6: "::1"
+adguard_download_version: v0.107.21
+adguard_download_checksum: "sha256:6a386fbf1630b6d11a0905cbe16683723ce4f20d24ae121726fe551c411d7ea8"
+adguard_workingdir: /opt/adguardhome
+adguard_config_path: /opt/adguardhome/config.toml
+adguard_tmp: /tmp/adguard.tar.gz
+adguard_destination: /usr/local/bin/adguard-home
+adguard_web_username: username
+adguard_web_password: password
+adguard_username: adguard
+adguard_group: adguard
+
+adguard_prometheus_exporter_version: "v1.14"
+adguard_prometheus_exporter_tmp: /tmp/adguard-home-prometheus-exporter
+adguard_prometheus_exporter_destination: /usr/local/bin/adguard-home-prometheus-exporter
+adguard_prometheus_exporter_username: adguardexporter
+adguard_prometheus_exporter_group: adguardexporter
+
+dnscrypt_proxy_version: 2.1.2
+dnscrypt_proxy_username: dnscrypt-proxy
+dnscrypt_proxy_group: dnscrypt-proxy
+dnscrypt_proxy_config_dir: /etc/dnscrypt-proxy
+dnscrypt_proxy_config_path: /etc/dnscrypt-proxy/dnscrypt-proxy.toml
+dnscrypt_proxy_log_dir: /var/log/dnscrypt-proxy
+dnscrypt_proxy_query_log: /var/log/dnscrypt-proxy/query.log
+dnscrypt_proxy_nx_log: /var/log/dnscrypt-proxy/nx.log
+dnscrypt_proxy_cache_dir: /var/cache/dnscrypt-proxy
+dnscrypt_proxy_binding_ipv4: 127.0.0.1
+dnscrypt_proxy_port: 5300
+dnscrypt_proxy_tmp: /tmp/dnscrypt-proxy.tar.gz
+dnscrypt_proxy_destination: /usr/local/bin/dnscrypt-proxy

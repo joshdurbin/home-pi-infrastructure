@@ -1,0 +1,20 @@
+---
+
+- name: install package
+  apt:
+    deb: "https://github.com/grafana/loki/releases/download/v{{version}}/promtail_{{version}}_{{arch}}.deb"
+    state: present
+  tags:
+    - logging
+
+- name: configure promtail
+  template:
+    src: promtail.config.yml.j2
+    dest: /etc/promtail/config.yml
+    owner: root
+    group: root
+    mode: "u+rw,g+rw,o+r"
+  notify:
+    - reload promtail
+  tags:
+    - logging

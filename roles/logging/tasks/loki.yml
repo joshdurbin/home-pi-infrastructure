@@ -1,0 +1,35 @@
+---
+
+- name: install package
+  apt:
+    deb: "https://github.com/grafana/loki/releases/download/v{{version}}/loki_{{version}}_{{arch}}.deb"
+    state: present
+  tags:
+    - logging
+
+- name: configure loki
+  template:
+    src: loki.config.yml.j2
+    dest: /etc/loki/config.yml
+    owner: root
+    group: root
+    mode: "u+rw,g+rw,o+r"
+  notify:
+    - reload loki
+  tags:
+    - logging
+
+- name: register loki http with consul
+  community.general.consul:
+    service_name: "{{loki_http_consul_service_name}}"
+    service_port: "{{loki_http_port}}"
+  tags:
+    - logging
+
+- name: register loki grpc with consul
+  community.general.consul:
+    service_name: "{{loki_grpc_consul_service_name}}"
+    tcp: "127.0.0.1:{{loki_grpc_port}}"
+    interval: 15s
+  tags:
+    - logging

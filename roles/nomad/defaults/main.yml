@@ -1,0 +1,10 @@
+---
+nomad_dc: pi
+nomad_server: no
+nomad_leader_group: master
+nomad_bootstrap_expect: "{{ groups['hashiservers'] | length }}"
+nomad_retry_join: "{{ groups['hashiservers'] | map('extract', hostvars, ['ansible_host']) | list }}"
+nomad_http_port: 4646
+nomad_rpc_port: 4647
+nomad_serf_port: 4648
+nomad_bind: "{{ ansible_default_ipv4.address }}"

@@ -1,0 +1,11 @@
+---
+
+- include: avahi.yml
+
+- block:
+
+  - include: adguard-home.yml
+  - include: adguard-home-prometheus-exporter.yml
+  - include: dnscrypt-proxy.yml
+  - include: unbound.yml
+  when: (dns_server is defined) and (dns_server == true)

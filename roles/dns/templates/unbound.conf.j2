@@ -1,0 +1,29 @@
+server:
+
+  use-syslog: yes
+  username: "unbound"
+  directory: "/etc/unbound"
+  do-not-query-localhost:  no
+
+  access-control: 0.0.0.0/0 allow
+  interface: 0.0.0.0
+
+  do-ip4: yes
+  do-ip6: no
+  do-udp: yes
+  do-tcp: yes
+
+  local-zone: "{{consul_zone}}" transparent
+
+stub-zone:
+  name: "{{consul_zone}}"
+  stub-addr: {{consul_binding}}@{{consul_port}}
+forward-zone:
+  name: "."
+{% if adguard_dns_server %}
+    forward-addr: {{adguard_dns_binding_ipv4}}@{{adguard_dns_port}}
+    forward-addr: {{adguard_dns_binding_ipv6}}@{{adguard_dns_port}}
+{% endif %}
+{% if dnscrypt_dns_server %}
+    forward-addr: {{dnscrypt_proxy_binding_ipv4}}@{{dnscrypt_proxy_port}}
+{% endif %}

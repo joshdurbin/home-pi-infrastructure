@@ -1,0 +1,19 @@
+---
+
+- name: install packages
+  apt:
+    pkg:
+      - unbound
+    state: present
+  tags:
+    - unbound
+
+- name: configure
+  template:
+    src: unbound.conf.j2
+    dest: /etc/unbound/unbound.conf
+    mode: 644
+  notify:
+    - reload unbound
+  tags:
+    - unbound

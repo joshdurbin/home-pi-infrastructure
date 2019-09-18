@@ -1,0 +1,42 @@
+---
+
+- name: disable on-board wifi
+  lineinfile:
+    path: /boot/config.txt
+    insertafter: EOF
+    line: "dtoverlay=disable-bt"
+  tags:
+    - kill_radios
+
+- name: disable on-board bluetooth
+  lineinfile:
+    path: /boot/config.txt
+    insertafter: EOF
+    line: "dtoverlay=disable-wifi"
+  tags:
+    - kill_radios
+
+- name: disable wpa supplicant
+  systemd:
+    name: wpa_supplicant
+    state: stopped
+    enabled: no
+  tags:
+    - kill_radios
+
+- name: disable bluetooth
+  systemd:
+    name: bluetooth
+    state: stopped
+    enabled: no
+  tags:
+    - kill_radios
+
+- name: disable hciuart
+  systemd:
+    name: hciuart
+    state: stopped
+    enabled: no
+  tags:
+    - kill_radios
+

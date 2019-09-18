@@ -1,0 +1,92 @@
+server:
+  tls-cert-bundle: /etc/ssl/certs/ca-certificates.crt
+  verbosity: 1
+  statistics-cumulative: no
+  extended-statistics: yes
+  num-threads: 4
+  port: 53
+  interface: 0.0.0.0
+  interface-automatic: no
+  username: "unbound"
+  outgoing-port-permit: "32768-65535"
+  outgoing-port-avoid: "0-32767"
+  edns-buffer-size: 1280
+  msg-cache-size: "64m"
+  msg-cache-slabs: 4
+  so-rcvbuf: "4m"
+  so-reuseport: no
+  ip-transparent: no
+  ip-freebind: no
+  rrset-cache-slabs: 4
+  rrset-cache-size: "64m"
+  cache-max-negative-ttl: 3
+  infra-cache-slabs: 4
+  infra-cache-min-rtt: 500
+  do-ip4: yes
+  do-ip6: yes
+  prefer-ip6: no
+  do-udp: yes
+  do-tcp: yes
+  tcp-upstream: no
+  udp-upstream-without-downstream: no
+  tls-upstream: no
+  ssl-upstream: no
+  use-systemd: no
+  do-daemonize: yes
+  access-control: 0.0.0.0/0 allow
+  directory: "/etc/unbound"
+  use-syslog: yes
+  log-time-ascii: no
+  log-queries: no
+  log-replies: no
+  hide-identity: yes
+  hide-version: yes
+  hide-trustanchor: yes
+  harden-short-bufsize: no
+  harden-large-queries: no
+  harden-glue: yes
+  harden-dnssec-stripped: yes
+  harden-below-nxdomain: yes
+  harden-referral-path: no
+  harden-algo-downgrade: no
+  use-caps-for-id: no
+  qname-minimisation: no
+  qname-minimisation-strict: no
+  unwanted-reply-threshold: 10000000
+  do-not-query-localhost: no
+  prefetch: yes
+  prefetch-key: no
+  rrset-roundrobin: no
+  minimal-responses: no
+  disable-dnssec-lame-check: no
+
+  module-config: "iterator"
+  trust-anchor-signaling: yes
+  val-clean-additional: yes
+  val-permissive-mode: no
+  ignore-cd-flag: no
+  serve-expired: no
+  permit-small-holddown: no
+  key-cache-size: "64m"
+  key-cache-slabs: 4
+  unblock-lan-zones: no
+  insecure-lan-zones: no
+
+  local-zone: "{{consul_zone}}" transparent
+
+stub-zone:
+  name: "{{consul_zone}}"
+  stub-addr: {{consul_binding}}@{{consul_port}}
+forward-zone:
+  name: "."
+  forward-tls-upstream: yes
+  # Cloudflare DNS
+  forward-addr: 2606:4700:4700::1111@853#cloudflare-dns.com
+  forward-addr: 1.1.1.1@853#cloudflare-dns.com
+  forward-addr: 2606:4700:4700::1001@853#cloudflare-dns.com
+  forward-addr: 1.0.0.1@853#cloudflare-dns.com
+  # Quad9
+  forward-addr: 2620:fe::fe@853#dns.quad9.net
+  forward-addr: 9.9.9.9@853#dns.quad9.net
+  forward-addr: 2620:fe::9@853#dns.quad9.net
+  forward-addr: 149.112.112.112@853#dns.quad9.net

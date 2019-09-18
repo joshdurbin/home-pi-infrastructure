@@ -1,0 +1,12 @@
+---
+- name: reload redis-server
+  service:
+    name: redis-server
+    daemon_reload: true
+    state: restarted
+
+- name: reload redis-sentinel
+  service:
+    name: redis-sentinel
+    daemon_reload: true
+    state: restarted

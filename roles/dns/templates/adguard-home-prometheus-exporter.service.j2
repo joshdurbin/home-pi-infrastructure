@@ -1,0 +1,14 @@
+[Unit]
+Description=Adguard Home Prometheus Exporter service
+After=network.target
+
+[Service]
+Type=simple
+User={{adguard_prometheus_exporter_username}}
+Group={{adguard_prometheus_exporter_group}}
+ExecStart={{adguard_prometheus_exporter_destination}} -adguard_hostname 127.0.0.1 -adguard_username {{adguard_web_username}} -adguard_password {{adguard_web_password}} -adguard_protocol http -adguard_port {{adguard_web_port}}
+Restart=always
+RestartSec=100ms
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+[Unit]
+Description=Adguard Home service
+After=network.target
+
+[Service]
+Type=simple
+User={{adguard_username}}
+Group={{adguard_group}}
+ExecStart={{adguard_destination}} --config {{adguard_config_path}} --work-dir {{adguard_workingdir}}
+WorkingDirectory={{adguard_workingdir}}
+Restart=always
+RestartSec=100ms
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

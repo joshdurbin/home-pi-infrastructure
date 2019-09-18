@@ -1,0 +1,21 @@
+[Unit]
+Description=DNSCrypt client proxy
+Documentation=https://github.com/DNSCrypt/dnscrypt-proxy/wiki
+After=network.target
+Before=nss-lookup.target
+Wants=nss-lookup.target
+
+[Install]
+WantedBy=multi-user.target
+
+[Service]
+Type=simple
+User={{dnscrypt_proxy_username}}
+Group={{dnscrypt_proxy_group}}
+NonBlocking=true
+ExecStart={{dnscrypt_proxy_destination}} -config {{dnscrypt_proxy_config_path}}
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+MemoryDenyWriteExecute=true

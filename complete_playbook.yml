@@ -1,0 +1,20 @@
+---
+
+- hosts: all
+  roles:
+    - consul
+    - setup
+    - prometheus
+    - grafana
+    - redis
+    - docker
+    - dns
+    - nomad
+    - vault
+    - logging
+  become: yes
+
+- hosts: audio_sharing
+  roles:
+    - airplay_audio
+  become: yes

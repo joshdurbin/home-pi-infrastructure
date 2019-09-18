@@ -1,0 +1,115 @@
+---
+
+- block:
+
+    - name: create group
+      ansible.builtin.group:
+        name: "{{ dnscrypt_proxy_group }}"
+        state: present
+      tags:
+        - dnscrypt-proxy
+
+    - name: create user
+      ansible.builtin.user:
+        name: "{{ dnscrypt_proxy_username }}"
+        shell: /bin/bash
+        groups: "{{ dnscrypt_proxy_group }}"
+        create_home: no
+        append: yes
+        state: present
+      tags:
+        - dnscrypt-proxy
+
+    - name: create directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: 0755
+        owner: "{{ dnscrypt_proxy_username }}"
+        group: "{{ dnscrypt_proxy_group }}"
+      with_items:
+        - "{{ dnscrypt_proxy_config_dir }}"
+        - "{{ dnscrypt_proxy_log_dir }}"
+        - "{{ dnscrypt_proxy_cache_dir }}"
+      tags:
+        - dnscrypt-proxy
+
+    - name: configure for systemd
+      template:
+        src: dnscrypt-proxy.service.j2
+        dest: "{{ systemd_dir }}/dnscrypt-proxy.service"
+        mode: 644
+      notify:
+        - reload dnscrypt-proxy
+      tags:
+        - dnscrypt-proxy
+
+    - name: configure dnscrypt-proxy
+      template:
+        src: dnscrypt-proxy.toml.j2
+        dest: "{{ dnscrypt_proxy_config_path }}"
+        owner: "{{ dnscrypt_proxy_username }}"
+        group: "{{ dnscrypt_proxy_group }}"
+        mode: "u+rw,g+rw,o+r"
+      notify:
+        - reload dnscrypt-proxy
+      tags:
+        - dnscrypt-proxy
+
+    - stat:
+        path: "{{dnscrypt_proxy_destination}}"
+      register: preexisting
+      tags:
+        - dnscrypt-proxy
+
+    - name: get version
+      shell: "{{dnscrypt_proxy_destination}} --version"
+      register: version_result
+      when: preexisting.stat.exists == true
+      tags:
+        - dnscrypt-proxy
+
+    - set_fact: version_result="{{ version_result.stdout }}"
+      when: preexisting.stat.exists == true
+      tags:
+        - dnscrypt-proxy
+
+    - block:
+
+        - name: download
+          get_url:
+            url: "https://github.com/DNSCrypt/dnscrypt-proxy/releases/download/{{dnscrypt_proxy_version}}/dnscrypt-proxy-linux_{{arch}}-{{dnscrypt_proxy_version}}.tar.gz"
+            dest: "{{ dnscrypt_proxy_tmp }}"
+            mode: 0777
+          tags:
+            - dnscrypt-proxy
+
+        - name: decompress archive
+          unarchive:
+            src: "{{ dnscrypt_proxy_tmp }}"
+            dest: /tmp
+            remote_src: yes
+          tags:
+            - dnscrypt-proxy
+
+        - name: copy tmp to /usr/local/bin
+          copy:
+            remote_src: yes
+            src: /tmp/linux-arm64/dnscrypt-proxy
+            dest: "{{ dnscrypt_proxy_destination }}"
+            owner: "{{dnscrypt_proxy_username}}"
+            group: "{{dnscrypt_proxy_group}}"
+            mode: "u+xr,g+xr,o+r"
+
+        - name: cleanup temp
+          file:
+            path: "{{ item }}"
+            state: absent
+          with_items:
+            - "{{ dnscrypt_proxy_tmp }}"
+            - /tmp/linux-arm64
+          tags:
+            - dnscrypt-proxy
+      
+      when: (preexisting.stat.exists != true) or (version_result != dnscrypt_proxy_version)
+  when: (dnscrypt_dns_server is defined) and (dnscrypt_dns_server == true)

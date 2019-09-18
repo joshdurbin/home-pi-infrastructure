@@ -1,0 +1,313 @@
+# Sample config for Prometheus.
+
+global:
+  scrape_interval:     15s # Set the scrape interval to every 15 seconds. Default is every 1 minute.
+  evaluation_interval: 15s # Evaluate rules every 15 seconds. The default is every 1 minute.
+  # scrape_timeout is set to the global default (10s).
+
+  # Attach these labels to any time series or alerts when communicating with
+  # external systems (federation, remote storage, Alertmanager).
+  external_labels:
+      monitor: 'example'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+  - static_configs:
+    - targets: ['localhost:9093']
+
+# Load rules once and periodically evaluate them according to the global 'evaluation_interval'.
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+# A scrape configuration containing exactly one endpoint to scrape:
+# Here it's Prometheus itself.
+scrape_configs:
+  # nomad scraping
+  - job_name: 'nomad_metrics'
+    sample_limit: 150000
+    consul_sd_configs:
+    - server: 'localhost:8500'
+      services: ['nomad-client', 'nomad']
+      datacenter: 'pi'
+    relabel_configs:
+    - source_labels: ['__meta_consul_tags']
+      regex: '(.*)http(.*)'
+      action: keep
+    - source_labels: ['__meta_consul_metadata_cluster']
+      target_label: cluster
+      action: replace
+    - source_labels: ['__meta_consul_metadata_zone']
+      target_label: zone
+      action: replace
+    scheme: https
+    metrics_path: /v1/metrics
+    params:
+      format: ['prometheus']
+    tls_config:
+      server_name: localhost
+
+  # consul-server metrics
+  - job_name: 'consul_server_metrics'
+    sample_limit: 150000
+    consul_sd_configs:
+    - server: 'localhost:8500'
+      services: ['consul']
+      datacenter: 'pi'
+    relabel_configs:
+    - source_labels: ['__address__']
+      target_label: '__address__'
+      regex: '(.*):(.*$)'
+      replacement: $1:8500
+    # add the node name as a label
+    - source_labels: ['__meta_consul_node', '__meta_consul_dc']
+      regex: '(.*);(.*)'
+      replacement: '${1}.node.${2}.consul'
+      target_label: node
+      action: replace
+    - source_labels: ['__meta_consul_metadata_cluster']
+      target_label: cluster
+      action: replace
+    - source_labels: ['__meta_consul_metadata_zone']
+      target_label: zone
+      action: replace
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'consul_raft_replication_(appendEntries_rpc|appendEntries_logs|heartbeat|installSnapshot)_(\w{36})(_sum|_count)?'
+        target_label: raft_id
+        replacement: '${2}'
+      - source_labels: [__name__]
+        regex: 'consul_raft_replication_(appendEntries_rpc|appendEntries_logs|heartbeat|installSnapshot)_(\w{36})(_sum|_count)?'
+        target_label: __name__
+        replacement: 'consul_raft_replication_${1}${3}'
+    scheme: http
+    metrics_path: /v1/agent/metrics
+    params:
+      format: ['prometheus']
+
+  # dynamic scrapes based on consul services with prometheus tags
+  - job_name: 'dynamic'
+    sample_limit: 150000
+    honor_labels: true
+    consul_sd_configs:
+    - server: 'localhost:8500'
+      datacenter: 'pi'
+      tags:
+        - "prometheus:true"
+    relabel_configs:
+      # drop scrapes sidecar-proxy services - these are scraped separately
+      - source_labels: ['__meta_consul_service']
+        regex: '.*-sidecar-proxy$'
+        action: drop
+      # the scrape path is determined by the value of `prometheus-path:xxx`
+      - source_labels: ['__meta_consul_tags']
+        regex: '.*,prometheus-path:(.*?),.*'
+        replacement: '${1}'
+        target_label: __metrics_path__
+        action: replace
+      # snmp exporter requires params
+      - source_labels: ['__meta_consul_tags']
+        regex: '.*,prometheus-path:/snmp.*,.*'
+        replacement: '/snmp'
+        target_label: __metrics_path__
+        action: replace
+      - source_labels: ['__meta_consul_tags']
+        regex: '.*,prometheus-path:/snmp\?module=(.*)&.*,.*'
+        replacement: '${1}'
+        target_label: __param_module
+      - source_labels: ['__meta_consul_tags']
+        regex: '.*,prometheus-path:/snmp.*target=(.*),.*'
+        replacement: '${1}'
+        target_label: __param_target
+      # the scrape port is determined by the value of `prometheus-port:xxx`
+      - source_labels: ['__meta_consul_address', '__meta_consul_tags']
+        regex: '(.*);.*,prometheus-port:(\d+),.*'
+        replacement: '${1}:${2}'
+        target_label: __address__
+        action: replace
+      # replace the `job` label with the name of the consul service
+      - source_labels: [__meta_consul_service]
+        target_label: job
+        action: replace
+      # (deprecated) add the dc based on the `dc:xxx` value (use zone node metadata instead)
+      - source_labels: ['__meta_consul_tags']
+        regex: '.*,dc:(.*?),.*'
+        target_label: datacenter
+        action: replace
+      # add the service name as a label
+      - source_labels: ['__meta_consul_service']
+        target_label: service
+        action: replace
+      # add the node name as a label
+      - source_labels: ['__meta_consul_node', '__meta_consul_dc']
+        regex: '(.*);(.*)'
+        replacement: '${1}.node.${2}.consul'
+        target_label: node
+        action: replace
+      # (deprecated) add the cluster based on the `cluster:xxx` tag (move this to node metadata)
+      - source_labels: ['__meta_consul_tags']
+        regex: '.*,cluster:(.*?),.*'
+        replacement: '${1}'
+        target_label: cluster
+        action: replace
+      # annotate with `canary=true` if the service is a canary container
+      - source_labels: ['__meta_consul_tags']
+        regex: '.*,canary,.*'
+        replacement: true
+        target_label: canary
+        action: replace
+      # add the zone as a label based off the node metadata
+      - source_labels: ['__meta_consul_metadata_zone']
+        target_label: zone
+        action: replace
+      # add nomad job/task group attributes from metadata
+      - source_labels: [__meta_consul_service_metadata_nomad_alloc_id]
+        target_label: nomad_alloc_id
+        action: replace
+      - source_labels: [__meta_consul_service_metadata_nomad_group]
+        target_label: nomad_group
+        action: replace
+      - source_labels: [__meta_consul_service_metadata_nomad_job]
+        target_label: nomad_job
+        action: replace
+    metric_relabel_configs:
+      - regex: '^(store_id)$'
+        action: labeldrop
+      - source_labels: [ __name__ ]
+        regex: '^(storefront_generate_sitemap.*|consul_service_tag|consul_service_checks)$'
+        action: drop
+
+  # envoy scraping based on `envoy-stats-port` metadata in consul services
+  - job_name: envoy_services
+    sample_limit: 150000
+    metrics_path: '/stats/prometheus'
+    consul_sd_configs:
+    - server: 'localhost:8500'
+      datacenter: 'pi'
+    relabel_configs:
+      # only scrape serviceX-sidecar-proxy, serviceX-proxy, and serviceX-ingress services
+      - source_labels: ['__meta_consul_service']
+        regex: '.*-(proxy|ingress)$'
+        action: keep
+      # only scrape targets with metadata set
+      - source_labels: ['__meta_consul_service_metadata_envoy_stats_port']
+        regex: '\d+'
+        action: keep
+      # override scrape ip:port to consul address:statsd port
+      - source_labels: ['__meta_consul_address', '__meta_consul_service_metadata_envoy_stats_port']
+        separator: ':'
+        regex: '(.*)'
+        replacement: '${1}'
+        target_label: __address__
+        action: replace
+      # replace the `job` label with the name of the consul service
+      - source_labels: [__meta_consul_service]
+        target_label: job
+        action: replace
+      # add the service name as a label
+      - source_labels: [__meta_consul_service]
+        target_label: service
+        action: replace
+      # add the node name as a label
+      - source_labels: ['__meta_consul_node', '__meta_consul_dc']
+        regex: '(.*);(.*)'
+        replacement: '${1}.node.${2}.consul'
+        target_label: node
+        action: replace
+      # annotate with `canary=true` if the service is a canary container
+      - source_labels: ['__meta_consul_tags']
+        regex: '.*,canary,.*'
+        replacement: true
+        target_label: canary
+        action: replace
+      # add the zone as a label based off the node metadata
+      - source_labels: ['__meta_consul_metadata_zone']
+        target_label: zone
+        action: replace
+      # add nomad job/task group attributes from metadata
+      - source_labels: [__meta_consul_service_metadata_nomad_alloc_id]
+        target_label: nomad_alloc_id
+        action: replace
+      - source_labels: [__meta_consul_service_metadata_nomad_group]
+        target_label: nomad_group
+        action: replace
+      - source_labels: [__meta_consul_service_metadata_nomad_job]
+        target_label: nomad_job
+        action: replace
+    metric_relabel_configs:
+      - source_labels: ['envoy_cluster_name']
+        regex: self_admin
+        action: drop
+      - source_labels: ['envoy_http_conn_manager_prefix']
+        regex: '^(admin|envoy_metrics)$'
+        action: drop
+      - source_labels: ['__name__']
+        regex: '^envoy_(server_concurrency|server_memory_allocated|server_memory_heap_size|server_memory_physical_size|server_total_connections|server_days_until_first_cert_expiring|server_version|control_plane_connected_state|http_no_cluster|http_no_route|listener_manager_lds_update_failure|listener_manager_lds_update_success|listener_ssl_connection_error|listener_ssl_fail_verify_no_cert|listener_ssl_fail_verify_error|listener_ssl_fail_verify_san|listener_ssl_fail_verify_cert_hash|cluster_manager_bind_errors|cluster_manager_active_clusters|cluster_manager_warming_clusters|cluster_manager_cluster_added|cluster_manager_cluster_modified|cluster_manager_cluster_removed|cluster_manager_cluster_updated|cluster_manager_membership_change|cluster_manager_membership_healthy|cluster_manager_membership_degraded|cluster_manager_membership_excluded|cluster_manager_membership_total|cluster_manager_update_merge_cancelled|cluster_manager_update_out_of_merge_window|cluster_manager_cds_update_failure|cluster_manager_cds_update_success|cluster_manager_cds_update_attempt|cluster_http2_streams_active|cluster_http2_header_overflow|cluster_update_failure|cluster_outlier_detection_ejections_active|cluster_outlier_detection_ejections_enforced_total|cluster_outlier_detection_ejections_enforced_consecutive_5xx|cluster_outlier_detection_ejections_enforced_consecutive_local_origin_failure|cluster_outlier_detection_ejections_overflow|cluster_upstream_rq|cluster_upstream_rq_xx|cluster_upstream_rq_active|cluster_upstream_rq_cancelled|cluster_upstream_rq_completed|cluster_upstream_rq_max_duration_reached|cluster_upstream_rq_pending_failure_eject|cluster_upstream_rq_pending_overflow|cluster_upstream_rq_pending_total|cluster_upstream_rq_retry|cluster_upstream_rq_retry_.*|cluster_upstream_rq_timeout|cluster_upstream_rq_time_.*|cluster_upstream_cx_active|cluster_upstream_cx_close_notify|cluster_upstream_cx_connect_attempts_exceeded|cluster_upstream_cx_connect_fail|cluster_upstream_cx_connect_timeout|cluster_upstream_cx_connect_ms_.*|cluster_upstream_cx_destroy|cluster_upstream_cx_destroy_local|cluster_upstream_cx_destroy_remote|cluster_upstream_cx_destroy_with_active_rq|cluster_upstream_cx_destroy_remote_with_active_rq|cluster_upstream_cx_idle_timeout|cluster_upstream_cx_max_requests|cluster_upstream_cx_none_healthy|cluster_upstream_cx_protocol_error|cluster_upstream_cx_rx_bytes_total|cluster_upstream_cx_total|cluster_upstream_cx_tx_bytes_total|http_downstream_cx_http1_active|http_downstream_cx_http2_active|http_downstream_cx_idle_timeout|http_downstream_cx_destroy_local|http_downstream_cx_destroy_local_active_rq|http_downstream_cx_destroy_remote|http_downstream_cx_destroy_remote_active_rq|http_downstream_cx_drain_close|http_downstream_cx_upgrades_total|http_downstream_cx_ssl_active|http_downstream_rq_completed|http_downstream_rq_idle_timeout|http_downstream_rq_overload_close|http_downstream_rq_time_.*|http_downstream_rq_timeout|http_downstream_rq_too_large|http_downstream_rq_total|http_downstream_rq_xx|http_downstream_cx_protocol_error|http_downstream_cx_rx_bytes_total|http_downstream_cx_total|http_downstream_cx_tx_bytes_total)$'
+        action: keep
+
+  # vault metrics
+  - job_name: 'vault_metrics'
+    sample_limit: 150000
+    metrics_path: '/v1/sys/metrics'
+    params:
+      format: ['prometheus']
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+    consul_sd_configs:
+    - server: 'localhost:8500'
+      services: ['vault']
+      datacenter: 'pi'
+      tags:
+        - "active"
+    relabel_configs:
+    - source_labels: ['__address__']
+      target_label: '__address__'
+      regex: '(.*):(.*$)'
+      replacement: $1:8200
+    - source_labels: ['__meta_consul_metadata_cluster']
+      target_label: cluster
+      action: replace
+    - source_labels: ['__meta_consul_metadata_zone']
+      target_label: zone
+      action: replace
+
+  - job_name: consul_ssl
+    sample_limit: 150000
+    metrics_path: /probe
+    consul_sd_configs:
+      - server: 'localhost:8500'
+        datacenter: 'pi'
+        tags:
+          - 'ssl-probe'
+    relabel_configs:
+      # Set target to <consul service DNS name>:<consul service port> by default
+      - source_labels: [__meta_consul_dc]
+        target_label: __tmp_consul_dns_suffix
+        replacement: '.service.${1}.consul:'
+      - source_labels: [__meta_consul_service, __tmp_consul_dns_suffix, __meta_consul_service_port]
+        separator: ''
+        target_label: __param_target
+      # Replace target with value of ssl_probe_target metadata key if it is set
+      - source_labels: [__meta_consul_service_metadata_ssl_probe_target]
+        target_label: __param_target
+        regex: '(.*:\d+$)'
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 127.0.0.1:9219
+
+  - job_name: static_ssl
+    sample_limit: 150000
+    metrics_path: /probe
+    file_sd_configs:
+      - files:
+          - 'static_ssl.yml'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 127.0.0.1:9219

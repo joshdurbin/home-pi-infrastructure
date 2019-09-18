@@ -1,0 +1,96 @@
+bind_addr = "{{ nomad_bind }}"
+data_dir = "/var/lib/nomad"
+region = "{{ nomad_dc }}"
+datacenter = "{{ nomad_dc }}"
+name = "{{ ansible_hostname }}.node"
+log_level = "INFO"
+enable_debug = false
+
+advertise {
+  http = "{{ ansible_default_ipv4.address }}:{{ nomad_http_port }}"
+  rpc  = "{{ ansible_default_ipv4.address }}:{{ nomad_rpc_port }}"
+  serf = "{{ ansible_default_ipv4.address }}:{{ nomad_serf_port }}"
+}
+
+consul {
+{% if nomad_server %}
+  server_auto_join = true
+{% else %}
+  client_auto_join = true
+{% endif %}
+  auto_advertise = true
+  address = "{{ ansible_default_ipv4.address }}:8500"
+}
+
+{% if nomad_server %}
+server {
+  enabled = true
+  bootstrap_expect = {{ nomad_bootstrap_expect }}
+  rejoin_after_leave = true
+  encrypt = "{{ nomad_gossip_tls }}"
+}
+{% endif %}
+
+tls {
+  http = false
+  rpc  = true
+
+  ca_file   = "/etc/ssl/certs/nomad-ca.pem"
+  {% if nomad_server %}
+  cert_file = "/etc/ssl/certs/server.pem"
+  key_file  = "/etc/ssl/private/server-key.pem"
+  {% else %}
+  cert_file = "/etc/ssl/certs/client.pem"
+  key_file  = "/etc/ssl/private/client-key.pem"
+{% endif %}
+  verify_server_hostname = true
+  verify_https_client    = true
+}
+
+telemetry {
+  publish_allocation_metrics = true
+  publish_node_metrics       = true
+  prometheus_metrics         = true
+}
+
+client {
+  enabled = true
+
+  options = {
+    driver.whitelist = "docker"
+  }
+
+  reserved {
+    reserved_ports = "24000-64000"
+    memory = "192"
+  }
+
+  meta {
+    machine_type = "{{ machine_type }}"
+  }
+
+{% if host_volumes is defined and host_volumes|length > 0 %}
+{% for volume in host_volumes %}
+  host_volume "{{ volume.name }}" {
+    path      = "{{ volume.path }}"
+    read_only = false
+  }
+{% endfor %}
+{% endif %}
+}
+
+plugin "docker" {
+  config {
+    auth {
+      config = "/root/.docker/config.json"
+    }
+    gc {
+      image = "true"
+      image_delay = "30m"
+      container = "true"
+    }
+    volumes {
+      enabled = true
+    }
+  }
+}

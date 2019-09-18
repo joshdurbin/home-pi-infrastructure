@@ -1,0 +1,42 @@
+---
+
+- name: Add Hashicorp APT key
+  apt_key:
+    url: https://apt.releases.hashicorp.com/gpg
+    state: present
+  tags:
+    - vault
+
+- name: Add Hashicorp APT repository
+  apt_repository:
+    repo: deb [arch={{arch}}] https://apt.releases.hashicorp.com bullseye main
+    state: present
+    update_cache: true
+  tags:
+    - vault
+
+- name: install vault
+  apt:
+    pkg:
+      - vault
+  tags:
+    - vault
+
+- name: configure vault
+  template:
+    src: vault.hcl.j2
+    dest: /etc/vault.d/vault.hcl
+    owner: vault
+    group: vault
+    mode: u=rw,g=r,o=r
+  notify:
+    - reload vault
+  tags:
+    - vault
+
+- name: enabled systemd service
+  systemd:
+    state: started
+    name: vault
+  tags:
+    - vault

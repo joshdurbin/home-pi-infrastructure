@@ -1,0 +1,6 @@
+---
+- name: reload prometheus
+  service:
+    name: prometheus
+    daemon_reload: true
+    state: restarted

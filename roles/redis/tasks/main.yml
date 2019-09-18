@@ -1,0 +1,55 @@
+---
+
+- block:
+  - name: install packages
+    apt:
+      pkg:
+        - redis-sentinel
+    tags:
+      - redis
+  - name: configure redis-sentinel
+    template:
+      src: sentinel.conf.j2
+      dest: /etc/redis/sentinel.conf
+      owner: "redis"
+      group: "redis"
+      mode: "u+rw,g+r"
+    notify:
+      - reload redis-sentinel
+    tags:
+      - redis
+  - name: register redis-sentinel
+    community.general.consul:
+      service_name: redis-sentinel
+      tcp: 127.0.0.1:26379
+      interval: 15s
+    tags:
+      - redis
+  when: (redis_sentinel_server is defined) and (redis_sentinel_server == true)
+
+- block:
+    - name: install packages
+      apt:
+        pkg:
+          - redis-server
+      tags:
+        - redis
+    - name: configure redis-server
+      template:
+        src: redis.conf.j2
+        dest: /etc/redis/redis.conf
+        owner: "redis"
+        group: "redis"
+        mode: "u+rw,g+r"
+      notify:
+        - reload redis-server
+      tags:
+        - redis
+    - name: register redis-server
+      community.general.consul:
+        service_name: redis-server
+        tcp: 127.0.0.1:6379
+        interval: 15s
+      tags:
+        - redis
+  when: (redis_server is defined) and (redis_server == true)

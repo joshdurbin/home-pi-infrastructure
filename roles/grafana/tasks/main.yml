@@ -1,0 +1,32 @@
+---
+
+- block:
+  - name: Add grafana APT key
+    apt_key:
+      url: https://apt.grafana.com/gpg.key
+      state: present
+    tags:
+      - grafana
+
+  - name: Add grafana APT repository
+    apt_repository:
+      repo: deb [arch={{arch}}] https://apt.grafana.com stable main
+      state: present
+      update_cache: true
+    tags:
+      - grafana
+
+  - name: install grafana
+    apt:
+      pkg:
+        - grafana
+    tags:
+      - grafana
+
+  - name: register grafana with consul
+    community.general.consul:
+      service_name: grafana
+      service_port: 3000
+    tags:
+      - grafana
+  when: (grafana_server is defined) and (grafana_server == true)

@@ -1,0 +1,8 @@
+---
+
+version: 2.7.1
+
+loki_http_port: 3100
+loki_grpc_port: 9096
+loki_http_consul_service_name: loki-http
+loki_grpc_consul_service_name: loki-grpc

@@ -1,0 +1,9 @@
+machine_type: pi4b
+nomad_memory_reservation: "{{ (ansible_memtotal_mb * 0.85) | int | abs }}"
+kill_audio: yes
+consul_server: yes
+nomad_server: yes
+vault_server: yes
+dns_server: yes
+adguard_dns_server: no
+dnscrypt_dns_server: yes

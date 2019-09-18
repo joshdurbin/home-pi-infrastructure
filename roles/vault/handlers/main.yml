@@ -1,0 +1,7 @@
+---
+- name: reload vault
+  service:
+    name: vault
+    enabled: true
+    daemon_reload: true
+    state: restarted

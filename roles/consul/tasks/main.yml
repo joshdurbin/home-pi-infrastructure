@@ -1,0 +1,149 @@
+---
+
+- name: Add Hashicorp APT key
+  apt_key:
+    url: https://apt.releases.hashicorp.com/gpg
+    state: present
+  tags:
+    - consul
+
+- name: Add Hashicorp APT repository
+  apt_repository:
+    repo: deb [arch={{arch}}] https://apt.releases.hashicorp.com bullseye main
+    state: present
+    update_cache: true
+  tags:
+    - consul
+
+- name: install consul
+  apt:
+    pkg:
+      - consul
+      - consul-template
+  tags:
+    - consul
+
+- name: install ca and certs for consul client
+  copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "{{ item.mode }}"
+    owner: consul
+    group: consul
+  with_items:
+    - src: consul-agent-ca.pem
+      dest: "/etc/ssl/certs/consul-agent-ca.pem"
+      mode: u=rw,g=r,o=r
+    - src: pi-client-consul-0.pem
+      dest: "/etc/ssl/certs/pi-client-consul-0.pem"
+      mode: u=rw,g=r,o=r
+    - src: pi-client-consul-0-key.pem
+      dest: "/etc/ssl/private/pi-client-consul-0-key.pem"
+      mode: u=rw,g=r
+  notify:
+    - reload consul
+    - reload consul-template
+  when: not consul_server
+  tags:
+    - consul
+
+- name: install ca and certs for consul server
+  copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "{{ item.mode }}"
+    owner: consul
+    group: consul
+  with_items:
+    - src: consul-agent-ca.pem
+      dest: "/etc/ssl/certs/consul-agent-ca.pem"
+      mode: u=rw,g=r,o=r
+    - src: pi-server-consul-0.pem
+      dest: "/etc/ssl/certs/pi-server-consul-0.pem"
+      mode: u=rw,g=r,o=r
+    - src: pi-server-consul-0-key.pem
+      dest: "/etc/ssl/private/pi-server-consul-0-key.pem"
+      mode: u=rw,g=r
+  notify:
+    - reload consul
+    - reload consul-template
+  when: consul_server
+  tags:
+    - consul
+
+- name: create the directory for consul-template
+  ansible.builtin.file:
+    path: /etc/consul-template
+    state: directory
+    owner: root
+    group: root
+    mode: u=rw,g=r,o=r
+  tags:
+    - consul
+
+- name: configure consul and consul-template
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: u=rw,g=r,o=r
+    owner: consul
+    group: consul
+  with_items:
+    - src: consul.hcl.j2
+      dest: /etc/consul.d/consul.hcl
+    - src: consul-template.hcl.j2
+      dest: /etc/consul-template/consul-template.hcl
+  notify:
+    - reload consul
+    - reload consul-template
+  tags:
+    - consul
+
+- stat:
+    path: /etc/consul-template/defined-templates.hcl
+  register: preexisting_defined_templates
+  tags:
+    - consul
+
+- name: ensure defined-templates file exists but do not override
+  copy:
+    content: ""
+    dest: /etc/consul-template/defined-templates.hcl
+    force: no
+    group: root
+    owner: root
+    mode: u=rw,g=r,o=r
+  when: not preexisting_defined_templates.stat.exists
+
+- name: configure systemd service for consul-template
+  copy:
+    src: consul-template.service
+    dest: "{{ systemd_dir }}/consul-template.service"
+    mode: 644
+  notify:
+    - reload consul-template
+  tags:
+    - consul-template
+
+- name: enable consul and consul-template
+  service:
+    name: "{{ item }}"
+    enabled: yes
+    state: started
+  with_items:
+    - consul
+    - consul-template
+  tags:
+    - consul
+
+- name: install pip
+  apt:
+    pkg:
+      - python3-pip
+    state: present
+
+- name: install pip packages
+  pip:
+    name:
+      - python-consul
+      - requests

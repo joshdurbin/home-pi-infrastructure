@@ -1,0 +1,12 @@
+---
+- name: reload consul
+  service:
+    name: consul
+    daemon_reload: true
+    state: restarted
+
+- name: reload consul-template
+  service:
+    name: consul-template
+    daemon_reload: true
+    state: restarted

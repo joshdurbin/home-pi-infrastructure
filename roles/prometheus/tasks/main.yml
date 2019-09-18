@@ -1,0 +1,28 @@
+---
+
+- block:
+  - name: install prometheus
+    apt:
+      pkg:
+        - prometheus
+      state: present
+    tags:
+      - prometheus
+
+  - name: configure prometheus
+    template:
+      src: prometheus.yml.j2
+      dest: /etc/prometheus/prometheus.yml
+      mode: u=rw,g=r,o=r
+    notify:
+        - reload prometheus
+    tags:
+      - prometheus
+
+  - name: register grafana with consul
+    community.general.consul:
+      service_name: prometheus
+      service_port: 9090
+    tags:
+      - prometheus
+  when: (prometheus_server is defined) and (prometheus_server == true)

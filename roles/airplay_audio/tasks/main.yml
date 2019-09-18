@@ -1,0 +1,18 @@
+---
+
+- name: install shairport sync dependencies
+  apt:
+    pkg: shairport-sync
+    state: latest
+
+- name: add overlay for hifiberry
+  lineinfile:
+    path: /boot/config.txt
+    insertafter: EOF
+    line: dtoverlay=hifiberry-dacplus
+
+- name: start shairport-sync
+  service:
+    name: shairport-sync
+    daemon_reload: true
+    state: started

@@ -1,0 +1,3 @@
+machine_type: 3bplus
+nomad_memory_reservation: "{{ (ansible_memtotal_mb * 0.5) | int | abs }}"
+kill_audio: no

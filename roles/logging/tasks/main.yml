@@ -1,0 +1,7 @@
+---
+
+- include: promtail.yml
+- include: cli.yml
+- block:
+    - include: loki.yml
+  when: (loki_server is defined) and (loki_server == true)

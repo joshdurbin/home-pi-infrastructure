@@ -1,0 +1,53 @@
+---
+
+- name: enable avahi-daemon.service
+  systemd:
+    name: avahi-daemon.service
+    state: stopped
+    enabled: no
+  tags:
+    - avahi
+
+- name: enable avahi-daemon.socket
+  systemd:
+    name: avahi-daemon.socket
+    state: stopped
+    enabled: no
+  tags:
+    - avahi
+
+#- name: enable avahi-daemon.service
+#  systemd:
+#    name: avahi-daemon.service
+#    state: started
+#    enabled: yes
+#  tags:
+#    - avahi
+#
+#- name: enable avahi-daemon.socket
+#  systemd:
+#    name: avahi-daemon.socket
+#    state: started
+#    enabled: yes
+#  tags:
+#    - avahi
+#
+#- name: configure sftp avahi
+#  copy:
+#    src: sftp.service.xml
+#    dest: /etc/avahi/services/sftp.service
+#    mode: 644
+#  notify:
+#    - reload avahi
+#  tags:
+#    - avahi
+#
+#- name: configure ssh avahi
+#  copy:
+#    src: ssh.service.xml
+#    dest: /etc/avahi/services/ssh.service
+#    mode: 644
+#  notify:
+#    - reload avahi
+#  tags:
+#    - avahi

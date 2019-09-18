@@ -1,0 +1,33 @@
+---
+
+- name: disable alsa-state.service
+  systemd:
+    name: alsa-state
+    state: stopped
+    enabled: no
+  tags:
+    - kill_audio
+
+- name: disable alsa-restore.service
+  systemd:
+    name: alsa-restore
+    state: stopped
+    enabled: no
+  tags:
+    - kill_audio
+
+- name: disable alsa-utils.service
+  systemd:
+    name: alsa-utils
+    state: stopped
+    enabled: no
+  tags:
+    - kill_audio
+
+- name: disable onboard audio
+  lineinfile:
+    path: /boot/config.txt
+    regexp: '^dtparam=audio'
+    line: 'dtparam=audio=off'
+  tags:
+    - kill_audio

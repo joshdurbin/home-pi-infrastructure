@@ -1,0 +1,32 @@
+---
+- name: reload unbound
+  service:
+    name: unbound
+    daemon_reload: true
+    state: restarted
+
+- name: reload dnscrypt-proxy
+  service:
+    name: dnscrypt-proxy
+    daemon_reload: true
+    state: restarted
+
+- name: reload avahi
+  service:
+    name: avahi-daemon
+    daemon_reload: true
+    state: restarted
+
+- name: reload adguard-home
+  service:
+    name: adguard-home
+    enabled: yes
+    daemon_reload: true
+    state: restarted
+
+- name: reload adguard-home-prometheus-exporter
+  service:
+    name: adguard-home-prometheus-exporter
+    enabled: yes
+    daemon_reload: true
+    state: restarted

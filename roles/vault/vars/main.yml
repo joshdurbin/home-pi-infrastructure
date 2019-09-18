@@ -1,0 +1,5 @@
+---
+
+user: root
+group: root
+config_path: /etc/vault/vault.hcl

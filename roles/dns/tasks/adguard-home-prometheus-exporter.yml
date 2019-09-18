@@ -1,0 +1,57 @@
+---
+
+- block:
+
+  - name: create group
+    group:
+      name: "{{ adguard_prometheus_exporter_group }}"
+      state: present
+    tags:
+      - adguard-home-prometheus-exporter
+
+  - name: create user
+    user:
+      name: "{{ adguard_prometheus_exporter_username }}"
+      shell: /bin/bash
+      groups: "{{ adguard_prometheus_exporter_group }}"
+      create_home: no
+      append: yes
+      state: present
+    tags:
+      - adguard-home-prometheus-exporter
+
+  - name: configure for systemd
+    template:
+      src: adguard-home-prometheus-exporter.service.j2
+      dest: "{{ systemd_dir }}/adguard-home-prometheus-exporter.service"
+      mode: 644
+    notify:
+      - reload adguard-home-prometheus-exporter
+    tags:
+      - adguard-home-prometheus-exporter
+
+  - name: register adguard UI with consul
+    community.general.consul:
+      service_name: adguard
+      service_port: 9617
+    tags:
+      - adguard-home-prometheus-exporter
+
+  - stat:
+      path: "{{adguard_prometheus_exporter_destination}}"
+    register: preexisting
+    tags:
+      - adguard-home-prometheus-exporter
+
+  - block:
+      - name: download
+        get_url:
+          url: "https://github.com/ebrianne/adguard-exporter/releases/download/{{adguard_prometheus_exporter_version}}/adguard_exporter-linux-{{arch}}"
+          dest: "{{ adguard_prometheus_exporter_destination }}"
+          owner: "{{adguard_prometheus_exporter_username}}"
+          group: "{{adguard_prometheus_exporter_group}}"
+          mode: "u+xr,g+xr,o+r"
+        tags:
+          - adguard-home-prometheus-exporter
+    when: preexisting.stat.exists != true
+  when: (adguard_dns_server is defined) and (adguard_dns_server == true)

@@ -1,0 +1,124 @@
+---
+
+- name: Add Hashicorp APT key
+  apt_key:
+    url: https://apt.releases.hashicorp.com/gpg
+    state: present
+  tags:
+    - nomad
+
+- name: Add Hashicorp APT repository
+  apt_repository:
+    repo: deb [arch={{arch}}] https://apt.releases.hashicorp.com bullseye main
+    state: present
+    update_cache: true
+  tags:
+    - nomad
+
+- name: install nomad
+  apt:
+    pkg:
+      - nomad
+  tags:
+    - nomad
+
+- name: install ca and certs for nomad client
+  copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "{{ item.mode }}"
+    owner: nomad
+    group: nomad
+  with_items:
+    - src: nomad-ca.pem
+      dest: "/etc/ssl/certs/nomad-ca.pem"
+      mode: u=rw,g=r,o=r
+    - src: client.pem
+      dest: "/etc/ssl/certs/client.pem"
+      mode: u=rw,g=r,o=r
+    - src: client-key.pem
+      dest: "/etc/ssl/private/client-key.pem"
+      mode: u=rw,g=r
+  notify:
+    - reload nomad
+  when: not nomad_server
+  tags:
+    - nomad
+
+- name: install ca and certs for nomad server
+  copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "{{ item.mode }}"
+    owner: nomad
+    group: nomad
+  with_items:
+    - src: nomad-ca.pem
+      dest: "/etc/ssl/certs/nomad-ca.pem"
+      mode: u=rw,g=r,o=r
+    - src: server.pem
+      dest: "/etc/ssl/certs/server.pem"
+      mode: u=rw,g=r,o=r
+    - src: server-key.pem
+      dest: "/etc/ssl/private/server-key.pem"
+      mode: u=rw,g=r
+  notify:
+    - reload nomad
+  when: nomad_server
+  tags:
+    - nomad
+
+- name: install ca and certs for nomad cli
+  copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "{{ item.mode }}"
+    owner: nomad
+    group: nomad
+  with_items:
+    - src: cli.pem
+      dest: "/etc/ssl/certs/cli.pem"
+      mode: u=rw,g=r,o=r
+    - src: cli-key.pem
+      dest: "/etc/ssl/private/cli-key.pem"
+      mode: u=rw,g=r,o=r
+  tags:
+    - nomad
+
+- name: configure nomad
+  template:
+    src: nomad.hcl.j2
+    dest: /etc/nomad.d/nomad.hcl
+    mode: u=rw,g=r,o=r
+    owner: nomad
+    group: nomad
+  notify:
+    - reload nomad
+  tags:
+    - nomad
+
+- name: enabled systemd service
+  systemd:
+    state: started
+    name: nomad
+
+- name: prune old things cron
+  cron:
+    name: "check dirs"
+    minute: "0"
+    hour: "4"
+    job: "/usr/bin/docker system prune -f -a --volumes 2>&1 | /usr/bin/logger -t docker-prune"
+
+- name: create host volumes
+  file:
+    path: "{{ item.path }}"
+    state: directory
+    mode: 0755
+    owner: "{{ item.uid }}"
+    group: "{{ item.gid }}"
+  with_items:
+    - "{{ host_volumes }}"
+  when:
+    "(host_volumes is defined) and (host_volumes|length > 0)"
+  tags:
+    - nomad
