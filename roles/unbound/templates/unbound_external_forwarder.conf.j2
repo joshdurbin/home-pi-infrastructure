@@ -82,6 +82,7 @@ stub-zone:
   stub-addr: 127.0.0.1@8600
 forward-zone:
   name: "."
-  {% raw %}
-  forward-addr: {{range service "pihole-dns"}}{{.Address}}@{{.Port}}{{end}}
-  {% endraw %}
+  {% raw %}{{range service "pihole-dns"}}
+  forward-addr: {{.Address}}@{{.Port}}
+  {{end}}{% endraw %}
+  forward-addr: 1.1.1.1@853#cloudflare-dns.com

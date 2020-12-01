@@ -9,15 +9,16 @@ consul_version: "1.8.4"
 consul_version_v_prefix: "v{{consul_version}}"
 consul_template_version: "0.25.1"
 consul_template_version_v_prefix: "v{{consul_template_version}}"
-nomad_version: "0.12.5"
+nomad_version: "0.12.9"
 nomad_version_v_prefix: "v{{nomad_version}}"
 vault_version: "1.5.4"
 vault_version_v_prefix: "v{{vault_version}}"
 consul_template_url: "https://releases.hashicorp.com/consul-template/{{ consul_template_version }}/consul-template_{{ consul_template_version }}_linux_{{ arch }}.zip"
 consul_checksum: "sha256:e0a6ef017ba04ec8654991ebac0654a2a142d8a15ace259be8397e05da078b82"
 consul_template_checksum: "sha256:d27041303b64695f29fd8ce7d26768eeaaaa51c6187c6dc37ee4d79c449501ba"
-nomad_checksum: "sha256:d6ed34e3152dd7c38f6208e6231b38f1cbf8d19eb0486ffe83f277a94ac014f3"
+nomad_checksum: "sha256:13311848b9db9931662173c9ddb03623403b99c1bb991a2032927eecb7d8b15d"
 vault_checksum: "sha256:b9ca7c7b454f1fa919db03be6f14d73730a3eefe348aa66bcb3d6e660b651161"
+jdurbin_ios_ssh_pub_key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDPwAVor1jsmhs+EQmDqG/MWbj8xeIj8ezsxjRRFHv8NQBCdoIykCNKDvTDe788hjzSiQipyno+K5kUIx2f1UMXHRZ9NkVeQ+A8RX38GjmLHfmeLMOJSQGvM4nCiVizRO1yt0n+5dfXcpU+WvMwJcTHkWy/hQjGqz4HdHUzS1U09AGb9+z6sSB5Q79J8IwAZY/eXscpH44RAPVRah/x820jsuXm2SS139cS67NwkrDmb/MwLv4+poSVDWuBeOhlJoSVcjcltRbwCn2i1AqegZz3/eXBGTRI6Mt0UEXDWBCvRSyLn3Ih1Mhecvo8SJ3Y6UaYDWBMEnYf5d9RxxdFEExZ"
 nomad_gossip_tls: !vault |
   $ANSIBLE_VAULT;1.1;AES256
   62336630373835303462633131353239316438346363613733333333343165343863373738306533

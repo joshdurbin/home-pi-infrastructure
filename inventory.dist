@@ -4,6 +4,13 @@ rpi-4b-3 ansible_host=192.168.1.18 ansible_user=pi ansible_python_interpreter=/u
 rpi-3bplus-1 ansible_host=192.168.1.15 ansible_user=pi ansible_python_interpreter=/usr/bin/python2
 rpi-zero-1 ansible_host=192.168.1.16 ansible_user=pi ansible_python_interpreter=/usr/bin/python2
 rpi-zero-2 ansible_host=192.168.1.19 ansible_user=pi ansible_python_interpreter=/usr/bin/python2
+rpi-zero-3 ansible_host=192.168.1.74 ansible_user=pi ansible_python_interpreter=/usr/bin/python2
+
+[nomad]
+rpi-4b-1
+rpi-4b-2
+rpi-4b-3
+rpi-3bplus-1
 
 [arm64bit]
 rpi-4b-1
@@ -21,10 +28,12 @@ rpi-3bplus-1
 [pizerow]
 rpi-zero-1
 rpi-zero-2
+rpi-zero-3
 
 [arm32bit]
 rpi-zero-1
 rpi-zero-2
+rpi-zero-3
 
 [adblocking]
 rpi-4b-1
@@ -36,6 +45,7 @@ rpi-3bplus-1
 rpi-3bplus-1
 rpi-zero-1
 rpi-zero-2
+rpi-zero-3
 
 [hashiservers]
 rpi-4b-1
@@ -52,6 +62,7 @@ rpi-3bplus-1
 [cameras]
 rpi-zero-1
 rpi-zero-2
+rpi-zero-3
 
 [kill_audio]
 rpi-4b-1
@@ -59,6 +70,7 @@ rpi-4b-2
 rpi-4b-3
 rpi-zero-1
 rpi-zero-2
+rpi-zero-3
 
 [kill_radios]
 rpi-4b-1

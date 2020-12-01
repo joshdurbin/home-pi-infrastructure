@@ -1,0 +1,22 @@
+---
+
+- name: enable avahi-daemon.service
+  systemd:
+    name: avahi-daemon.service
+    state: started
+    enabled: yes
+
+- name: enable avahi-daemon.socket
+  systemd:
+    name: avahi-daemon.socket
+    state: started
+    enabled: yes
+
+- name: copy ssh service to avahi
+  copy:
+    src: /usr/share/doc/avahi-daemon/examples/ssh.service
+    dest: /etc/avahi/services/ssh.service
+    owner: root
+    group: root
+    mode: u+rw,o+r,g+r
+    remote_src: yes

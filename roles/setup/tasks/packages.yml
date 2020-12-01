@@ -1,0 +1,45 @@
+---
+
+- name: Update all packages to the latest version
+  apt:
+    update_cache: yes
+    upgrade: dist
+
+- name: install basic set of packages
+  apt:
+    pkg:
+      - git
+      - iotop
+      - iftop
+      - vim
+      - dnsutils
+      - jq
+      - nmap
+      - prometheus-node-exporter
+      - lsof
+      - socat
+      - tree
+      - screen
+    state: present
+
+- name: install unattended-upgrades
+  apt:
+    pkg:
+      - unattended-upgrades
+    state: present
+
+- name: create apt auto-upgrades configuration
+  template:
+    src: auto-upgrades.j2
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    owner: root
+    group: root
+    mode: 0644
+
+- name: create unattended-upgrades configuration
+  template:
+    src: unattended-upgrades.j2
+    dest: /etc/apt/apt.conf.d/50unattended-upgrades
+    owner: root
+    group: root
+    mode: 0644

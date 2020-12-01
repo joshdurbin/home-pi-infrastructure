@@ -142,7 +142,11 @@ sudo nomad node status -address=https://localhost:4646 -ca-cert=/etc/ssl/certs/n
 2. Gather facts for a particular hose (example `rpi-4b-1`): `ansible rpi-4b-1 -m setup -i inventory.dist`
 3. Target a specific group (example `unbound` (also any `all` groups will exec too)): `ansible-playbook complete_playbook.yml -i inventory.dist --ask-vault-pass --limit unbound`
 4. Target a specific host (example `rpi-4b-1` (also any `all` groups will exec too)): `ansible-playbook complete_playbook.yml -i inventory.dist --ask-vault-pass --limit rpi-4b-1`
+5. Stop a service out of an apply: `ansible -i inventory.dist cameras -m ansible.builtin.service -a "name=uv4l_raspicam state=stopped" --become`
 
+## To enable pictures the streaming services need to be disabled
+
+Disable `uv4l_raspicam` and `v4l2rtspserver`.
 
 ## References
 
