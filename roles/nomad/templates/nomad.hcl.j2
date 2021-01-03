@@ -51,7 +51,7 @@ tls {
 
 telemetry {
   publish_allocation_metrics = true
-  publish_node_metrics       = false
+  publish_node_metrics       = true
   prometheus_metrics         = true
 }
 
@@ -64,10 +64,19 @@ client {
 
   reserved {
     reserved_ports = "24000-64000"
-    memory = "256"
+    memory = "192"
   }
 
   meta {
     machine_type = "{{ machine_type }}"
   }
+
+{% if host_volumes is defined and host_volumes|length > 0 %}
+{% for volume in host_volumes %}
+  host_volume "{{ volume.name }}" {
+    path      = "{{ volume.path }}"
+    read_only = false
+  }
+{% endfor %}
+{% endif %}
 }

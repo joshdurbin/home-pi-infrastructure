@@ -15,6 +15,7 @@
     - docker
     - { role: consul, consul_is_server: yes }
     - { role: nomad, nomad_is_server: yes }
+    - vault
   become: yes
 
 - hosts: all
@@ -56,4 +57,5 @@
 - hosts: all
   roles:
     - unbound
+    - promtail
   become: yes

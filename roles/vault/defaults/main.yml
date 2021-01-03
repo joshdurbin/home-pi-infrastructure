@@ -1,10 +1,2 @@
 ---
 vault_install_path: /usr/local/vault
-vault_dc: pi
-vault_is_server: no
-vault_leader_group: master
-vault_bootstrap_expect: "{{ groups['hashiservers'] | length }}"
-vault_retry_join: "{{ groups['hashiservers'] | map('extract', hostvars, ['ansible_host']) | list }}"
-vault_http_port: 4646
-vault_rpc_port: 4647
-vault_serf_port: 4648

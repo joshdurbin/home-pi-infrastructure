@@ -1,0 +1,23 @@
+ui = true
+
+listener "tcp" {
+  address          = "0.0.0.0:8200"
+  cluster_address  = "{{ ansible_default_ipv4.address }}:8201"
+  tls_disable      = "true"
+}
+
+storage "consul" {
+  address = "127.0.0.1:8500"
+  path    = "vault/"
+  tls_ca_file   = "/etc/ssl/certs/consul-agent-ca.pem"
+  tls_cert_file = "/etc/ssl/certs/pi-server-consul-0.pem"
+  tls_key_file  = "/etc/ssl/private/pi-server-consul-0-key.pem"
+}
+
+telemetry {
+  prometheus_retention_time = "30s"
+  disable_hostname = true
+}
+
+api_addr = "http://{{ ansible_default_ipv4.address }}:8200"
+cluster_addr = "https://{{ ansible_default_ipv4.address }}:8201"

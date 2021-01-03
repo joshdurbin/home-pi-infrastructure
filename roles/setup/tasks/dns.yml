@@ -5,18 +5,33 @@
     name: avahi-daemon.service
     state: started
     enabled: yes
+  tags:
+    - avahi
 
 - name: enable avahi-daemon.socket
   systemd:
     name: avahi-daemon.socket
     state: started
     enabled: yes
+  tags:
+    - avahi
 
-- name: copy ssh service to avahi
+- name: configure sftp avahi
   copy:
-    src: /usr/share/doc/avahi-daemon/examples/ssh.service
+    src: sftp.service.xml
+    dest: /etc/avahi/services/sftp.service
+    mode: 644
+  notify:
+    - reload avahi
+  tags:
+    - avahi
+
+- name: configure ssh avahi
+  copy:
+    src: ssh.service.xml
     dest: /etc/avahi/services/ssh.service
-    owner: root
-    group: root
-    mode: u+rw,o+r,g+r
-    remote_src: yes
+    mode: 644
+  notify:
+    - reload avahi
+  tags:
+    - avahi

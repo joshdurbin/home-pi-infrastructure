@@ -1,0 +1,3 @@
+host_volumes:
+  - name: "loki"
+    path: "/opt/nomad/loki"

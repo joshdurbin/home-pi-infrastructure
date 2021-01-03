@@ -1,7 +1,6 @@
 ---
-- name: reload vault
+- name: reload avahi
   service:
-    name: vault
-    enabled: true
+    name: avahi-daemon
     daemon_reload: true
     state: restarted

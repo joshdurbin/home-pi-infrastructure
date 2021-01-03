@@ -1,33 +1,33 @@
 ---
 
 - stat:
-    path: "{{ nomad_install_path }}/{{ nomad_version }}/"
+    path: "{{ install_path }}/{{ vault_version }}/"
   register: preexisting
   tags:
-    - nomad
+    - vault
 
-- name: get nomad version
-  shell: "nomad version | awk '{print $2}'"
-  register: nomad_version_shell_result
+- name: get vault version
+  shell: "vault version | awk '{print $2}'"
+  register: vault_version_shell_result
   when: preexisting.stat.exists == true
   tags:
-    - nomad
+    - vault
 
-- set_fact: reported_nomad_version="{{ nomad_version_shell_result.stdout }}"
+- set_fact: reported_vault_version="{{ vault_version_shell_result.stdout }}"
   when: preexisting.stat.exists == true
   tags:
-    - nomad
+    - vault
 
 - block:
 
-  - name: download nomad
+  - name: download vault
     get_url:
-      url: "https://releases.hashicorp.com/nomad/{{ nomad_version }}/nomad_{{ nomad_version }}_linux_{{ arch }}.zip"
-      dest: /tmp/nomad.zip
+      url: "https://releases.hashicorp.com/vault/{{ vault_version }}/vault_{{ vault_version }}_linux_{{ arch }}.zip"
+      dest: "{{ tmp_path }}"
       mode: 0777
-      checksum: "{{ nomad_checksum }}"
+      checksum: "{{ vault_checksum }}"
     tags:
-      - nomad
+      - vault
 
   - name: create the install paths
     file:
@@ -35,58 +35,69 @@
       state: directory
       mode: 0755
     with_items:
-      - "{{ nomad_install_path }}/{{ nomad_version }}"
-      - /etc/nomad
+      - "{{ install_path }}/{{ vault_version }}"
+      - /etc/vault
     tags:
-      - nomad
+      - vault
 
   - name: decompress archive
     unarchive:
-      src: "{{ /tmp/nomad.zip }}"
-      dest: "{{ nomad_install_path }}/{{ nomad_version }}"
+      src: "{{ tmp_path }}"
+      dest: "{{ install_path }}/{{ vault_version }}"
       remote_src: yes
     tags:
-      - consul
+      - vault
 
-  - name: link the versioned nomad to the local bin
+  - name: link the versioned vault to the local bin
     file:
-      src: "{{ nomad_install_path }}/{{ nomad_version }}/nomad"
-      dest: /usr/local/bin/nomad
+      src: "{{ install_path }}/{{ vault_version }}/vault"
+      dest: "{{ bin_install_symlink_path }}"
       owner: root
       group: root
       state: link
     tags:
-      - nomad
+      - vault
 
   - name: remove the temp archives
     file:
       path: "{{ item }}"
       state: absent
     with_items:
-      - /tmp/nomad.zip
+      - "{{ tmp_path }}"
     tags:
-      - nomad
+      - vault
 
-  when: (preexisting.stat.exists != true) or (reported_nomad_version != nomad_version_v_prefix)
+  when: (preexisting.stat.exists != true) or (reported_vault_version != vault_version_v_prefix)
 
-- block:
+- name: create group
+  group:
+    name: "{{ group }}"
 
-  - name: configure for systemd
-    copy:
-      src: nomad.service
-      dest: "{{ systemd_dir }}/nomad.service"
-      mode: 644
-    notify:
-      - reload nomad
-    tags:
-      - nomad
+- name: create user
+  user:
+    name: "{{ user }}"
+    groups:
+      - "{{ group }}"
+    append: yes
+    system: yes
+    createhome: no
 
-  - name: configure nomad
-    template:
-      src: nomad.conf.j2
-      dest: /etc/nomad/nomad.json
-      mode: u=rw,g=r,o=r
-    notify:
-      - reload nomad
-    tags:
-      - nomad
+- name: configure vault
+  template:
+    src: vault.hcl.j2
+    dest: "{{ config_path }}"
+    mode: u=rw,g=r,o=r
+  notify:
+    - reload vault
+  tags:
+    - vault
+
+- name: configure for systemd
+  template:
+    src: vault.service.j2
+    dest: "{{ systemd_dir }}/vault.service"
+    mode: 644
+  notify:
+    - reload vault
+  tags:
+    - vault

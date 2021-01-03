@@ -1,0 +1,109 @@
+---
+
+- stat:
+    path: "{{ promtail_install_path }}/{{ version }}/"
+  register: preexisting
+  tags:
+    - promtail
+
+- name: get version
+  shell: "promtail -version | awk '{print $3}' | head -n1"
+  register: version_shell_result
+  when: preexisting.stat.exists == true
+  tags:
+    - promtail
+
+- set_fact: reported_promtail_version="{{ version_shell_result.stdout }}"
+  when: preexisting.stat.exists == true
+  tags:
+    - promtail
+
+- block:
+
+  - name: download promtail
+    get_url:
+      url: "{{ url }}"
+      dest: /tmp/promtail.zip
+      mode: 0777
+      checksum: "{{ promtail_checksum }}"
+    tags:
+      - promtail
+
+  - name: create the install paths
+    file:
+      path: "{{ item }}"
+      state: directory
+      mode: 0755
+    with_items:
+      - "{{ promtail_install_path }}/{{ version }}"
+      - /etc/promtail
+      - /opt/promtail
+    tags:
+      - promtail
+
+  - name: decompress archive
+    unarchive:
+      src: /tmp/promtail.zip
+      dest: "{{ promtail_install_path }}/{{ version }}"
+      remote_src: yes
+    tags:
+      - promtail
+
+  - name: link the versioned promtail to the local bin
+    file:
+      src: "{{ promtail_install_path }}/{{ version }}/promtail-linux-{{ arch }}"
+      dest: /usr/local/bin/promtail
+      owner: root
+      group: root
+      state: link
+    tags:
+      - promtail
+
+  - name: remove the temp archives
+    file:
+      path: "{{ item }}"
+      state: absent
+    with_items:
+      - /tmp/promtail.zip
+    tags:
+      - promtail
+
+  when: (preexisting.stat.exists != true) or (reported_promtail_version != version)
+
+- block:
+
+  - name: configure for systemd
+    copy:
+      src: promtail.service
+      dest: "{{ systemd_dir }}/promtail.service"
+      mode: 644
+    notify:
+      - reload promtail
+    tags:
+      - promtail
+
+  - name: configure promtail
+    template:
+      src: config.yaml.j2
+      dest: /etc/promtail/config.yaml.tpl
+      mode: 644
+    tags:
+      - promtail
+
+  - name: configure promtail consul-template block
+    blockinfile:
+      path: /etc/consul-template/defined-templates.hcl
+      insertafter: EOF
+      block: |
+        template {
+          source = "/etc/promtail/config.yaml.tpl"
+          destination = "/etc/promtail/config.yaml"
+          command = "systemctl restart promtail"
+        }
+    notify:
+      - reload consul-template
+      - reload promtail
+    tags:
+      - promtail
+
+

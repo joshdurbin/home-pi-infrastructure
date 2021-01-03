@@ -132,7 +132,7 @@
     copy:
       src: nomad.service
       dest: "{{ systemd_dir }}/nomad.service"
-      mode: 644
+      mode: 644d
     notify:
       - reload nomad
     tags:
@@ -147,9 +147,22 @@
       - reload nomad
     tags:
       - nomad
+
   - name: register nomad
     community.general.consul:
       service_name: nomad
       service_port: 9100
     tags:
       - nomad
+
+- name: create host volumes
+  file:
+    path: "{{ item.path }}"
+    state: directory
+    mode: 0755
+  with_items:
+    - "{{ host_volumes }}"
+  when:
+    "(host_volumes is defined) and (host_volumes|length > 0)"
+  tags:
+    - nomad
