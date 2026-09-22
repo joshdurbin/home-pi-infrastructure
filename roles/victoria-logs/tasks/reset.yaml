@@ -1,0 +1,22 @@
+---
+- name: Role Facts
+  ansible.builtin.include_role:
+    name: victoria-logs
+    tasks_from: facts
+
+- name: Role Reset
+  when: inventory_hostname in k3s_map.server.hosts
+  block:
+    - name: Remove Helm release
+      kubernetes.core.helm:
+        name: '{{ victorialogs_vars.kubernetes.helm.chart.alias }}'
+        namespace: '{{ victorialogs_vars.kubernetes.namespace }}'
+        state: absent
+        kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
+      ignore_errors: true
+
+    - name: Remove Helm repository
+      kubernetes.core.helm_repository:
+        name: '{{ victorialogs_vars.kubernetes.helm.repository.org }}'
+        repo_state: absent
+      ignore_errors: true

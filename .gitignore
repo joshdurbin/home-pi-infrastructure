@@ -1,2 +1,24 @@
-.idea
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Ansible
+*.retry
+.ansible_cache/
+roles/*/.ansible-lint
+*.pyc
+__pycache__/
+
+# Secrets & Environment
 .vault_pass
+.env
+.env.local
+
+# Temporary files
+*.tmp
+*.bak
+.ansible/tmp/

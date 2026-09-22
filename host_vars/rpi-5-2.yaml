@@ -1,0 +1,5 @@
+---
+k8s_labels:
+  storage: "true"
+  telemetry: "true"
+  "node.longhorn.io/create-default-disk": "true"

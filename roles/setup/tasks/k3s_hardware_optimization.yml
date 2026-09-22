@@ -1,0 +1,55 @@
+---
+
+- name: reduce GPU memory allocation for k3s
+  lineinfile:
+    path: /boot/firmware/config.txt
+    regexp: '^gpu_mem='
+    line: 'gpu_mem=16'
+    insertafter: EOF
+  tags:
+    - k3s_optimization
+
+- name: disable camera interface
+  lineinfile:
+    path: /boot/firmware/config.txt
+    regexp: '^dtparam=camera='
+    line: 'dtparam=camera=off'
+    insertafter: EOF
+  tags:
+    - k3s_optimization
+
+- name: disable i2c HAT support
+  lineinfile:
+    path: /boot/firmware/config.txt
+    regexp: '^dtparam=i2c_arm='
+    line: 'dtparam=i2c_arm=off'
+    insertafter: EOF
+  tags:
+    - k3s_optimization
+
+- name: disable spi HAT support
+  lineinfile:
+    path: /boot/firmware/config.txt
+    regexp: '^dtparam=spi='
+    line: 'dtparam=spi=off'
+    insertafter: EOF
+  tags:
+    - k3s_optimization
+
+- name: disable 1-wire HAT support
+  lineinfile:
+    path: /boot/firmware/config.txt
+    regexp: '^dtparam=1wire='
+    line: 'dtparam=1wire=off'
+    insertafter: EOF
+  tags:
+    - k3s_optimization
+
+- name: disable HDMI (if not needed)
+  lineinfile:
+    path: /boot/firmware/config.txt
+    regexp: '^dtoverlay=disable-hdmi'
+    line: 'dtoverlay=disable-hdmi'
+    insertafter: EOF
+  tags:
+    - k3s_optimization

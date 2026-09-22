@@ -1,0 +1,22 @@
+---
+# Applies Kubernetes node labels declared in each host's k8s_labels hostvar
+# (see host_vars/rpi-5-*.yaml). Runs once, from any host with kubeconfig
+# access, and loops over every inventory host rather than just the current
+# play's hosts, since chart-deploying plays are often scoped to `server` while
+# the nodes needing labels (rpi-5-1/2/3) are agents.
+- name: Apply node labels from host vars
+  when: hostvars[item].k8s_labels is defined
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: v1
+      kind: Node
+      metadata:
+        name: "{{ item }}"
+        labels: "{{ hostvars[item].k8s_labels }}"
+    kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
+    state: patched
+  loop: "{{ groups['all'] }}"
+  run_once: true
+  ignore_errors: true
+  async: 30
+  poll: 2

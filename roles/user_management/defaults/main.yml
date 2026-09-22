@@ -1,0 +1,12 @@
+---
+
+# List of users to manage
+# Each user should have:
+#   - username: the login name
+#   - groups: list of groups to add user to
+#   - ssh_public_key: SSH public key for authentication
+managed_users:
+  - username: jdurbin
+    groups:
+      - adm
+    ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKO2h8AOSDnFT0Y96v+O0tkvp10aHp6SpecUBvb3Wmg+"

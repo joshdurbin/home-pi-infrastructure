@@ -1,0 +1,16 @@
+route:
+  group_by:
+    - alertgroup
+    - job
+  group_interval: 30m
+  group_wait: 15m
+  repeat_interval: 12h
+  receiver: default
+  routes:
+    - matchers:
+        - alertname=~"InfoInhibitor|Watchdog"
+      receiver: watchdog
+
+receivers:
+  - name: default
+  - name: watchdog

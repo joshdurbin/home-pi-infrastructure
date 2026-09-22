@@ -1,0 +1,122 @@
+alertmanager:
+  config:
+    {{ lookup('ansible.builtin.template', 'config_alertmanager.j2') | trim | indent(4) }}
+  spec:
+    replicaCount: {{ victoriametrics_vars.kubernetes.alertmanager.replicas }}
+    resources:
+      limits:
+        memory: {{ victoriametrics_vars.kubernetes.alertmanager.resources.limits.memory }}
+      requests:
+        cpu: {{ victoriametrics_vars.kubernetes.alertmanager.resources.requests.cpu }}
+        memory: {{ victoriametrics_vars.kubernetes.alertmanager.resources.requests.memory }}
+    storage:
+      emptyDir: {}
+  useManagedConfig: true
+defaultDashboards:
+  dashboards:
+    victoriametrics-operator:
+      enabled: true
+    victoriametrics-vmalert:
+      enabled: true
+  defaultTimezone: utc
+grafana:
+  admin:
+    existingSecret: {{ victoriametrics_map.credentials.secret }}
+    userKey: admin-user
+    passwordKey: admin-password
+{% if victoriametrics_vars.kubernetes.grafana.anonymous.enabled is truthy %}
+  grafana.ini:
+    auth:
+      disable_login_form: true
+    auth.anonymous:
+      enabled: true
+      org_role: {{ victoriametrics_vars.kubernetes.grafana.anonymous.org_role }}
+{% endif %}
+  plugins:
+    {{ victoriametrics_vars.kubernetes.grafana.plugins | to_nice_yaml | indent(4) | trim }}
+{% if victoriametrics_vars.kubernetes.grafana.storage.enabled is truthy %}
+  persistence:
+    accessModes:
+      {{ victoriametrics_vars.kubernetes.grafana.storage.access_modes | to_nice_yaml | indent(6) | trim }}
+    enabled: true
+    size: {{ victoriametrics_vars.kubernetes.grafana.storage.size }}
+    storageClassName: {{ victoriametrics_vars.kubernetes.grafana.storage.class }}
+{% endif %}
+  replicas: {{ victoriametrics_vars.kubernetes.grafana.replicas }}
+  resources:
+    limits:
+      memory: {{ victoriametrics_vars.kubernetes.grafana.resources.limits.memory }}
+    requests:
+      cpu: {{ victoriametrics_vars.kubernetes.grafana.resources.requests.cpu }}
+      memory: {{ victoriametrics_vars.kubernetes.grafana.resources.requests.memory }}
+kube-state-metrics:
+  replicas: {{ victoriametrics_vars.kubernetes.kube_state_metrics.replicas }}
+  resources:
+    limits:
+      memory: {{ victoriametrics_vars.kubernetes.kube_state_metrics.resources.limits.memory }}
+    requests:
+      cpu: {{ victoriametrics_vars.kubernetes.kube_state_metrics.resources.requests.cpu }}
+      memory: {{ victoriametrics_vars.kubernetes.kube_state_metrics.resources.requests.memory }}
+prometheus-node-exporter:
+  resources:
+    limits:
+      memory: {{ victoriametrics_vars.kubernetes.prometheus_node_exporter.resources.limits.memory }}
+    requests:
+      cpu: {{ victoriametrics_vars.kubernetes.prometheus_node_exporter.resources.requests.cpu }}
+      memory: {{ victoriametrics_vars.kubernetes.prometheus_node_exporter.resources.requests.memory }}
+victoria-metrics-operator:
+  operator:
+    enable_converter_ownership: true
+  replicaCount: {{ victoriametrics_vars.kubernetes.victoria_metrics_operator.replicas }}
+  resources:
+    limits:
+      memory: {{ victoriametrics_vars.kubernetes.victoria_metrics_operator.resources.limits.memory }}
+    requests:
+      cpu: {{ victoriametrics_vars.kubernetes.victoria_metrics_operator.resources.requests.cpu }}
+      memory: {{ victoriametrics_vars.kubernetes.victoria_metrics_operator.resources.requests.memory }}
+vmagent:
+  spec:
+    replicaCount: {{ victoriametrics_vars.kubernetes.vmagent.replicas }}
+    resources:
+      limits:
+        memory: {{ victoriametrics_vars.kubernetes.vmagent.resources.limits.memory }}
+      requests:
+        cpu: {{ victoriametrics_vars.kubernetes.vmagent.resources.requests.cpu }}
+        memory: {{ victoriametrics_vars.kubernetes.vmagent.resources.requests.memory }}
+    scrapeInterval: 30s
+    scrapeTimeout: 25s
+    storage:
+      emptyDir:
+        sizeLimit: 1Gi
+vmalert:
+  spec:
+    replicaCount: {{ victoriametrics_vars.kubernetes.vmalert.replicas }}
+    resources:
+      limits:
+        memory: {{ victoriametrics_vars.kubernetes.vmalert.resources.limits.memory }}
+      requests:
+        cpu: {{ victoriametrics_vars.kubernetes.vmalert.resources.requests.cpu }}
+        memory: {{ victoriametrics_vars.kubernetes.vmalert.resources.requests.memory }}
+vmsingle:
+  spec:
+    extraArgs:
+      dedup.minScrapeInterval: 30s
+    nodeSelector:
+      {{ victoriametrics_vars.kubernetes.node_selector | to_nice_yaml | indent(6) | trim }}
+    replicaCount: {{ victoriametrics_vars.kubernetes.vmsingle.replicas }}
+    resources:
+      limits:
+        memory: {{ victoriametrics_vars.kubernetes.vmsingle.resources.limits.memory }}
+      requests:
+        cpu: {{ victoriametrics_vars.kubernetes.vmsingle.resources.requests.cpu }}
+        memory: {{ victoriametrics_vars.kubernetes.vmsingle.resources.requests.memory }}
+    retentionPeriod: {{ victoriametrics_vars.kubernetes.vmsingle.retention_period }}
+{% if victoriametrics_vars.kubernetes.vmsingle.storage.enabled is truthy %}
+    storage:
+      accessModes:
+        {{ victoriametrics_vars.kubernetes.vmsingle.storage.access_modes | to_nice_yaml | indent(8) | trim }}
+      resources:
+        requests:
+          storage: {{ victoriametrics_vars.kubernetes.vmsingle.storage.size }}
+      storageClassName: {{ victoriametrics_vars.kubernetes.vmsingle.storage.class }}
+{% endif %}

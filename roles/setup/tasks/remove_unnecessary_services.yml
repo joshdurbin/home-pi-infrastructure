@@ -1,0 +1,17 @@
+---
+
+- name: remove mpris-proxy
+  apt:
+    name: mpris-proxy
+    state: absent
+  tags:
+    - remove_services
+
+- name: disable avahi-daemon
+  systemd:
+    name: avahi-daemon.service
+    state: stopped
+    enabled: no
+  ignore_errors: yes
+  tags:
+    - remove_services

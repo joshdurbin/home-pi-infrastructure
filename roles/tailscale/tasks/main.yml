@@ -1,0 +1,46 @@
+---
+
+- name: create keyring directory
+  file:
+    path: /usr/share/keyrings
+    state: directory
+    mode: '0755'
+  tags:
+    - tailscale
+
+- name: download tailscale gpg key
+  get_url:
+    url: https://pkgs.tailscale.com/stable/raspbian/trixie.noarmor.gpg
+    dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    mode: '0644'
+  tags:
+    - tailscale
+
+- name: add tailscale repository
+  get_url:
+    url: https://pkgs.tailscale.com/stable/raspbian/trixie.tailscale-keyring.list
+    dest: /etc/apt/sources.list.d/tailscale.list
+    mode: '0644'
+  tags:
+    - tailscale
+
+- name: update apt cache
+  apt:
+    update_cache: yes
+  tags:
+    - tailscale
+
+- name: install tailscale
+  apt:
+    name: tailscale
+    state: present
+  tags:
+    - tailscale
+
+- name: enable and start tailscale service
+  systemd:
+    name: tailscaled
+    enabled: yes
+    state: started
+  tags:
+    - tailscale

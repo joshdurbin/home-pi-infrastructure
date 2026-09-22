@@ -1,0 +1,59 @@
+---
+- name: Role Facts
+  ansible.builtin.include_role:
+    name: victoria-logs
+    tasks_from: facts
+
+- name: Role Provisioning
+  when: inventory_hostname in k3s_map.server.hosts
+  block:
+    - name: Add repository
+      kubernetes.core.helm_repository:
+        name: '{{ victorialogs_vars.kubernetes.helm.repository.org }}'
+        repo_url: '{{ victorialogs_map.helm.repository.url }}'
+        force_update: true
+
+    - name: Install chart
+      run_once: true
+      kubernetes.core.helm:
+        chart_ref: '{{ victorialogs_map.helm.chart.reference }}'
+        chart_version: '{{ victorialogs_map.helm.chart.version }}'
+        kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
+        name: '{{ victorialogs_vars.kubernetes.helm.chart.alias }}'
+        namespace: '{{ victorialogs_vars.kubernetes.namespace }}'
+        timeout: '{{ victorialogs_map.helm.timeout }}'
+        values: "{{ lookup('ansible.builtin.template', 'values.j2') | from_yaml }}"
+        create_namespace: true
+        update_repo_cache: true
+        wait: false
+
+    - name: Check for Helm/cluster drift
+      run_once: true
+      ansible.builtin.include_role:
+        name: helm_drift_check
+      vars:
+        helm_drift_check_release: '{{ victorialogs_vars.kubernetes.helm.chart.alias }}'
+        helm_drift_check_namespace: '{{ victorialogs_vars.kubernetes.namespace }}'
+
+    - name: Register VictoriaLogs as a Grafana datasource
+      run_once: true
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: victorialogs-grafana-ds
+            namespace: '{{ victorialogs_vars.kubernetes.namespace }}'
+            labels:
+              grafana_datasource: "1"
+          data:
+            victorialogs-datasource.yaml: |
+              apiVersion: 1
+              datasources:
+                - name: VictoriaLogs
+                  type: victoriametrics-logs-datasource
+                  access: proxy
+                  url: http://{{ victorialogs_vars.kubernetes.helm.chart.alias }}-victoria-logs-single-server:9428
+                  isDefault: false
+        kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
+        wait: true

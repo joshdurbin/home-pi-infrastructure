@@ -1,0 +1,63 @@
+---
+- name: Install Helm from Buildkite repository
+  when: inventory_hostname in groups.get('server', [])
+  block:
+    - name: Install prerequisites
+      ansible.builtin.apt:
+        name:
+          - curl
+          - gpg
+          - apt-transport-https
+        state: present
+        update_cache: true
+
+    - name: Download Helm GPG key
+      ansible.builtin.shell: |
+        curl -fsSL https://packages.buildkite.com/helm-linux/helm-debian/gpgkey > /tmp/helm.gpg
+      changed_when: false
+
+    - name: Verify Helm GPG key fingerprint
+      ansible.builtin.shell: |
+        gpg --show-keys --with-colons /tmp/helm.gpg | awk -F: '$1 == "fpr" {print $10}' | head -n 1
+      register: helm_key_fingerprint
+      changed_when: false
+
+    - name: Verify GPG key matches expected fingerprint
+      ansible.builtin.assert:
+        that:
+          - helm_key_fingerprint.stdout == 'DDF78C3E6EBB2D2CC223C95C62BA89D07698DBC6'
+        fail_msg: "Helm GPG key fingerprint does not match expected value"
+
+    - name: Convert and install Helm GPG key
+      ansible.builtin.shell: |
+        gpg --dearmor < /tmp/helm.gpg | tee /usr/share/keyrings/helm.gpg >/dev/null
+      changed_when: true
+
+    - name: Add Helm repository
+      ansible.builtin.shell: |
+        echo "deb [signed-by=/usr/share/keyrings/helm.gpg] https://packages.buildkite.com/helm-linux/helm-debian/any/ any main" | tee /etc/apt/sources.list.d/helm-stable-debian.list
+      changed_when: true
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+
+    - name: Install Helm
+      ansible.builtin.apt:
+        name: helm
+        state: present
+
+    - name: Verify Helm installation
+      ansible.builtin.command:
+        cmd: helm version --short
+      register: helm_verify
+      changed_when: false
+
+    - name: Display Helm version
+      ansible.builtin.debug:
+        msg: "Helm installed: {{ helm_verify.stdout }}"
+
+    - name: Clean up temporary files
+      ansible.builtin.file:
+        path: /tmp/helm.gpg
+        state: absent

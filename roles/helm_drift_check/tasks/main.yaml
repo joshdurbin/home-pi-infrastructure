@@ -1,0 +1,46 @@
+---
+# Detects a known Helm limitation: `helm upgrade` can report "Upgrade
+# complete" while silently failing to reconcile a resource back into the
+# cluster (e.g. after it was manually deleted, or in some cases where its
+# three-way merge patch computation misses a change). See:
+#   https://github.com/helm/helm/issues/30819
+#   https://github.com/helm/helm/issues/12021
+#
+# This is a read-only verification step: it asks the cluster whether every
+# resource in the release's *current* rendered manifest actually exists live.
+# `kubectl get -f -` does exactly that — for each resource read from stdin it
+# performs a live GET, and exits non-zero if any of them is NotFound.
+#
+# Call with:
+#   vars:
+#     helm_drift_check_release: <helm release name>
+#     helm_drift_check_namespace: <namespace>
+
+- name: 'Verify {{ helm_drift_check_release }} chart resources exist live (drift check)'
+  ansible.builtin.shell: |
+    set -o pipefail
+    helm get manifest {{ helm_drift_check_release }} -n {{ helm_drift_check_namespace }} \
+      --kubeconfig {{ k3s_project.cluster.kubeconfig }} \
+      | kubectl get -f - --kubeconfig {{ k3s_project.cluster.kubeconfig }} -o name
+  args:
+    executable: /bin/bash
+  register: helm_drift_result
+  changed_when: false
+  failed_when: false
+
+- name: 'Fail with recovery instructions if drift detected for {{ helm_drift_check_release }}'
+  ansible.builtin.fail:
+    msg: |
+      Helm reports release '{{ helm_drift_check_release }}' as deployed, but at least
+      one resource in its manifest does not actually exist in the cluster (a known
+      Helm three-way-merge limitation, not an Ansible issue — see
+      https://github.com/helm/helm/issues/30819).
+
+      stderr from the check:
+      {{ helm_drift_result.stderr }}
+
+      To fix, run this manually:
+        export KUBECONFIG={{ k3s_project.cluster.kubeconfig }}
+        helm get values {{ helm_drift_check_release }} -n {{ helm_drift_check_namespace }} -o yaml > /tmp/{{ helm_drift_check_release }}-values.yaml
+        helm upgrade {{ helm_drift_check_release }} <chart-ref> -n {{ helm_drift_check_namespace }} -f /tmp/{{ helm_drift_check_release }}-values.yaml
+  when: helm_drift_result.rc != 0

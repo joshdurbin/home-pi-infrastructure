@@ -1,0 +1,14 @@
+---
+- name: Install Longhorn host dependencies
+  ansible.builtin.apt:
+    name:
+      - open-iscsi
+      - nfs-common
+    state: present
+    update_cache: true
+
+- name: Ensure iscsid service is enabled and running
+  ansible.builtin.systemd:
+    name: iscsid
+    enabled: true
+    state: started

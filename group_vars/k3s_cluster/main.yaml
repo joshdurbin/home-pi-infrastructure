@@ -1,0 +1,19 @@
+---
+# Shared facts about the k3s installation, consumed by roles that talk to the
+# cluster API (helm, longhorn, and any future chart-based role). Values match
+# k3s-ansible's on-node layout (k3s-ansible/roles/k3s_server/tasks/main.yml).
+k3s_map:
+  server:
+    hosts: "{{ groups['server'] }}"
+  node:
+    directory:
+      bin: /usr/local/bin
+
+k3s_vars:
+  server:
+    api:
+      port: 6443
+
+k3s_project:
+  cluster:
+    kubeconfig: /etc/rancher/k3s/k3s.yaml

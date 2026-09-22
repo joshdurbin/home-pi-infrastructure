@@ -1,0 +1,26 @@
+defaultSettings:
+  allowCollectingLonghornUsageMetrics: {{ longhorn_vars.kubernetes.default_settings.collect_usage_metrics | lower }}
+  autoCleanupRecurringJobBackupSnapshot: false
+  autoCleanupSnapshotWhenDeleteBackup: false
+  autoCleanupSystemGeneratedSnapshot: false
+  concurrentAutomaticEngineUpgradePerNodeLimit: '{{ longhorn_vars.kubernetes.default_settings.concurrent_automatic_engine_upgrade_limit }}'
+  createDefaultDiskLabeledNodes: true
+  defaultDataLocality: {{ longhorn_vars.kubernetes.default_settings.data_locality }}
+  defaultDataPath: {{ longhorn_map.directory.data }}
+  defaultReplicaCount: '{"v1":"{{ longhorn_vars.kubernetes.default_settings.volume.replicas }}","v2":"{{ longhorn_vars.kubernetes.default_settings.volume.replicas }}"}'
+  disableSchedulingOnCordonedNode: true
+  logLevel: {{ longhorn_vars.kubernetes.default_settings.log_level }}
+  nodeDownPodDeletionPolicy: {{ longhorn_vars.kubernetes.default_settings.pod_deletion_policy }}
+  nodeDrainPolicy: {{ longhorn_vars.kubernetes.default_settings.node_drain_policy }}
+  removeSnapshotsDuringFilesystemTrim: false
+  replicaAutoBalance: {{ longhorn_vars.kubernetes.default_settings.volume.replica_auto_balance }}
+defaultClass: longhorn
+csi:
+  attacherReplicaCount: 2
+  provisionerReplicaCount: 2
+  resizerReplicaCount: 2
+  snapshotterReplicaCount: 2
+persistence:
+  defaultClassReplicaCount: {{ longhorn_vars.kubernetes.default_settings.volume.replicas }}
+  defaultDataLocality: {{ longhorn_vars.kubernetes.default_settings.data_locality }}
+  migratable: true

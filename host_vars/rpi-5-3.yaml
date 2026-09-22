@@ -1,0 +1,4 @@
+---
+k8s_labels:
+  storage: "true"
+  "node.longhorn.io/create-default-disk": "true"

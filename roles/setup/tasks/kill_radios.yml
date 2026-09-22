@@ -1,18 +1,20 @@
 ---
 
-- name: disable on-board wifi
+- name: disable on-board bluetooth
   lineinfile:
-    path: /boot/config.txt
-    insertafter: EOF
+    path: /boot/firmware/config.txt
+    regexp: '^dtoverlay=disable-bt'
     line: "dtoverlay=disable-bt"
+    insertafter: EOF
   tags:
     - kill_radios
 
-- name: disable on-board bluetooth
+- name: disable on-board wifi
   lineinfile:
-    path: /boot/config.txt
-    insertafter: EOF
+    path: /boot/firmware/config.txt
+    regexp: '^dtoverlay=disable-wifi'
     line: "dtoverlay=disable-wifi"
+    insertafter: EOF
   tags:
     - kill_radios
 
@@ -37,6 +39,7 @@
     name: hciuart
     state: stopped
     enabled: no
+  ignore_errors: yes
   tags:
     - kill_radios
 

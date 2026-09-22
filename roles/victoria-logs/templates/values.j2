@@ -1,0 +1,27 @@
+server:
+{% if victorialogs_vars.kubernetes.server.storage.enabled is truthy %}
+  persistentVolume:
+    accessModes:
+      {{ victorialogs_vars.kubernetes.server.storage.access_modes | to_nice_yaml | indent(6) | trim }}
+    enabled: true
+    size: {{ victorialogs_vars.kubernetes.server.storage.size }}
+    storageClassName: {{ victorialogs_vars.kubernetes.server.storage.class }}
+{% endif %}
+  nodeSelector:
+    {{ victorialogs_vars.kubernetes.node_selector | to_nice_yaml | indent(4) | trim }}
+  replicaCount: {{ victorialogs_vars.kubernetes.server.replicas }}
+  resources:
+    limits:
+      memory: {{ victorialogs_vars.kubernetes.server.resources.limits.memory }}
+    requests:
+      cpu: {{ victorialogs_vars.kubernetes.server.resources.requests.cpu }}
+      memory: {{ victorialogs_vars.kubernetes.server.resources.requests.memory }}
+  retentionPeriod: {{ victorialogs_vars.kubernetes.server.retention_period }}
+vector:
+  enabled: true
+  resources:
+    limits:
+      memory: {{ victorialogs_vars.kubernetes.vector.resources.limits.memory }}
+    requests:
+      cpu: {{ victorialogs_vars.kubernetes.vector.resources.requests.cpu }}
+      memory: {{ victorialogs_vars.kubernetes.vector.resources.requests.memory }}

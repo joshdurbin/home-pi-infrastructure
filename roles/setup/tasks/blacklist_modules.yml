@@ -1,0 +1,39 @@
+---
+
+- name: create modprobe blacklist file for k3s
+  file:
+    path: /etc/modprobe.d
+    state: directory
+    mode: '0755'
+  tags:
+    - blacklist_modules
+
+- name: blacklist unused camera kernel modules
+  lineinfile:
+    path: /etc/modprobe.d/blacklist-k3s.conf
+    line: '{{ item }}'
+    create: yes
+    mode: '0644'
+  loop:
+    - 'blacklist bcm2835_camera'
+    - 'blacklist bcm2835_isp'
+    - 'blacklist vc4'
+  tags:
+    - blacklist_modules
+
+- name: blacklist unused bluetooth modules
+  lineinfile:
+    path: /etc/modprobe.d/blacklist-k3s.conf
+    line: '{{ item }}'
+  loop:
+    - 'blacklist btbcm'
+    - 'blacklist bluetooth'
+  tags:
+    - blacklist_modules
+
+- name: blacklist snd-bcm2835 audio module
+  lineinfile:
+    path: /etc/modprobe.d/blacklist-k3s.conf
+    line: 'blacklist snd_bcm2835'
+  tags:
+    - blacklist_modules

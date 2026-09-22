@@ -1,0 +1,111 @@
+---
+victoriametrics_vars:
+  kubernetes:
+    namespace: monitoring
+    node_selector:
+      telemetry: "true"
+    alertmanager:
+      replicas: 1
+      resources:
+        limits:
+          memory: 128Mi
+        requests:
+          cpu: 10m
+          memory: 128Mi
+    grafana:
+      admin:
+        user: admin
+        password: changeme
+      anonymous:
+        # -- Skips the login prompt entirely; anonymous visitors get this org role.
+        # -- Reasonable for a single-user homelab since access is already gated by
+        # -- needing a valid kubeconfig to reach the service (port-forward).
+        enabled: true
+        org_role: Admin
+      replicas: 1
+      resources:
+        limits:
+          memory: 256Mi
+        requests:
+          cpu: 10m
+          memory: 256Mi
+      storage:
+        enabled: true
+        access_modes:
+          - ReadWriteOnce
+        class: longhorn
+        size: 2Gi
+      plugins:
+        - victoriametrics-logs-datasource
+    helm:
+      chart:
+        prometheus:
+          name: prometheus-operator-crds
+          version: v28.0.1
+        victoriametrics:
+          alias: vmks
+          name: victoria-metrics-k8s-stack
+          version: v0.74.1
+      repository:
+        prometheus:
+          name: helm-charts
+          org: prometheus-community
+          url: https://prometheus-community.github.io
+        victoriametrics:
+          name: helm-charts
+          org: VictoriaMetrics
+          url: https://victoriametrics.github.io
+    kube_state_metrics:
+      replicas: 1
+      resources:
+        limits:
+          memory: 128Mi
+        requests:
+          cpu: 10m
+          memory: 128Mi
+    prometheus_node_exporter:
+      resources:
+        limits:
+          memory: 128Mi
+        requests:
+          cpu: 10m
+          memory: 128Mi
+    victoria_metrics_operator:
+      replicas: 1
+      resources:
+        limits:
+          memory: 128Mi
+        requests:
+          cpu: 10m
+          memory: 128Mi
+    vmagent:
+      replicas: 1
+      resources:
+        limits:
+          memory: 512Mi
+        requests:
+          cpu: 10m
+          memory: 512Mi
+    vmalert:
+      replicas: 1
+      resources:
+        limits:
+          memory: 128Mi
+        requests:
+          cpu: 10m
+          memory: 128Mi
+    vmsingle:
+      replicas: 1
+      retention_period: 48h
+      resources:
+        limits:
+          memory: 1024Mi
+        requests:
+          cpu: 10m
+          memory: 1024Mi
+      storage:
+        enabled: true
+        access_modes:
+          - ReadWriteOnce
+        class: longhorn
+        size: 10Gi

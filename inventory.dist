@@ -1,17 +1,37 @@
-rpi-4b-1 ansible_host=192.168.1.13 ansible_user=jdurbin ansible_python_interpreter=/usr/bin/python3
-rpi-4b-2 ansible_host=192.168.1.14 ansible_user=jdurbin ansible_python_interpreter=/usr/bin/python3
-rpi-4b-3 ansible_host=192.168.1.18 ansible_user=jdurbin ansible_python_interpreter=/usr/bin/python3
-rpi-3bplus-1 ansible_host=192.168.1.15 ansible_user=jdurbin ansible_python_interpreter=/usr/bin/python3
+[all]
+rpi-4b-1 ansible_host=192.168.1.13
+rpi-4b-2 ansible_host=192.168.1.14
+rpi-4b-3 ansible_host=192.168.1.18
+rpi-5-1  ansible_host=192.168.1.30
+rpi-5-2  ansible_host=192.168.1.41
+rpi-5-3  ansible_host=192.168.1.28
 
-[hashiservers]
-rpi-4b-1
-rpi-4b-2
-rpi-4b-3
+[all:vars]
+ansible_user=ansible
+ansible_python_interpreter=/usr/bin/python3
+ansible_password=ansible
+ansible_become_password=ansible
 
 [pi4]
 rpi-4b-1
 rpi-4b-2
 rpi-4b-3
 
-[audio_sharing]
-rpi-3bplus-1
+[pi5]
+rpi-5-1
+rpi-5-2
+rpi-5-3
+
+[server]
+rpi-4b-1
+rpi-4b-2
+rpi-4b-3
+
+[agent]
+rpi-5-1
+rpi-5-2
+rpi-5-3
+
+[k3s_cluster:children]
+server
+agent

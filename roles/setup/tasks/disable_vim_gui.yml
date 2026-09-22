@@ -1,0 +1,23 @@
+---
+
+- name: ensure gvim is not installed
+  apt:
+    name: gvim
+    state: absent
+  tags:
+    - disable_vim_gui
+
+- name: create system-wide vimrc to disable GUI
+  copy:
+    dest: /etc/vim/vimrc.local
+    content: |
+      " Disable GUI elements for all users
+      set guioptions-=m  " Remove menu bar
+      set guioptions-=T  " Remove toolbar
+      set guioptions-=r  " Remove right scrollbar
+      set guioptions-=L  " Remove left scrollbar
+    owner: root
+    group: root
+    mode: '0644'
+  tags:
+    - disable_vim_gui

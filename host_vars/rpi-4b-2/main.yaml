@@ -1,3 +1,0 @@
-redis_server: true
-redis_sentinel_server: true
-loki_server: true

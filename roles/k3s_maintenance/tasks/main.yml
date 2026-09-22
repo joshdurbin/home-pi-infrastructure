@@ -1,0 +1,19 @@
+---
+
+- name: deploy k3s-maintenance script
+  copy:
+    src: k3s-maintenance
+    dest: /usr/local/bin/k3s-maintenance
+    mode: '0755'
+    owner: root
+    group: root
+  tags:
+    - k3s_maintenance
+
+- name: create k3s-maintenance state directory
+  file:
+    path: /var/lib
+    state: directory
+    mode: '0755'
+  tags:
+    - k3s_maintenance

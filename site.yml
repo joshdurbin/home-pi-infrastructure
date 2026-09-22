@@ -1,0 +1,105 @@
+---
+# Unified infrastructure configuration playbook
+# Run this to ensure all nodes are configured correctly
+# Safe to run repeatedly (idempotent)
+
+# - name: Refresh sudo credentials
+#   hosts: all
+#   gather_facts: no
+#   tasks:
+#     - name: refresh sudo credentials
+#       command: sudo -v
+#       changed_when: false
+#       no_log: true
+
+- name: System preparation and user management
+  hosts: all
+  roles:
+    - user_management
+    - setup
+  become: yes
+
+- name: K3S cluster deployment
+  hosts: k3s_cluster
+  roles:
+    - role: prereq
+      tags: [k3s]
+    - role: airgap
+      tags: [k3s]
+    - role: raspberrypi
+      tags: [k3s]
+  become: yes
+
+- name: K3S server setup
+  hosts: server
+  roles:
+    - role: k3s_server
+      tags: [k3s]
+  become: yes
+
+- name: K3S agent setup
+  hosts: agent
+  roles:
+    - role: k3s_agent
+      tags: [k3s]
+  become: yes
+
+- name: K3S maintenance tools
+  hosts: k3s_cluster
+  gather_facts: false
+  roles:
+    - k3s_maintenance
+  become: yes
+  tags: [k3s, maintenance]
+
+- name: Helm deployment
+  hosts: server
+  gather_facts: false
+  roles:
+    - helm
+  become: yes
+  tags: [helm, charts]
+
+- name: Apply Kubernetes node labels
+  hosts: server
+  gather_facts: false
+  roles:
+    - k8s_labels
+  become: yes
+  tags: [labels, storage, longhorn, telemetry, charts]
+
+- name: Longhorn host prerequisites
+  hosts: k3s_cluster
+  gather_facts: false
+  become: yes
+  tags: [storage, longhorn]
+  tasks:
+    - name: Install Longhorn host dependencies
+      ansible.builtin.import_role:
+        name: longhorn
+        tasks_from: prereq
+
+- name: Longhorn storage deployment
+  hosts: server
+  gather_facts: false
+  roles:
+    - longhorn
+  become: yes
+  tags: [storage, longhorn]
+
+- name: Telemetry storage deployment
+  hosts: server
+  gather_facts: false
+  roles:
+    - victoria-metrics
+    - victoria-logs
+  become: yes
+  tags: [telemetry, charts]
+
+# Uncomment below to deploy Tailscale
+# - name: Deploy Tailscale
+#   hosts: pi4,pi5
+#   roles:
+#     - tailscale
+#   become: yes
+#   tags: [tailscale]
