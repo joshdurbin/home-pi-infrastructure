@@ -19,6 +19,71 @@
     - setup
   become: yes
 
+# Handles any /boot/firmware/config.txt change from the play above (the
+# "restart pi after config change" handler just sets pi_config_reboot_required
+# on affected hosts; it doesn't reboot). `serial: 1` forces one host all the
+# way through drain -> reboot -> wait-for-ready -> uncordon before the next
+# host starts anything. This must NOT run at the play's normal parallelism:
+# more than one control-plane node rebooting at once would take down etcd
+# quorum and the whole cluster, and even for agents, draining every node
+# simultaneously before any of them reboots would leave nothing schedulable
+# for evicted pods to land on in the meantime.
+- name: Reboot nodes with pending config.txt changes (one at a time)
+  hosts: all
+  serial: 1
+  gather_facts: false
+  become: yes
+  vars:
+    pi_reboot_delegate: "{{ (groups['server'] | difference([inventory_hostname]))[0] }}"
+  tasks:
+    - name: Drain, reboot, and uncordon this node
+      when: pi_config_reboot_required | default(false)
+      block:
+        # Longhorn's instance-manager pods each have their own PDB with
+        # minAvailable=1 on a 1-pod selector - by Longhorn's own design, this
+        # unconditionally blocks any k8s-level eviction of that pod,
+        # regardless of node count or replica count. That's fine: these pods
+        # are pinned to this node's local disk and can't be rescheduled
+        # elsewhere anyway, so evicting them first buys nothing - the reboot
+        # kills them a moment later either way, and Longhorn's own controller
+        # respawns a fresh one once this node is back and uncordoned.
+        # Excluding them from eviction (not --force, which would bypass every
+        # PDB on the node) lets the drain succeed for everything that
+        # actually benefits from eviction, while leaving Longhorn's own
+        # protection intact for any pod that isn't in that specific situation.
+        - name: Drain node before reboot (no-op if node isn't in the cluster yet)
+          ansible.builtin.command: >
+            kubectl drain {{ inventory_hostname }}
+            --ignore-daemonsets --delete-emptydir-data --timeout=300s
+            --pod-selector 'longhorn.io/component!=instance-manager'
+          delegate_to: "{{ pi_reboot_delegate }}"
+          register: pi_reboot_drain
+          failed_when:
+            - pi_reboot_drain.rc != 0
+            - "'NotFound' not in pi_reboot_drain.stderr"
+          changed_when: pi_reboot_drain.rc == 0
+
+        - name: Reboot the node to apply config.txt changes
+          ansible.builtin.reboot:
+            reboot_timeout: 300
+            msg: 'Rebooting via Ansible to apply /boot/firmware/config.txt changes'
+
+        - name: Wait for node to report Ready before uncordoning
+          ansible.builtin.command: >
+            kubectl wait --for=condition=Ready node/{{ inventory_hostname }} --timeout=180s
+          delegate_to: "{{ pi_reboot_delegate }}"
+          register: pi_reboot_wait
+          failed_when: false
+          changed_when: false
+
+        - name: Uncordon node after reboot
+          ansible.builtin.command: kubectl uncordon {{ inventory_hostname }}
+          delegate_to: "{{ pi_reboot_delegate }}"
+          when: pi_reboot_drain.rc == 0
+          changed_when: true
+  tags:
+    - k3s_optimization
+
 - name: K3S cluster deployment
   hosts: k3s_cluster
   roles:

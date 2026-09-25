@@ -1,0 +1,17 @@
+---
+# Fires once per host (standard Ansible handler dedup - multiple tasks
+# notifying the same handler name still only run it once, after all tasks in
+# this play complete) when any /boot/firmware/config.txt task actually
+# changed something.
+#
+# This only flags the host as needing a reboot; it does not reboot here.
+# The actual drain/reboot/uncordon sequence runs in a separate, dedicated
+# play in site.yml with `serial: 1`, which forces true one-host-at-a-time
+# execution end-to-end. Doing it here instead (in this parallel play) would
+# only guarantee no two REBOOTS overlap, not that hosts avoid being drained
+# simultaneously - the linear strategy runs each task across every host
+# before moving to the next task, so a throttled reboot task would still be
+# preceded by every host getting drained/cordoned first, all at once.
+- name: restart pi after config change
+  ansible.builtin.set_fact:
+    pi_config_reboot_required: true
