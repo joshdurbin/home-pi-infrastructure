@@ -1,0 +1,52 @@
+---
+adguardhome_vars:
+  kubernetes:
+    namespace: adguard
+    helm:
+      chart:
+        name: app-template
+        version: 5.2.1
+      repository:
+        name: bjw-s
+        url: https://bjw-s-labs.github.io/helm-charts
+    image:
+      repository: adguard/adguardhome
+      tag: v0.107.79
+    exporter:
+      # Runs as a sidecar in the SAME pod as AdGuard Home, not a separate
+      # deployment. It talks to AGH over localhost, which is never subject to
+      # NetworkPolicy (that only governs traffic between pods/external
+      # destinations) - so no egress rule is needed to let it reach AGH.
+      image:
+        repository: ghcr.io/henrywhitaker3/adguard-exporter
+        tag: v1.2.1
+      metrics_port: 9618
+    storage:
+      class: longhorn
+      conf_size: 1Gi
+      work_size: 2Gi
+    service:
+      # k3s's built-in ServiceLB (same mechanism already used by Traefik in
+      # this cluster) gives a LoadBalancer Service every node's own IP as its
+      # external address - no MetalLB needed.
+      web_port: 3000
+    dns:
+      # DNS-over-TLS to Cloudflare. Using the IPs directly (not the
+      # one.one.one.one hostname) as bootstrap_dns means resolving the
+      # upstream itself never needs a separate DNS lookup - it's already an IP.
+      upstream: tls://one.one.one.one
+      bootstrap:
+        - 1.1.1.1
+        - 1.0.0.1
+      upstream_ips:
+        - 1.1.1.1
+        - 1.0.0.1
+    filters:
+      # AdGuard's own default filter (id 1) ships enabled already; this adds
+      # one more on top for a "medium" level of blocking without the higher
+      # false-positive rate of more aggressive lists.
+      - enabled: true
+        url: https://small.oisd.nl
+        name: OISD (small)
+        id: 1000001
+    schema_version: 34

@@ -1,0 +1,123 @@
+---
+# Deploys AdGuard Home as the LAN's DNS resolver + ad/tracker blocker, with a
+# metrics sidecar for VictoriaMetrics. Requires adguard_home_admin_username
+# and adguard_home_admin_password in the vault-encrypted
+# group_vars/all/main.yaml - see README.md.
+- name: Role Facts
+  ansible.builtin.include_role:
+    name: adguard_home
+    tasks_from: facts
+
+- name: Role Provisioning
+  when: inventory_hostname in k3s_map.server.hosts
+  block:
+    - name: Add repository
+      kubernetes.core.helm_repository:
+        name: '{{ adguardhome_vars.kubernetes.helm.repository.name }}'
+        repo_url: '{{ adguardhome_vars.kubernetes.helm.repository.url }}'
+        force_update: true
+
+    - name: Chart Setup
+      run_once: true
+      block:
+        - name: Create namespace
+          kubernetes.core.k8s:
+            definition:
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: '{{ adguardhome_vars.kubernetes.namespace }}'
+            kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
+            wait: true
+
+        - name: Create exporter credentials secret
+          kubernetes.core.k8s:
+            definition: "{{ lookup('ansible.builtin.template', 'credentials.j2') | from_yaml }}"
+            kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
+            wait: true
+          no_log: true
+
+        - name: Create seeded AdGuardHome.yaml ConfigMap
+          kubernetes.core.k8s:
+            definition:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: '{{ adguardhome_map.configmap.name }}'
+                namespace: '{{ adguardhome_vars.kubernetes.namespace }}'
+              data:
+                AdGuardHome.yaml: "{{ lookup('ansible.builtin.template', 'AdGuardHome.yaml.j2') }}"
+            kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
+            wait: true
+          no_log: true
+
+        - name: Install chart
+          kubernetes.core.helm:
+            chart_ref: '{{ adguardhome_map.helm.chart.reference }}'
+            chart_version: '{{ adguardhome_vars.kubernetes.helm.chart.version }}'
+            kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
+            name: '{{ adguardhome_map.helm.release.name }}'
+            namespace: '{{ adguardhome_vars.kubernetes.namespace }}'
+            timeout: '{{ adguardhome_map.helm.timeout }}'
+            values: "{{ lookup('ansible.builtin.template', 'values.j2') | from_yaml }}"
+            create_namespace: true
+            update_repo_cache: true
+            wait: false
+
+        - name: Check for Helm/cluster drift
+          ansible.builtin.include_role:
+            name: helm_drift_check
+          vars:
+            helm_drift_check_release: '{{ adguardhome_map.helm.release.name }}'
+            helm_drift_check_namespace: '{{ adguardhome_vars.kubernetes.namespace }}'
+
+        - name: Build DoT upstream ipBlock list for egress NetworkPolicy
+          ansible.builtin.set_fact:
+            adguardhome_upstream_ip_blocks: "{{ (adguardhome_upstream_ip_blocks | default([])) + [{'ipBlock': {'cidr': item ~ '/32'}}] }}"
+          loop: '{{ adguardhome_vars.kubernetes.dns.upstream_ips }}'
+
+        # Egress-only restriction (LAN clients reaching AdGuard's DNS/web
+        # ports is unaffected - that's ingress, a separate concern).
+        # - DNS (853/tcp, DoT) is locked to the exact upstream IPs; nothing
+        #   else legitimately needs it.
+        # - 53/udp+tcp to CoreDNS lets the pod resolve blocklist hostnames
+        #   (e.g. small.oisd.nl) - this is the pod's own outbound HTTP client
+        #   doing hostname lookups, unrelated to AdGuard's own upstream_dns
+        #   config (which only serves queries AGH receives as a DNS server).
+        # - 443/tcp is broad (blocklist downloads come from many/rotating
+        #   CDN IPs that aren't practical to allowlist without a FQDN-aware
+        #   CNI like Cilium, which this cluster doesn't run).
+        # - Auto-update-check is disabled via --no-check-update in values.j2,
+        #   removing that egress target rather than allowlisting it.
+        - name: Create egress NetworkPolicy
+          kubernetes.core.k8s:
+            definition:
+              apiVersion: networking.k8s.io/v1
+              kind: NetworkPolicy
+              metadata:
+                name: adguard-home-egress
+                namespace: '{{ adguardhome_vars.kubernetes.namespace }}'
+              spec:
+                podSelector: {}
+                policyTypes:
+                  - Egress
+                egress:
+                  - to:
+                      - namespaceSelector: {}
+                        podSelector:
+                          matchLabels:
+                            k8s-app: kube-dns
+                    ports:
+                      - protocol: UDP
+                        port: 53
+                      - protocol: TCP
+                        port: 53
+                  - to: '{{ adguardhome_upstream_ip_blocks }}'
+                    ports:
+                      - protocol: TCP
+                        port: 853
+                  - ports:
+                      - protocol: TCP
+                        port: 443
+            kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
+            wait: true

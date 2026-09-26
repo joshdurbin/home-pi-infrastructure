@@ -585,6 +585,57 @@ Labels are declared per-host in `host_vars/rpi-5-*.yaml` under the `k8s_labels` 
 cluster by the `k8s_labels` role (which reads every host's `k8s_labels` var and patches the matching
 Kubernetes Node object — not tied to any single chart-deploying role).
 
+## DNS (AdGuard Home)
+
+A single AdGuard Home instance for the whole LAN — resolves DNS for any client pointed at it, blocking
+ads/trackers and forwarding everything else upstream over **DNS-over-TLS to Cloudflare**
+(`tls://one.one.one.one`). Namespace: `adguard`. DHCP is out of scope — point clients at it manually or
+via your router's DNS setting.
+
+- **Chart**: `bjw-s-labs/app-template` (the generic "common" chart) running the `adguard/adguardhome`
+  image, plus a `henrywhitaker3/adguard-exporter` sidecar for Prometheus-format metrics (AdGuard Home has
+  no native metrics endpoint) — scraped automatically by `vmagent` like everything else in the cluster.
+- **Config seeding**: AdGuard normally requires its first-run setup wizard to be completed via the UI
+  before any config file exists. This role skips that entirely by generating a complete
+  `AdGuardHome.yaml` from a template (admin credentials bcrypt-hashed, upstream/bootstrap DNS, blocklists)
+  and mounting it read-write via a ConfigMap — the container boots already configured.
+- **Blocklist**: OISD (small) — a low-false-positive list, on top of AdGuard's own default filter.
+- **Storage**: two Longhorn-backed PVCs (`/opt/adguardhome/conf` for the mutable runtime config,
+  `/opt/adguardhome/work` for query log/stats/cache) — both replicated per the [Storage](#storage-longhorn)
+  settings above.
+- **Services**: two dedicated `LoadBalancer` Services (via k3s's built-in ServiceLB, same mechanism as
+  Traefik) — `adguard-home-dns` (53/tcp+udp, for LAN clients) and `adguard-home-web` (3000/tcp, the admin
+  UI — also reachable via the Tailscale Operator, see below).
+- **Egress NetworkPolicy**: locks down where the pod can reach *outbound* (LAN clients querying it is
+  ingress, unaffected). Port 853 (DoT) is restricted to the exact Cloudflare IPs in
+  `adguardhome_vars.kubernetes.dns.upstream_ips`; port 53 to CoreDNS only (needed for the pod's own
+  hostname lookups when fetching blocklists); port 443 is left broad since blocklist CDNs rotate IPs.
+  Auto-update-checking is disabled outright (`--no-check-update`) rather than allowlisted.
+
+**One-time**: create the admin credentials in Vault before first deploy:
+```bash
+ansible-vault edit group_vars/all/main.yaml
+```
+Add:
+```yaml
+adguard_home_admin_username: "<your choice>"
+adguard_home_admin_password: "<your choice>"
+```
+
+**Deploy/update just this:**
+```bash
+ansible-playbook site.yml -i inventory.dist -t helm,storage,longhorn,dns --ask-vault-pass
+```
+
+**Point a client at it**: use either node's IP (ServiceLB exposes every node's own IP) or, once the
+Tailscale Operator step below is done, `https://adguard.<tailnet>.ts.net` for the admin UI — the DNS
+service itself is only reachable via plain LAN IP:53, not through Tailscale.
+
+To change the blocklist or add more, edit `adguardhome_vars.kubernetes.filters` in
+`roles/adguard_home/defaults/main.yaml` and re-run the deploy command above — the seeded ConfigMap only
+takes effect on a first-run install; changes after that are best made live in the AdGuard UI, since the
+ConfigMap is just the *initial* seed, not an ongoing source of truth.
+
 ## Exposing UIs via Tailscale Operator
 
 Reaches Grafana, Alertmanager, the VictoriaMetrics UI, and the Longhorn UI privately from any device
@@ -848,7 +899,8 @@ Update `inventory.dist` if your network differs.
 
 ### Secrets & Variables
 
-- **Encrypted with Vault**: `group_vars/all/main.yaml` (k3s_join_token)
+- **Encrypted with Vault**: `group_vars/all/main.yaml` — `k3s_join_token`, `tailscale_oauth_client_id`,
+  `tailscale_oauth_client_secret`, `adguard_home_admin_username`, `adguard_home_admin_password`.
 - **Unencrypted**: All other group_vars and host_vars
 
 To rotate secrets:

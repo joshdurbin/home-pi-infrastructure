@@ -1,0 +1,103 @@
+controllers:
+  main:
+    initContainers:
+      # ConfigMap-backed volumes are always read-only (no readOnly toggle
+      # exists on that volume source at all - unlike a PVC), but AdGuard
+      # rewrites AdGuardHome.yaml on every settings change and on schema
+      # upgrades. So the seed only ever gets copied onto the writable conf
+      # PVC once, on first boot; every boot after that, AdGuard's own
+      # previously-saved state (already sitting on that PVC) wins untouched.
+      seed-config:
+        image:
+          repository: {{ adguardhome_vars.kubernetes.image.repository }}
+          tag: {{ adguardhome_vars.kubernetes.image.tag }}
+        command:
+          - /bin/sh
+          - -c
+          - |
+            if [ ! -f /opt/adguardhome/conf/AdGuardHome.yaml ]; then
+              cp /seed/AdGuardHome.yaml /opt/adguardhome/conf/AdGuardHome.yaml
+            fi
+    containers:
+      main:
+        image:
+          repository: {{ adguardhome_vars.kubernetes.image.repository }}
+          tag: {{ adguardhome_vars.kubernetes.image.tag }}
+        args:
+          - --no-check-update
+        env:
+          TZ: {{ timezone }}
+        probes:
+          liveness:
+            enabled: false
+          readiness:
+            enabled: false
+          startup:
+            enabled: false
+      exporter:
+        image:
+          repository: {{ adguardhome_vars.kubernetes.exporter.image.repository }}
+          tag: {{ adguardhome_vars.kubernetes.exporter.image.tag }}
+        env:
+          ADGUARD_SERVERS: http://localhost:{{ adguardhome_vars.kubernetes.service.web_port }}
+          ADGUARD_USERNAMES: {{ adguard_home_admin_username | default('admin') }}
+        envFrom:
+          - secretRef:
+              name: {{ adguardhome_map.secret.exporter_creds }}
+        ports:
+          - name: metrics
+            containerPort: {{ adguardhome_vars.kubernetes.exporter.metrics_port }}
+            protocol: TCP
+        probes:
+          liveness:
+            enabled: false
+          readiness:
+            enabled: false
+          startup:
+            enabled: false
+
+service:
+  dns:
+    controller: main
+    type: LoadBalancer
+    ports:
+      dns-tcp:
+        port: 53
+        protocol: TCP
+      dns-udp:
+        port: 53
+        protocol: UDP
+  web:
+    controller: main
+    type: LoadBalancer
+    ports:
+      http:
+        port: {{ adguardhome_vars.kubernetes.service.web_port }}
+
+persistence:
+  conf:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: {{ adguardhome_vars.kubernetes.storage.conf_size }}
+    storageClass: {{ adguardhome_vars.kubernetes.storage.class }}
+    globalMounts:
+      - path: /opt/adguardhome/conf
+  work:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: {{ adguardhome_vars.kubernetes.storage.work_size }}
+    storageClass: {{ adguardhome_vars.kubernetes.storage.class }}
+    globalMounts:
+      - path: /opt/adguardhome/work
+  config-seed:
+    enabled: true
+    type: configMap
+    name: {{ adguardhome_map.configmap.name }}
+    advancedMounts:
+      main:
+        seed-config:
+          - path: /seed/AdGuardHome.yaml
+            subPath: AdGuardHome.yaml
+            readOnly: true

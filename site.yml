@@ -161,6 +161,14 @@
   become: yes
   tags: [telemetry, charts]
 
+- name: AdGuard Home DNS deployment
+  hosts: server
+  gather_facts: false
+  roles:
+    - adguard_home
+  become: yes
+  tags: [dns, adguard, charts]
+
 - name: Expose cluster UIs via Tailscale
   hosts: server
   gather_facts: false

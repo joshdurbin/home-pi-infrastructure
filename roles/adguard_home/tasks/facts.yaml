@@ -1,0 +1,15 @@
+---
+- name: Set map fact
+  ansible.builtin.set_fact:
+    adguardhome_map:
+      helm:
+        chart:
+          reference: '{{ adguardhome_vars.kubernetes.helm.repository.name }}/{{ adguardhome_vars.kubernetes.helm.chart.name }}'
+        timeout: 5m0s
+      configmap:
+        name: adguard-home-seed-config
+      secret:
+        exporter_creds: adguard-exporter-creds
+      release:
+        name: adguard-home
+  run_once: true

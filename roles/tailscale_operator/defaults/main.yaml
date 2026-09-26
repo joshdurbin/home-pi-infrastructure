@@ -30,3 +30,7 @@ tailscaleoperator_vars:
         namespace: longhorn
         service: longhorn-frontend
         port: 80
+      - hostname: adguard
+        namespace: adguard
+        service: adguard-home-web
+        port: 3000
