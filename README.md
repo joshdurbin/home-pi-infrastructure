@@ -13,6 +13,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [kubectl Access From Your Machine](#kubectl-access-from-your-machine)
 - [Storage (Longhorn)](#storage-longhorn)
 - [Monitoring & Logging (VictoriaMetrics, VictoriaLogs, Grafana)](#monitoring--logging-victoriametrics-victorialogs-grafana)
+- [Exposing UIs via Tailscale Operator](#exposing-uis-via-tailscale-operator)
 - [Tailscale Integration (Optional)](#tailscale-integration-optional)
 - [Cluster Configuration](#cluster-configuration)
 - [Troubleshooting](#troubleshooting)
@@ -583,6 +584,130 @@ VictoriaMetrics' own UI is at `http://localhost:8428/vmui/`; the raw PromQL-comp
 Labels are declared per-host in `host_vars/rpi-5-*.yaml` under the `k8s_labels` key, and applied to the live
 cluster by the `k8s_labels` role (which reads every host's `k8s_labels` var and patches the matching
 Kubernetes Node object — not tied to any single chart-deploying role).
+
+## Exposing UIs via Tailscale Operator
+
+Reaches Grafana, Alertmanager, the VictoriaMetrics UI, and the Longhorn UI privately from any device
+signed into your tailnet (e.g. the Tailscale app on your phone) — no VPN config, no port-forwarding,
+valid HTTPS. This is **not** Funnel — nothing here is reachable from the public internet, only from
+devices in your own tailnet.
+
+This is a different thing from the [Tailscale Integration](#tailscale-integration-optional) section
+below: that one installs the Tailscale *client* on each Pi node itself (node-level VPN/SSH access).
+This one runs the Tailscale *Kubernetes Operator* as an in-cluster pod, which creates tailnet-only
+HTTPS ingress for specific services — `roles/tailscale_operator`, distinct from `roles/tailscale`.
+
+### One-time tailnet setup (do this before deploying)
+
+1. **Create an OAuth client** — Tailscale admin console → Settings → OAuth clients → Generate. Grant
+   `write` scope for **Services**, **Devices Core**, and **Keys / Auth Keys**, tagged `tag:k8s-operator`.
+
+2. **Add ACL tags** — Settings → Access Controls, merge this into your policy:
+   ```json
+   "tagOwners": {
+     "tag:k8s-operator": [],
+     "tag:k8s": ["tag:k8s-operator"]
+   }
+   ```
+
+3. **Add ACL auto-approvers for Services** — merge this too, into the same policy file. This is a
+   **separate block from `tagOwners` above and easy to miss** — without it, the operator successfully
+   registers each UI as a [Tailscale Service](https://tailscale.com/kb/1483/services) (it'll show up in
+   `tailscale service list`), but the service is never actually approved to serve traffic: the hostname
+   never resolves, and the proxy's own `tailscale cert <hostname>` fails with
+   `invalid domain "...": must be one of [...]`. This is exactly the failure mode you'll hit if you skip
+   this step:
+   ```json
+   "autoApprovers": {
+     "services": {
+       "tag:k8s": ["tag:k8s"]
+     }
+   }
+   ```
+   (ProxyGroup pods are tagged `tag:k8s` by default, and the Services they advertise inherit that tag —
+   this line says "a device tagged tag:k8s is auto-approved to advertise a Service tagged tag:k8s.")
+
+4. **Enable HTTPS Certificates** — Settings → enable "HTTPS Certificates" (required for valid `.ts.net`
+   HTTPS certs).
+
+5. **Store the OAuth credentials in Vault** — never paste the client secret into a chat session or
+   commit it in plaintext:
+   ```bash
+   ansible-vault edit group_vars/all/main.yaml
+   ```
+   Add:
+   ```yaml
+   tailscale_oauth_client_id: "<your client ID>"
+   tailscale_oauth_client_secret: "<your client secret>"
+   ```
+
+### Deploying
+
+```bash
+ansible-playbook site.yml -i inventory.dist -t helm,storage,longhorn,tailscale-ingress --ask-vault-pass
+```
+
+### Access URLs
+
+Replace `<tailnet>` with your tailnet's `.ts.net` domain — find it via the admin console's DNS tab, or
+just run `tailscale status` on any device already in the tailnet (it's the suffix on every device's
+hostname shown there):
+
+| Service | URL |
+|---|---|
+| Grafana | `https://grafana.<tailnet>.ts.net` |
+| Alertmanager | `https://alertmanager.<tailnet>.ts.net` |
+| VictoriaMetrics | `https://victoriametrics.<tailnet>.ts.net` |
+| Longhorn | `https://longhorn.<tailnet>.ts.net` |
+
+Confirmed working from a phone with the Tailscale app active. If you test from a **Mac terminal or
+Safari** and it doesn't resolve, see the Troubleshooting note below before assuming the deployment is
+broken — there's a known, unrelated local-resolver quirk that can affect just that one machine.
+
+### Configuration
+
+- **Role**: `roles/tailscale_operator/`
+- **Backing services**: 4 `Ingress` resources (`ingressClassName: tailscale`), one per UI, sharing a
+  single `ProxyGroup` (`ingress-proxies`, 2 replicas for HA) instead of one proxy pod per service.
+- To add another service later, add an entry to `tailscaleoperator_vars.kubernetes.services` in
+  `roles/tailscale_operator/defaults/main.yaml` (hostname, namespace, backend service name, port).
+- To make a specific one of these public (Funnel, not tailnet-only), add the annotation
+  `tailscale.com/funnel: "true"` to that service's Ingress — deliberately not done here by default.
+
+### Troubleshooting
+
+```bash
+kubectl -n tailscale get pods
+kubectl -n tailscale logs deployment/operator
+kubectl -n tailscale get proxygroup ingress-proxies -o yaml   # check status.conditions
+kubectl -n monitoring get ingress grafana -o yaml             # check .metadata.annotations, .status
+```
+(`tailscale.com/proxy-group` is set as an **annotation**, not a label — `kubectl ... -l` won't match it.)
+
+**Service registers but never becomes reachable** — `tailscale service list` (run from any tailnet
+device, or `kubectl -n tailscale exec ingress-proxies-0 -c tailscale -- tailscale service list`) shows
+the hostname with a real IP, but the hostname never resolves and the proxy's own
+`tailscale cert <hostname>` fails with `invalid domain "...": must be one of [...]`. This means the
+`autoApprovers.services` ACL block (above) is missing or wasn't saved before the Ingress was created.
+Add it, then restart the proxy pods to force them to pick up the new authorization immediately rather
+than wait for their own poll cycle:
+```bash
+kubectl -n tailscale rollout restart statefulset ingress-proxies
+```
+
+**Works on phone, not from a Mac terminal/Safari** — a known, per-machine macOS quirk, not a deployment
+problem. Confirm the deployment is actually fine first: `tailscale service list` shows the service, and
+connecting by the Service's virtual IP directly (bypassing DNS) succeeds —
+`curl -k --resolve <hostname>:443:<service-ip> https://<hostname>/`. If that works but the plain hostname
+doesn't, it's an isolated DNS-resolution issue on that one Mac (a flaky `mDNSResponder` state, not a
+scutil/config problem — `scutil --dns` will show the split-DNS entry as present and "Reachable" even
+while it's broken). Try `sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder` and retest
+after a few minutes; if it's still broken, it doesn't indicate anything wrong with the actual
+deployment — test from any other device on the tailnet instead.
+
+If an Ingress never gets a tailnet hostname at all (not even a pending Service registration), check the
+operator's logs for OAuth/ACL errors first — the most common cause is the `tag:k8s-operator`/`tag:k8s`
+`tagOwners` entries not being present yet.
 
 ## Tailscale Integration (Optional)
 

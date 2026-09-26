@@ -10,6 +10,8 @@ longhorn_vars:
       log_level: Warn
       node_drain_policy: block-for-eviction
       pod_deletion_policy: delete-both-statefulset-and-deployment-pod
+      recurring_successful_job_histories_limit: 0
+      recurring_failed_job_histories_limit: 0
       volume:
         replica_auto_balance: least-effort
         replicas: 2
@@ -22,7 +24,7 @@ longhorn_vars:
     helm:
       chart:
         name: longhorn
-        version: v1.11.1
+        version: v1.12.1
       repository:
         name: longhorn
         org: longhorn
@@ -33,4 +35,4 @@ longhorn_vars:
     repository:
       name: cli
       org: longhorn
-    version: v1.11.1
+    version: v1.12.1

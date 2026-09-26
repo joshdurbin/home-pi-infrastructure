@@ -72,9 +72,13 @@
 #   the right voltage for this frequency automatically. Backed by active
 #   fan cooling here, which is the right cooling tier for it. Confirmed live
 #   on all 3 Pi 5 nodes via /sys/.../scaling_max_freq after reboot.
-# A reboot is required for any config.txt change to take effect - see the
-# "restart pi after config change" handler (roles/setup/handlers/main.yml),
-# which drains, reboots, and uncordons one node at a time.
+# A reboot is required for any config.txt change to take effect. The
+# "restart pi after config change" handler (roles/setup/handlers/main.yml)
+# only flags the host (sets pi_config_reboot_required) - the actual
+# drain -> reboot -> uncordon sequence runs in a separate, serial:1 play in
+# site.yml ("Reboot nodes with pending config.txt changes"), which is what
+# guarantees only one node is ever down at a time. See that play's comment
+# for why this can't just happen directly in the handler.
 - name: remove arm_boost line from Pi 4 (confirmed no effect on rev 1.1 boards)
   lineinfile:
     path: /boot/firmware/config.txt

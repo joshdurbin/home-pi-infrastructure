@@ -28,7 +28,12 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass --tags maintenance
 
 ## Using the Maintenance Script
 
-On any k3s node (server or agent):
+**Server nodes only** — the script shells out to local `kubectl`, which only has a working kubeconfig on
+server nodes (`/etc/rancher/k3s/k3s.yaml`). Agent nodes (the `pi5` group) have the `kubectl` binary but no
+kubeconfig, so running this there fails with a connection-refused error against `localhost:8080`. To
+drain/uncordon an *agent* node, run the commands below from a server node, targeting the agent by name —
+see `roles/setup/handlers/main.yml` for a worked example of exactly this (drain/uncordon delegated to a
+server, targeting any node by `inventory_hostname`).
 
 ```bash
 # Enable maintenance mode (drain node)
@@ -82,7 +87,7 @@ This file:
 ## Dependencies
 
 - Python 3.6+
-- kubectl access to k3s cluster
+- A working local kubeconfig — present on server nodes only, not agents (see above)
 - Proper RBAC permissions to drain/uncordon nodes
 
 ## Notes

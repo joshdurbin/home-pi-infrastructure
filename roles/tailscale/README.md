@@ -2,6 +2,11 @@
 
 Deploys Tailscale VPN to enable secure remote access to Raspberry Pi cluster nodes.
 
+**Not the same thing as `roles/tailscale_operator`** — that one runs the Tailscale *Kubernetes Operator*
+in-cluster to expose specific web UIs (Grafana, Longhorn, etc.) at tailnet-only HTTPS hostnames. This role
+installs the Tailscale *client* directly on each Pi's OS, for VPN/SSH access to the node itself. See the
+main README's "Exposing UIs via Tailscale Operator" section for that one.
+
 ## What It Does
 
 - Adds Tailscale GPG key and repository
@@ -20,13 +25,14 @@ sudo tailscale up
 
 ## Usage
 
+There is no standalone playbook for this role — uncomment its play in `site.yml` first, then:
+
 ```bash
-# Enable Tailscale deployment (uncomment in site.yml)
-# Then run full deployment
+# Full deployment (includes Tailscale once uncommented)
 make deploy
 
-# Or deploy Tailscale only
-ansible-playbook tailscale_deploy.yml -i inventory.dist --ask-vault-pass
+# Or just this role, via its tag
+ansible-playbook site.yml -i inventory.dist --ask-vault-pass --tags tailscale
 ```
 
 ## Accessing Nodes
