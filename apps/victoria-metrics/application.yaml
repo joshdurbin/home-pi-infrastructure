@@ -29,10 +29,10 @@ spec:
   sources:
     - repoURL: https://prometheus-community.github.io/helm-charts
       chart: prometheus-operator-crds
-      targetRevision: 28.0.1
+      targetRevision: 32.0.1
     - repoURL: https://victoriametrics.github.io/helm-charts
       chart: victoria-metrics-k8s-stack
-      targetRevision: 0.74.1
+      targetRevision: 0.93.0
       helm:
         releaseName: vmks
         valueFiles:

@@ -26,13 +26,17 @@ alertmanager:
     storage:
       emptyDir: {}
   useManagedConfig: true
+# defaultDashboards.defaultTimezone (previously: utc) was removed in chart 0.85.0 - dashboards are no
+# longer Helm-templated ConfigMaps, they're fetched/applied as-is at deploy time, so there's no
+# {{ .Values... }} substitution point left in them to force a timezone through. Grafana now falls back to
+# each dashboard's own default (usually "browser"). No values.yaml equivalent exists for this chart version;
+# revisit if VictoriaMetrics adds one, or set it per-dashboard/per-org directly in Grafana if it matters.
 defaultDashboards:
   dashboards:
     victoriametrics-operator:
       enabled: true
     victoriametrics-vmalert:
       enabled: true
-  defaultTimezone: utc
 grafana:
   admin:
     existingSecret: vmks-credentials
