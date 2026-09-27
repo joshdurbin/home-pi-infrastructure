@@ -1,0 +1,130 @@
+alertmanager:
+  config:
+    route:
+      group_by:
+        - alertgroup
+        - job
+      group_interval: 30m
+      group_wait: 15m
+      repeat_interval: 12h
+      receiver: default
+      routes:
+        - matchers:
+            - alertname=~"InfoInhibitor|Watchdog"
+          receiver: watchdog
+    receivers:
+      - name: default
+      - name: watchdog
+  spec:
+    replicaCount: 1
+    resources:
+      limits:
+        memory: 128Mi
+      requests:
+        cpu: 10m
+        memory: 128Mi
+    storage:
+      emptyDir: {}
+  useManagedConfig: true
+defaultDashboards:
+  dashboards:
+    victoriametrics-operator:
+      enabled: true
+    victoriametrics-vmalert:
+      enabled: true
+  defaultTimezone: utc
+grafana:
+  admin:
+    existingSecret: vmks-credentials
+    userKey: admin-user
+    passwordKey: admin-password
+  grafana.ini:
+    auth:
+      disable_login_form: true
+    auth.anonymous:
+      enabled: true
+      org_role: Admin
+  plugins:
+    - victoriametrics-logs-datasource
+  persistence:
+    accessModes:
+      - ReadWriteOnce
+    enabled: true
+    size: 2Gi
+    storageClassName: longhorn
+  replicas: 1
+  resources:
+    limits:
+      memory: 256Mi
+    requests:
+      cpu: 10m
+      memory: 256Mi
+kube-state-metrics:
+  replicas: 1
+  resources:
+    limits:
+      memory: 128Mi
+    requests:
+      cpu: 10m
+      memory: 128Mi
+prometheus-node-exporter:
+  resources:
+    limits:
+      memory: 128Mi
+    requests:
+      cpu: 10m
+      memory: 128Mi
+victoria-metrics-operator:
+  operator:
+    enable_converter_ownership: true
+  replicaCount: 1
+  resources:
+    limits:
+      memory: 128Mi
+    requests:
+      cpu: 10m
+      memory: 128Mi
+vmagent:
+  spec:
+    replicaCount: 1
+    resources:
+      limits:
+        memory: 512Mi
+      requests:
+        cpu: 10m
+        memory: 512Mi
+    scrapeInterval: 30s
+    scrapeTimeout: 25s
+    storage:
+      emptyDir:
+        sizeLimit: 1Gi
+vmalert:
+  spec:
+    replicaCount: 1
+    resources:
+      limits:
+        memory: 128Mi
+      requests:
+        cpu: 10m
+        memory: 128Mi
+vmsingle:
+  spec:
+    extraArgs:
+      dedup.minScrapeInterval: 30s
+    nodeSelector:
+      telemetry: "true"
+    replicaCount: 1
+    resources:
+      limits:
+        memory: 1024Mi
+      requests:
+        cpu: 10m
+        memory: 1024Mi
+    retentionPeriod: 48h
+    storage:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+      storageClassName: longhorn

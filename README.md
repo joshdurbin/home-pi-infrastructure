@@ -45,6 +45,14 @@ home-pi-infrastructure/
 ├── inventory.dist                # Ansible inventory with node groups
 ├── requirements.yaml             # Ansible collections
 ├── ansible.cfg                   # Ansible configuration
+├── apps/                         # Argo CD's half of this repo - see GitOps (Argo CD) below.
+│   │                              # Ansible never reads this directory; Argo CD never reads
+│   │                              # anything outside it. Same repo, two independent consumers.
+│   ├── longhorn/{application.yaml, values.yaml}
+│   ├── victoria-metrics/{application.yaml, values.yaml}
+│   ├── victoria-logs/{application.yaml, values.yaml, manifests/}
+│   ├── adguard-home/{application.yaml, values.yaml, manifests/}
+│   └── tailscale-operator/{application.yaml, values.yaml, manifests/}
 ├── group_vars/                   # Group-based variables
 │   ├── all/                      # Variables for all hosts
 │   ├── server/                   # k3s server (control plane) config
@@ -67,17 +75,6 @@ home-pi-infrastructure/
 └── k3s-maintenance               # k3s maintenance utility script
 ```
 
-The actual chart installs/configuration for Longhorn, VictoriaMetrics, VictoriaLogs, AdGuard Home, and the
-Tailscale Operator live in a **separate** repo, `home-pi-gitops` (see [GitOps (Argo CD)](#gitops-argo-cd)):
-```
-home-pi-gitops/
-└── apps/
-    ├── longhorn/{application.yaml, values.yaml}
-    ├── victoria-metrics/{application.yaml, values.yaml}
-    ├── victoria-logs/{application.yaml, values.yaml, manifests/}
-    ├── adguard-home/{application.yaml, values.yaml, manifests/}
-    └── tailscale-operator/{application.yaml, values.yaml, manifests/}
-```
 
 ## Prerequisites
 
@@ -144,8 +141,8 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass
 - **K3S Deployment**: Installs and configures k3s cluster (servers + agents)
 - **Maintenance Tools**: Deploys k3s-maintenance script to all nodes
 - **Argo CD Bootstrap**: Installs Argo CD and its root Application, which then continuously syncs
-  Longhorn, VictoriaMetrics, VictoriaLogs, AdGuard Home, and the Tailscale Operator from the separate
-  `home-pi-gitops` repo — see [GitOps (Argo CD)](#gitops-argo-cd) for the one-time `git daemon` setup this
+  Longhorn, VictoriaMetrics, VictoriaLogs, AdGuard Home, and the Tailscale Operator from this repo's own
+  `apps/` directory — see [GitOps (Argo CD)](#gitops-argo-cd) for the one-time `git daemon` setup this
   depends on.
 
 This is idempotent - safe to run repeatedly to ensure everything stays configured.
@@ -502,37 +499,40 @@ cluster-admin access — fine for a single-user homelab, but keep it as private 
 
 Longhorn, VictoriaMetrics, VictoriaLogs, AdGuard Home, and the Tailscale Operator are no longer installed
 or upgraded by Ansible. Argo CD runs in-cluster (namespace `argocd`) and continuously reconciles all five
-from a **separate** local git repo, `home-pi-gitops` (a sibling directory to this one) — edit a file there,
-commit, and Argo CD applies it within its next poll cycle (or immediately via `argocd app sync` /
-the UI). This replaced hand-templating every chart's values through Jinja and running `kubectl`/`helm`
-manually to fix drift — Argo CD's own continuous reconciliation makes drift structurally impossible to miss.
+from this **same** repo's `apps/` directory — edit a file there, commit, and Argo CD applies it within its
+next poll cycle (or immediately via `argocd app sync` / the UI). This replaced hand-templating every
+chart's values through Jinja and running `kubectl`/`helm` manually to fix drift — Argo CD's own continuous
+reconciliation makes drift structurally impossible to miss.
 
-**Repo split:**
-- **This repo**: bare-metal OS setup, k3s cluster bootstrap, node labels/hardware/reboot orchestration,
-  and the one-time Argo CD install + bootstrap `Application`/`AppProject` (`roles/argocd/`).
-- **`home-pi-gitops`**: one directory per app under `apps/`, each with an Argo CD `Application` manifest
-  (Argo CD's multi-source feature: one source is the real upstream Helm chart, a second supplies
-  `values.yaml` from this same repo, a third — where needed — supplies plain manifests like
-  NetworkPolicies or Ingresses) plus that `values.yaml`. Argo CD's own root `Application` (the classic
-  "app of apps" pattern) watches `apps/*/application.yaml` and syncs each one as a child Application.
+**One repo, two independent consumers:**
+- **Ansible** (everything outside `apps/`): bare-metal OS setup, k3s cluster bootstrap, node
+  labels/hardware/reboot orchestration, and the one-time Argo CD install + bootstrap
+  `Application`/`AppProject` (`roles/argocd/`). Ansible never reads `apps/`.
+- **Argo CD** (`apps/` only): one directory per app, each with an `Application` manifest (Argo CD's
+  multi-source feature: one source is the real upstream Helm chart, a second supplies `values.yaml` from
+  this same repo, a third — where needed — supplies plain manifests like NetworkPolicies or Ingresses)
+  plus that `values.yaml`. Argo CD's own root `Application` (the classic "app of apps" pattern) watches
+  `apps/*/application.yaml` and syncs each one as a child Application. Argo CD never reads anything
+  outside `apps/`.
 
-**Why two repos, and why local instead of GitHub**: keeping Argo CD's own bootstrap config alongside
-Ansible (rather than making Argo CD responsible for installing itself) avoids a self-referential
-dependency. The GitOps repo is plain local git for now — no GitHub involved — served over the LAN via
-git's own built-in `git daemon`, since Argo CD runs in-cluster on the Pis and needs *some* network path to
-the repo; it can't just read files off this Mac's disk.
+Keeping Argo CD's own bootstrap config in the same repo it manages (rather than a separate one) is simpler
+to operate day to day, and there's no real conflict: the two halves don't overlap and each tool ignores
+the other's files entirely.
+
+**Why local instead of GitHub**: this repo is plain local git for now — no GitHub involved — served over
+the LAN via git's own built-in `git daemon`, since Argo CD runs in-cluster on the Pis and needs *some*
+network path to the repo; it can't just read files off this Mac's disk.
 
 **One-time setup** (manual — Ansible controls the Pis, not this Mac):
 ```bash
-mkdir -p ~/dev/home-pi-gitops && cd ~/dev/home-pi-gitops && git init
-# ... apps/ already scaffolded and committed by this point ...
-git daemon --reuseaddr --base-path=~/dev --export-all --verbose ~/dev/home-pi-gitops
+git daemon --reuseaddr --base-path=~/dev --export-all --verbose ~/dev/home-pi-infrastructure
 ```
 Set up a LaunchAgent so it survives logout/reboot, and confirm this Mac's firewall allows inbound
 connections on port `9418` from the LAN. `roles/argocd/defaults/main.yaml`'s `argocd_vars.gitops.repo_url`
-points at this Mac's LAN IP (`git://192.168.1.57/home-pi-gitops` today — update it if the IP changes,
-there's no DNS name for it). **Tradeoff to know about**: Argo CD can only see new commits while this Mac
-is on, awake, and reachable on the LAN — nothing breaks if it's off, sync just pauses until it's back.
+points at this Mac's LAN IP (`git://192.168.1.57/home-pi-infrastructure` today — update it if the IP
+changes, there's no DNS name for it). **Tradeoff to know about**: Argo CD can only see new commits while
+this Mac is on, awake, and reachable on the LAN — nothing breaks if it's off, sync just pauses until it's
+back.
 
 **Bootstrap Argo CD:**
 ```bash
@@ -564,11 +564,11 @@ ansible-playbook site.yml -i inventory.dist -t secrets --ask-vault-pass
 ## Storage (Longhorn)
 
 Distributed block storage backing every PVC that requests the `longhorn` StorageClass. Namespace: `longhorn`.
-**The chart install and all settings now live in the [home-pi-gitops](#gitops-argo-cd) repo** — Argo CD
+**The chart install and all settings now live in this repo's `apps/` directory** (see [GitOps (Argo CD)](#gitops-argo-cd)) — Argo CD
 reconciles it continuously; this repo only handles the host-level package prerequisites Longhorn needs on
 every node.
 
-**Capacity model** (see `apps/longhorn/values.yaml` in home-pi-gitops for the actual settings):
+**Capacity model** (see `apps/longhorn/values.yaml` in this repo's `apps/` directory for the actual settings):
 - Data replicas live **only** on `rpi-5-2` and `rpi-5-3` (the `storage=true` labeled nodes) — 80GB usable
   per node, and since Longhorn keeps 2 replicas, plan for ~half of requested storage as the real usable ceiling.
 - `longhorn-manager`, the UI, the driver, and the CSI components run on **all 6 nodes** — any pod anywhere
@@ -579,7 +579,7 @@ every node.
 - `data_locality: best-effort`, `replicas: 2` — a volume survives either storage node going down.
 
 **Deploy/update the host prerequisites only** (for the actual chart config, edit
-`home-pi-gitops/apps/longhorn/values.yaml` and commit — Argo CD picks it up on its own):
+`apps/longhorn/values.yaml` and commit — Argo CD picks it up on its own):
 ```bash
 ansible-playbook site.yml -i inventory.dist -t storage,longhorn --ask-vault-pass
 ```
@@ -601,7 +601,7 @@ kubectl -n longhorn get pods
 ## Monitoring & Logging (VictoriaMetrics, VictoriaLogs, Grafana)
 
 Metrics and logs for the whole cluster, both retained for **48 hours**. Namespace: `monitoring`.
-**The chart installs and all settings now live in the [home-pi-gitops](#gitops-argo-cd) repo**
+**The chart installs and all settings now live in this repo's `apps/` directory** (see [GitOps (Argo CD)](#gitops-argo-cd))
 (`apps/victoria-metrics/`, `apps/victoria-logs/`) — Argo CD reconciles them continuously. This repo's only
 remaining job here is seeding the Grafana admin credentials Secret (`roles/victoria-metrics`, now
 secrets-only — see [Secrets bridge](#gitops-argo-cd) below for why that can't live in git).
@@ -619,7 +619,7 @@ secrets-only — see [Secrets bridge](#gitops-argo-cd) below for why that can't 
   access; the admin/password secret still exists underneath if you ever want to re-enable the login form.
 
 **Seed/update the Grafana admin credentials Secret** (for the actual chart config, edit
-`home-pi-gitops/apps/victoria-metrics/values.yaml` and commit):
+`apps/victoria-metrics/values.yaml` and commit):
 ```bash
 ansible-playbook site.yml -i inventory.dist -t telemetry,secrets --ask-vault-pass
 ```
@@ -680,7 +680,7 @@ A single AdGuard Home instance for the whole LAN — resolves DNS for any client
 ads/trackers and forwarding everything else upstream over **DNS-over-TLS to Cloudflare**
 (`tls://one.one.one.one`). Namespace: `adguard`. DHCP is out of scope — point clients at it manually or
 via your router's DNS setting. **The chart install, NetworkPolicy, and all settings now live in the
-[home-pi-gitops](#gitops-argo-cd) repo** (`apps/adguard-home/`) — Argo CD reconciles them continuously.
+`apps/` directory** (`apps/adguard-home/`, see [GitOps (Argo CD)](#gitops-argo-cd)) — Argo CD reconciles them continuously.
 This repo's only remaining job is seeding the two things that can never be committed to git: the exporter
 credentials Secret and the AdGuardHome.yaml seed ConfigMap (both contain the bcrypt-hashed admin password).
 
@@ -735,7 +735,7 @@ Reaches Grafana, Alertmanager, the VictoriaMetrics UI, the Longhorn UI, AdGuard'
 UI privately from any device signed into your tailnet (e.g. the Tailscale app on your phone) — no VPN
 config, no port-forwarding, valid HTTPS. This is **not** Funnel — nothing here is reachable from the public
 internet, only from devices in your own tailnet. **The operator install, ProxyGroup, and per-service
-Ingresses now live in the [home-pi-gitops](#gitops-argo-cd) repo** (`apps/tailscale-operator/`) — this
+Ingresses now live in this repo's `apps/` directory** (`apps/tailscale-operator/`, see [GitOps (Argo CD)](#gitops-argo-cd)) — this
 repo's only remaining job is seeding the OAuth credentials Secret.
 
 This is a different thing from the [Tailscale Integration](#tailscale-integration-optional) section
@@ -814,12 +814,12 @@ broken — there's a known, unrelated local-resolver quirk that can affect just 
 
 ### Configuration
 
-- **Application**: `home-pi-gitops/apps/tailscale-operator/` — `values.yaml` (chart values, oauth
+- **Application**: `apps/tailscale-operator/` — `values.yaml` (chart values, oauth
   deliberately left unset) and `manifests/` (the `ProxyGroup` plus one `Ingress` per exposed UI, sharing
   a single ProxyGroup, `ingress-proxies`, 2 replicas for HA, instead of one proxy pod per service).
 - **Role**: `roles/tailscale_operator/` — now only seeds the `operator-oauth` Secret the chart expects
   to find pre-created.
-- To add another service later, add an `Ingress` to `home-pi-gitops/apps/tailscale-operator/manifests/ingresses.yaml`
+- To add another service later, add an `Ingress` to `apps/tailscale-operator/manifests/ingresses.yaml`
   and commit — no Ansible run needed, Argo CD picks it up on its own.
 - To make a specific one of these public (Funnel, not tailnet-only), add the annotation
   `tailscale.com/funnel: "true"` to that service's Ingress — deliberately not done here by default.
@@ -1000,7 +1000,7 @@ Update `inventory.dist` if your network differs.
 
 - **Encrypted with Vault**: `group_vars/all/main.yaml` — `k3s_join_token`, `tailscale_oauth_client_id`,
   `tailscale_oauth_client_secret`, `adguard_home_admin_username`, `adguard_home_admin_password`. These
-  never appear in the `home-pi-gitops` repo — see [GitOps (Argo CD)](#gitops-argo-cd)'s "Secrets bridge".
+  never appear in `apps/` — see [GitOps (Argo CD)](#gitops-argo-cd)'s "Secrets bridge".
 - **Unencrypted**: All other group_vars and host_vars
 
 To rotate secrets:

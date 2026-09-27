@@ -1,0 +1,44 @@
+# Egress-only restriction (LAN clients reaching AdGuard's DNS/web ports is
+# unaffected - that's ingress, a separate concern).
+# - DNS (853/tcp, DoT) is locked to the exact Cloudflare upstream IPs; nothing
+#   else legitimately needs it.
+# - 53/udp+tcp to CoreDNS lets the pod resolve blocklist hostnames (e.g.
+#   small.oisd.nl) - this is the pod's own outbound HTTP client doing hostname
+#   lookups, unrelated to AdGuard's own upstream_dns config (which only serves
+#   queries AGH receives as a DNS server).
+# - 443/tcp is broad (blocklist downloads come from many/rotating CDN IPs that
+#   aren't practical to allowlist without a FQDN-aware CNI like Cilium, which
+#   this cluster doesn't run).
+# - Auto-update-check is disabled via --no-check-update in values.yaml,
+#   removing that egress target rather than allowlisting it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: adguard-home-egress
+  namespace: adguard
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 1.1.1.1/32
+        - ipBlock:
+            cidr: 1.0.0.1/32
+      ports:
+        - protocol: TCP
+          port: 853
+    - ports:
+        - protocol: TCP
+          port: 443

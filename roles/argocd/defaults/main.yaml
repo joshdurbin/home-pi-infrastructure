@@ -14,6 +14,6 @@ argocd_vars:
   # Pis, not this Mac, so that step can't be automated from here). Update the
   # IP if it changes; there's no DNS name for it today.
   gitops:
-    repo_url: git://192.168.1.57/home-pi-gitops
-    target_revision: main
+    repo_url: git://192.168.1.57/home-pi-infrastructure
+    target_revision: master
     path: apps

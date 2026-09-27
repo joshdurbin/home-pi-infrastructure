@@ -1,0 +1,7 @@
+# oauth.clientId/clientSecret are intentionally left unset. The chart's own
+# Secret template (templates/oauth-secret.yaml) only renders when
+# oauth.clientId is set - leaving it empty means the chart expects a Secret
+# named "operator-oauth" (keys: client_id, client_secret) to already exist in
+# this namespace. That Secret is created directly by Ansible's
+# cluster_secrets role from vault-encrypted credentials, outside git.
+oauth: {}

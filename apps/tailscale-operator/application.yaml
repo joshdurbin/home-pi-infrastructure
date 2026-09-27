@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tailscale-operator
+  namespace: argocd
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tailscale
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
+  sources:
+    - repoURL: https://pkgs.tailscale.com/helmcharts
+      chart: tailscale-operator
+      targetRevision: 1.102.4
+      helm:
+        releaseName: tailscale-operator
+        valueFiles:
+          - $values/apps/tailscale-operator/values.yaml
+    - repoURL: git://192.168.1.57/home-pi-infrastructure
+      targetRevision: master
+      ref: values
+    - repoURL: git://192.168.1.57/home-pi-infrastructure
+      targetRevision: master
+      path: apps/tailscale-operator/manifests

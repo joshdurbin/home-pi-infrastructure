@@ -1,0 +1,25 @@
+server:
+  persistentVolume:
+    accessModes:
+      - ReadWriteOnce
+    enabled: true
+    size: 10Gi
+    storageClassName: longhorn
+  nodeSelector:
+    telemetry: "true"
+  replicaCount: 1
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      cpu: 10m
+      memory: 512Mi
+  retentionPeriod: 48h
+vector:
+  enabled: true
+  resources:
+    limits:
+      memory: 128Mi
+    requests:
+      cpu: 10m
+      memory: 128Mi
