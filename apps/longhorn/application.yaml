@@ -39,3 +39,6 @@ spec:
     - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
       targetRevision: master
       ref: values
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      path: apps/longhorn/manifests

@@ -1,0 +1,40 @@
+# Wires Longhorn's native /metrics (served on the same port as its REST API,
+# longhorn-backend:9500, confirmed live via `kubectl -n longhorn get svc
+# longhorn-backend` - port name "manager") into vmagent. Same
+# selectAllByDefault: true auto-pickup as every other VM*Scrape in this repo
+# - see apps/blocky/manifests/vmservicescrape.yaml for the precedent this
+# matches.
+#
+# Deliberately NOT the chart's own metrics.serviceMonitor.enabled toggle:
+# that renders a native Prometheus ServiceMonitor and depends on the VM
+# operator's ServiceMonitor->VMServiceScrape converter, which this cluster
+# has never been observed actually converting anything (zero ServiceMonitors
+# exist anywhere in it, confirmed via `kubectl get servicemonitors -A`) -
+# this hand-written VMServiceScrape is the same proven mechanism already
+# used everywhere else instead, with no unverified dependency.
+#
+# Also needs networkpolicy-metrics.yaml in this same directory - Longhorn's
+# own chart bundles a default-on, whitelist-only NetworkPolicy on
+# longhorn-manager pods that does not allow vmagent in (confirmed live:
+# port 9500 listens, but a curl from another pod gets Connection refused).
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: longhorn
+  namespace: longhorn
+  annotations:
+    # Longhorn's own Application syncs at wave 0 (storage foundation - other
+    # apps' PVCs need its StorageClass early), but this resource's CRD comes
+    # from victoria-metrics, which syncs at wave 1. Per-resource sync-wave
+    # annotations override the Application's default wave for just this one
+    # object, so the rest of the chart still gets to go first while this
+    # waits - same race class fixed for Blocky's own VMServiceScrape
+    # (see apps/blocky/application.yaml's sync-wave comment).
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  selector:
+    matchLabels:
+      app: longhorn-manager
+  endpoints:
+    - port: manager
+      path: /metrics
