@@ -144,38 +144,44 @@
         name: longhorn
         tasks_from: prereq
 
-- name: Longhorn storage deployment
-  hosts: server
-  gather_facts: false
-  roles:
-    - longhorn
-  become: yes
-  tags: [storage, longhorn]
-
-- name: Telemetry storage deployment
+# Longhorn, VictoriaMetrics, VictoriaLogs, AdGuard Home, and the Tailscale
+# Operator's chart installs are no longer driven from here - Argo CD (below)
+# owns that now, syncing from the home-pi-gitops repo. These three plays only
+# seed the handful of real Secrets/ConfigMaps those Applications depend on
+# but can never define themselves, since that repo must never contain real
+# credentials. They must run before the Argo CD bootstrap play below, so
+# those objects already exist the first time each Application syncs.
+- name: Seed telemetry credentials
   hosts: server
   gather_facts: false
   roles:
     - victoria-metrics
-    - victoria-logs
   become: yes
-  tags: [telemetry, charts]
+  tags: [telemetry, secrets]
 
-- name: AdGuard Home DNS deployment
+- name: Seed AdGuard Home credentials and config
   hosts: server
   gather_facts: false
   roles:
     - adguard_home
   become: yes
-  tags: [dns, adguard, charts]
+  tags: [dns, adguard, secrets]
 
-- name: Expose cluster UIs via Tailscale
+- name: Seed Tailscale operator OAuth credentials
   hosts: server
   gather_facts: false
   roles:
     - tailscale_operator
   become: yes
-  tags: [tailscale-ingress, charts]
+  tags: [tailscale-ingress, secrets]
+
+- name: Bootstrap Argo CD
+  hosts: server
+  gather_facts: false
+  roles:
+    - argocd
+  become: yes
+  tags: [argocd, charts]
 
 # Uncomment below to deploy Tailscale
 # - name: Deploy Tailscale

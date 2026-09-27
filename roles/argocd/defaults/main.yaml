@@ -1,0 +1,19 @@
+---
+argocd_vars:
+  kubernetes:
+    namespace: argocd
+    helm:
+      chart:
+        name: argo-cd
+        version: 10.9.2
+      repository:
+        name: argo
+        url: https://argoproj.github.io/argo-helm
+  # This Mac, served over the LAN via `git daemon` (see README.md's "GitOps
+  # (Argo CD)" section for the one-time manual setup - Ansible controls the
+  # Pis, not this Mac, so that step can't be automated from here). Update the
+  # IP if it changes; there's no DNS name for it today.
+  gitops:
+    repo_url: git://192.168.1.57/home-pi-gitops
+    target_revision: main
+    path: apps

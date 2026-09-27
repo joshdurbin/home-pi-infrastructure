@@ -55,13 +55,28 @@ home-pi-infrastructure/
 │   ├── k3s_maintenance/          # k3s maintenance script deployment
 │   ├── helm/                     # Helm binary install (apt + official GPG key)
 │   ├── k8s_labels/                # Applies node labels declared in host_vars (k8s_labels var)
-│   ├── longhorn/                 # Distributed storage (Longhorn), 80GB pool on rpi-5-2/rpi-5-3
-│   ├── victoria-metrics/         # Metrics storage + Grafana (bundled) + vmagent/vmalert
-│   ├── victoria-logs/            # Log storage + Vector log shipper
+│   ├── argocd/                   # Bootstraps Argo CD + the root Application (see GitOps section)
 │   ├── helm_drift_check/         # Post-install verification that Helm's manifest matches live state
-│   └── tailscale/                # Tailscale VPN (optional)
+│   ├── longhorn/                 # Host prereqs only now (open-iscsi/nfs-common) - chart is Argo CD's job
+│   ├── victoria-metrics/         # Seeds Grafana admin credentials only - chart is Argo CD's job
+│   ├── adguard_home/             # Seeds AdGuard's credentials/config only - chart is Argo CD's job
+│   ├── tailscale_operator/       # Seeds the operator's OAuth Secret only - chart is Argo CD's job
+│   ├── airplay_audio/            # AirPlay audio receiver
+│   └── tailscale/                # Tailscale VPN client on each node (optional)
 ├── k3s-ansible/                  # k3s-ansible submodule
 └── k3s-maintenance               # k3s maintenance utility script
+```
+
+The actual chart installs/configuration for Longhorn, VictoriaMetrics, VictoriaLogs, AdGuard Home, and the
+Tailscale Operator live in a **separate** repo, `home-pi-gitops` (see [GitOps (Argo CD)](#gitops-argo-cd)):
+```
+home-pi-gitops/
+└── apps/
+    ├── longhorn/{application.yaml, values.yaml}
+    ├── victoria-metrics/{application.yaml, values.yaml}
+    ├── victoria-logs/{application.yaml, values.yaml, manifests/}
+    ├── adguard-home/{application.yaml, values.yaml, manifests/}
+    └── tailscale-operator/{application.yaml, values.yaml, manifests/}
 ```
 
 ## Prerequisites
@@ -128,6 +143,10 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass
 - **User Management**: Creates jdurbin user with SSH key and passwordless sudo
 - **K3S Deployment**: Installs and configures k3s cluster (servers + agents)
 - **Maintenance Tools**: Deploys k3s-maintenance script to all nodes
+- **Argo CD Bootstrap**: Installs Argo CD and its root Application, which then continuously syncs
+  Longhorn, VictoriaMetrics, VictoriaLogs, AdGuard Home, and the Tailscale Operator from the separate
+  `home-pi-gitops` repo — see [GitOps (Argo CD)](#gitops-argo-cd) for the one-time `git daemon` setup this
+  depends on.
 
 This is idempotent - safe to run repeatedly to ensure everything stays configured.
 
@@ -479,11 +498,77 @@ cluster-admin access — fine for a single-user homelab, but keep it as private 
 - [k9s](https://k9scli.io/) — terminal UI: `brew install k9s`, then run `k9s`
 - [Lens](https://k8slens.dev/) or [Headlamp](https://headlamp.dev/) — desktop GUI apps: `brew install --cask lens`
 
+## GitOps (Argo CD)
+
+Longhorn, VictoriaMetrics, VictoriaLogs, AdGuard Home, and the Tailscale Operator are no longer installed
+or upgraded by Ansible. Argo CD runs in-cluster (namespace `argocd`) and continuously reconciles all five
+from a **separate** local git repo, `home-pi-gitops` (a sibling directory to this one) — edit a file there,
+commit, and Argo CD applies it within its next poll cycle (or immediately via `argocd app sync` /
+the UI). This replaced hand-templating every chart's values through Jinja and running `kubectl`/`helm`
+manually to fix drift — Argo CD's own continuous reconciliation makes drift structurally impossible to miss.
+
+**Repo split:**
+- **This repo**: bare-metal OS setup, k3s cluster bootstrap, node labels/hardware/reboot orchestration,
+  and the one-time Argo CD install + bootstrap `Application`/`AppProject` (`roles/argocd/`).
+- **`home-pi-gitops`**: one directory per app under `apps/`, each with an Argo CD `Application` manifest
+  (Argo CD's multi-source feature: one source is the real upstream Helm chart, a second supplies
+  `values.yaml` from this same repo, a third — where needed — supplies plain manifests like
+  NetworkPolicies or Ingresses) plus that `values.yaml`. Argo CD's own root `Application` (the classic
+  "app of apps" pattern) watches `apps/*/application.yaml` and syncs each one as a child Application.
+
+**Why two repos, and why local instead of GitHub**: keeping Argo CD's own bootstrap config alongside
+Ansible (rather than making Argo CD responsible for installing itself) avoids a self-referential
+dependency. The GitOps repo is plain local git for now — no GitHub involved — served over the LAN via
+git's own built-in `git daemon`, since Argo CD runs in-cluster on the Pis and needs *some* network path to
+the repo; it can't just read files off this Mac's disk.
+
+**One-time setup** (manual — Ansible controls the Pis, not this Mac):
+```bash
+mkdir -p ~/dev/home-pi-gitops && cd ~/dev/home-pi-gitops && git init
+# ... apps/ already scaffolded and committed by this point ...
+git daemon --reuseaddr --base-path=~/dev --export-all --verbose ~/dev/home-pi-gitops
+```
+Set up a LaunchAgent so it survives logout/reboot, and confirm this Mac's firewall allows inbound
+connections on port `9418` from the LAN. `roles/argocd/defaults/main.yaml`'s `argocd_vars.gitops.repo_url`
+points at this Mac's LAN IP (`git://192.168.1.57/home-pi-gitops` today — update it if the IP changes,
+there's no DNS name for it). **Tradeoff to know about**: Argo CD can only see new commits while this Mac
+is on, awake, and reachable on the LAN — nothing breaks if it's off, sync just pauses until it's back.
+
+**Bootstrap Argo CD:**
+```bash
+ansible-playbook site.yml -i inventory.dist -t helm,argocd --ask-vault-pass
+```
+Then check in:
+```bash
+kubectl -n argocd get pods
+kubectl -n argocd get applications
+```
+All five child Applications (plus `root`) should show `Synced`/`Healthy`. Access the UI at
+`https://argocd.<tailnet>.ts.net` once the Tailscale Operator Application has synced (see below), or via
+`kubectl -n argocd port-forward svc/argocd-server 8080:443` in the meantime — it runs with
+`server.insecure: true` (TLS is terminated by Tailscale, same as every other UI in this cluster), and
+`dex`/`notifications` are disabled (no SSO, unused in a single-user homelab).
+
+**Secrets bridge**: the GitOps repo must never contain real credentials, but a few of these apps need
+some (Grafana admin password, AdGuard admin password, Tailscale OAuth client). Those stay exactly where
+they already were — Ansible Vault, in `group_vars/all/main.yaml` — and three now-trimmed roles
+(`victoria-metrics`, `adguard_home`, `tailscale_operator`) apply just the resulting `Secret`/`ConfigMap`
+objects directly to the cluster, decoupled from git entirely. The GitOps repo's `values.yaml` files
+reference those objects by name (`existingSecret: ...`, or a chart's own "expects a pre-created Secret"
+convention) rather than embedding any credential inline. Run these before the Argo CD bootstrap above (or
+any time after — they're idempotent) so the objects exist before each Application's first sync:
+```bash
+ansible-playbook site.yml -i inventory.dist -t secrets --ask-vault-pass
+```
+
 ## Storage (Longhorn)
 
 Distributed block storage backing every PVC that requests the `longhorn` StorageClass. Namespace: `longhorn`.
+**The chart install and all settings now live in the [home-pi-gitops](#gitops-argo-cd) repo** — Argo CD
+reconciles it continuously; this repo only handles the host-level package prerequisites Longhorn needs on
+every node.
 
-**Capacity model:**
+**Capacity model** (see `apps/longhorn/values.yaml` in home-pi-gitops for the actual settings):
 - Data replicas live **only** on `rpi-5-2` and `rpi-5-3` (the `storage=true` labeled nodes) — 80GB usable
   per node, and since Longhorn keeps 2 replicas, plan for ~half of requested storage as the real usable ceiling.
 - `longhorn-manager`, the UI, the driver, and the CSI components run on **all 6 nodes** — any pod anywhere
@@ -493,9 +578,10 @@ Distributed block storage backing every PVC that requests the `longhorn` Storage
 - No automatic backups, no automatic snapshots (both explicitly disabled).
 - `data_locality: best-effort`, `replicas: 2` — a volume survives either storage node going down.
 
-**Deploy/update just this:**
+**Deploy/update the host prerequisites only** (for the actual chart config, edit
+`home-pi-gitops/apps/longhorn/values.yaml` and commit — Argo CD picks it up on its own):
 ```bash
-ansible-playbook site.yml -i inventory.dist -t helm,storage,longhorn,labels --ask-vault-pass
+ansible-playbook site.yml -i inventory.dist -t storage,longhorn --ask-vault-pass
 ```
 
 **Access the Longhorn UI:**
@@ -515,6 +601,10 @@ kubectl -n longhorn get pods
 ## Monitoring & Logging (VictoriaMetrics, VictoriaLogs, Grafana)
 
 Metrics and logs for the whole cluster, both retained for **48 hours**. Namespace: `monitoring`.
+**The chart installs and all settings now live in the [home-pi-gitops](#gitops-argo-cd) repo**
+(`apps/victoria-metrics/`, `apps/victoria-logs/`) — Argo CD reconciles them continuously. This repo's only
+remaining job here is seeding the Grafana admin credentials Secret (`roles/victoria-metrics`, now
+secrets-only — see [Secrets bridge](#gitops-argo-cd) below for why that can't live in git).
 
 - **Metrics**: `victoria-metrics-k8s-stack` Helm chart — bundles the VictoriaMetrics operator, `vmsingle`
   (metrics storage), `vmagent` (scraper, cluster-wide), `vmalert`, Alertmanager, kube-state-metrics,
@@ -528,12 +618,11 @@ Metrics and logs for the whole cluster, both retained for **48 hours**. Namespac
   you straight in with no login prompt. Reasonable for a single-user homelab already gated by kubeconfig
   access; the admin/password secret still exists underneath if you ever want to re-enable the login form.
 
-**Deploy/update just this:**
+**Seed/update the Grafana admin credentials Secret** (for the actual chart config, edit
+`home-pi-gitops/apps/victoria-metrics/values.yaml` and commit):
 ```bash
-ansible-playbook site.yml -i inventory.dist -t helm,storage,longhorn,labels,telemetry --ask-vault-pass
+ansible-playbook site.yml -i inventory.dist -t telemetry,secrets --ask-vault-pass
 ```
-(Longhorn's StorageClass must exist first, since Grafana/vmsingle/VictoriaLogs all use Longhorn-backed PVCs —
-that's why `storage,longhorn` is included even when you only care about telemetry.)
 
 ### Accessing Grafana
 
@@ -590,7 +679,10 @@ Kubernetes Node object — not tied to any single chart-deploying role).
 A single AdGuard Home instance for the whole LAN — resolves DNS for any client pointed at it, blocking
 ads/trackers and forwarding everything else upstream over **DNS-over-TLS to Cloudflare**
 (`tls://one.one.one.one`). Namespace: `adguard`. DHCP is out of scope — point clients at it manually or
-via your router's DNS setting.
+via your router's DNS setting. **The chart install, NetworkPolicy, and all settings now live in the
+[home-pi-gitops](#gitops-argo-cd) repo** (`apps/adguard-home/`) — Argo CD reconciles them continuously.
+This repo's only remaining job is seeding the two things that can never be committed to git: the exporter
+credentials Secret and the AdGuardHome.yaml seed ConfigMap (both contain the bcrypt-hashed admin password).
 
 - **Chart**: `bjw-s-labs/app-template` (the generic "common" chart) running the `adguard/adguardhome`
   image, plus a `henrywhitaker3/adguard-exporter` sidecar for Prometheus-format metrics (AdGuard Home has
@@ -622,26 +714,29 @@ adguard_home_admin_username: "<your choice>"
 adguard_home_admin_password: "<your choice>"
 ```
 
-**Deploy/update just this:**
+**Seed/update the credentials and config:**
 ```bash
-ansible-playbook site.yml -i inventory.dist -t helm,storage,longhorn,dns --ask-vault-pass
+ansible-playbook site.yml -i inventory.dist -t dns,secrets --ask-vault-pass
 ```
 
 **Point a client at it**: use either node's IP (ServiceLB exposes every node's own IP) or, once the
 Tailscale Operator step below is done, `https://adguard.<tailnet>.ts.net` for the admin UI — the DNS
 service itself is only reachable via plain LAN IP:53, not through Tailscale.
 
-To change the blocklist or add more, edit `adguardhome_vars.kubernetes.filters` in
-`roles/adguard_home/defaults/main.yaml` and re-run the deploy command above — the seeded ConfigMap only
-takes effect on a first-run install; changes after that are best made live in the AdGuard UI, since the
-ConfigMap is just the *initial* seed, not an ongoing source of truth.
+To change the blocklist or add more, edit `apps/adguard-home/manifests/networkpolicy.yaml` (for the
+NetworkPolicy) or `roles/adguard_home/defaults/main.yaml`'s `adguardhome_vars.kubernetes.filters` (for the
+seed ConfigMap) — the seeded ConfigMap only takes effect on a first-run install; changes after that are
+best made live in the AdGuard UI, since the ConfigMap is just the *initial* seed, not an ongoing source
+of truth.
 
 ## Exposing UIs via Tailscale Operator
 
-Reaches Grafana, Alertmanager, the VictoriaMetrics UI, and the Longhorn UI privately from any device
-signed into your tailnet (e.g. the Tailscale app on your phone) — no VPN config, no port-forwarding,
-valid HTTPS. This is **not** Funnel — nothing here is reachable from the public internet, only from
-devices in your own tailnet.
+Reaches Grafana, Alertmanager, the VictoriaMetrics UI, the Longhorn UI, AdGuard's admin UI, and the Argo CD
+UI privately from any device signed into your tailnet (e.g. the Tailscale app on your phone) — no VPN
+config, no port-forwarding, valid HTTPS. This is **not** Funnel — nothing here is reachable from the public
+internet, only from devices in your own tailnet. **The operator install, ProxyGroup, and per-service
+Ingresses now live in the [home-pi-gitops](#gitops-argo-cd) repo** (`apps/tailscale-operator/`) — this
+repo's only remaining job is seeding the OAuth credentials Secret.
 
 This is a different thing from the [Tailscale Integration](#tailscale-integration-optional) section
 below: that one installs the Tailscale *client* on each Pi node itself (node-level VPN/SSH access).
@@ -695,7 +790,7 @@ HTTPS ingress for specific services — `roles/tailscale_operator`, distinct fro
 ### Deploying
 
 ```bash
-ansible-playbook site.yml -i inventory.dist -t helm,storage,longhorn,tailscale-ingress --ask-vault-pass
+ansible-playbook site.yml -i inventory.dist -t tailscale-ingress,secrets --ask-vault-pass
 ```
 
 ### Access URLs
@@ -710,6 +805,8 @@ hostname shown there):
 | Alertmanager | `https://alertmanager.<tailnet>.ts.net` |
 | VictoriaMetrics | `https://victoriametrics.<tailnet>.ts.net` |
 | Longhorn | `https://longhorn.<tailnet>.ts.net` |
+| AdGuard Home | `https://adguard.<tailnet>.ts.net` |
+| Argo CD | `https://argocd.<tailnet>.ts.net` |
 
 Confirmed working from a phone with the Tailscale app active. If you test from a **Mac terminal or
 Safari** and it doesn't resolve, see the Troubleshooting note below before assuming the deployment is
@@ -717,11 +814,13 @@ broken — there's a known, unrelated local-resolver quirk that can affect just 
 
 ### Configuration
 
-- **Role**: `roles/tailscale_operator/`
-- **Backing services**: 4 `Ingress` resources (`ingressClassName: tailscale`), one per UI, sharing a
-  single `ProxyGroup` (`ingress-proxies`, 2 replicas for HA) instead of one proxy pod per service.
-- To add another service later, add an entry to `tailscaleoperator_vars.kubernetes.services` in
-  `roles/tailscale_operator/defaults/main.yaml` (hostname, namespace, backend service name, port).
+- **Application**: `home-pi-gitops/apps/tailscale-operator/` — `values.yaml` (chart values, oauth
+  deliberately left unset) and `manifests/` (the `ProxyGroup` plus one `Ingress` per exposed UI, sharing
+  a single ProxyGroup, `ingress-proxies`, 2 replicas for HA, instead of one proxy pod per service).
+- **Role**: `roles/tailscale_operator/` — now only seeds the `operator-oauth` Secret the chart expects
+  to find pre-created.
+- To add another service later, add an `Ingress` to `home-pi-gitops/apps/tailscale-operator/manifests/ingresses.yaml`
+  and commit — no Ansible run needed, Argo CD picks it up on its own.
 - To make a specific one of these public (Funnel, not tailnet-only), add the annotation
   `tailscale.com/funnel: "true"` to that service's Ingress — deliberately not done here by default.
 
@@ -900,7 +999,8 @@ Update `inventory.dist` if your network differs.
 ### Secrets & Variables
 
 - **Encrypted with Vault**: `group_vars/all/main.yaml` — `k3s_join_token`, `tailscale_oauth_client_id`,
-  `tailscale_oauth_client_secret`, `adguard_home_admin_username`, `adguard_home_admin_password`.
+  `tailscale_oauth_client_secret`, `adguard_home_admin_username`, `adguard_home_admin_password`. These
+  never appear in the `home-pi-gitops` repo — see [GitOps (Argo CD)](#gitops-argo-cd)'s "Secrets bridge".
 - **Unencrypted**: All other group_vars and host_vars
 
 To rotate secrets:
@@ -977,11 +1077,13 @@ This is a known Helm limitation (not specific to this repo or to Ansible) — se
 cases, report a successful upgrade while silently failing to reconcile a resource back into the cluster —
 most commonly after that resource was deleted or modified out-of-band (e.g. `kubectl delete daemonset ...`).
 
-The `helm_drift_check` role runs after every Longhorn/VictoriaMetrics/VictoriaLogs chart install and checks
-whether every resource in the chart's current manifest actually exists live. If it detects drift, the
+The `helm_drift_check` role now only runs after Argo CD's own chart install (the one Helm release Ansible
+still manages directly) and checks whether every resource in its current manifest actually exists live.
+For every other chart (Longhorn, VictoriaMetrics, VictoriaLogs, AdGuard Home, Tailscale Operator), this
+class of drift can't happen anymore in practice — Argo CD's continuous reconciliation would just re-apply
+the missing resource on its next sync — but for the Argo CD install itself, if it detects drift, the
 playbook **fails with the exact recovery command to run** (a `helm upgrade` invoked directly rather than
-through Ansible, which resolves it). You shouldn't need to do this often — it only happens after manual
-`kubectl delete` on a Helm-managed resource — but if you see it:
+through Ansible, which resolves it):
 
 ```bash
 export KUBECONFIG=~/.kube/config_rpi

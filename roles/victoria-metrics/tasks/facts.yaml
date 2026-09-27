@@ -3,14 +3,5 @@
   ansible.builtin.set_fact:
     victoriametrics_map:
       credentials:
-        secret: '{{ victoriametrics_vars.kubernetes.helm.chart.victoriametrics.alias }}-credentials'
-      helm:
-        chart:
-          prometheus:
-            reference: '{{ victoriametrics_vars.kubernetes.helm.repository.prometheus.org }}/{{ victoriametrics_vars.kubernetes.helm.chart.prometheus.name }}'
-            version: "{{ victoriametrics_vars.kubernetes.helm.chart.prometheus.version | regex_replace('^v', '') }}"
-          victoriametrics:
-            reference: '{{ victoriametrics_vars.kubernetes.helm.repository.victoriametrics.org }}/{{ victoriametrics_vars.kubernetes.helm.chart.victoriametrics.name }}'
-            version: "{{ victoriametrics_vars.kubernetes.helm.chart.victoriametrics.version | regex_replace('^v', '') }}"
-        timeout: 10m0s
+        secret: vmks-credentials
   run_once: true

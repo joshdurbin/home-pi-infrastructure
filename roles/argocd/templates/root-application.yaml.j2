@@ -1,0 +1,27 @@
+# The "app of apps" root: watches apps/*/application.yaml in the GitOps repo
+# and syncs each one as its own child Application. Deliberately NOT managed
+# by Argo CD itself (applied once, directly, by Ansible) to avoid a
+# self-referential bootstrap dependency. Only application.yaml files are
+# included - values.yaml and manifests/ files are read by each child
+# Application's own sources, not applied directly by this one.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: {{ argocd_vars.kubernetes.namespace }}
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ argocd_vars.kubernetes.namespace }}
+  source:
+    repoURL: {{ argocd_vars.gitops.repo_url }}
+    targetRevision: {{ argocd_vars.gitops.target_revision }}
+    path: {{ argocd_vars.gitops.path }}
+    directory:
+      recurse: true
+      include: '*/application.yaml'
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true

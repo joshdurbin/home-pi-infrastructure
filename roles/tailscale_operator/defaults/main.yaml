@@ -2,35 +2,3 @@
 tailscaleoperator_vars:
   kubernetes:
     namespace: tailscale
-    helm:
-      chart:
-        name: tailscale-operator
-        version: 1.102.4
-      repository:
-        name: tailscale
-        url: https://pkgs.tailscale.com/helmcharts
-    proxy_group:
-      name: ingress-proxies
-      replicas: 2
-    # Each entry becomes its own Ingress: https://<hostname>.<your-tailnet>.ts.net
-    services:
-      - hostname: grafana
-        namespace: monitoring
-        service: vmks-grafana
-        port: 80
-      - hostname: alertmanager
-        namespace: monitoring
-        service: vmalertmanager-vmks-victoria-metrics-k8s-stack
-        port: 9093
-      - hostname: victoriametrics
-        namespace: monitoring
-        service: vmsingle-vmks-victoria-metrics-k8s-stack
-        port: 8428
-      - hostname: longhorn
-        namespace: longhorn
-        service: longhorn-frontend
-        port: 80
-      - hostname: adguard
-        namespace: adguard
-        service: adguard-home-web
-        port: 3000

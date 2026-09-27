@@ -1,90 +1,31 @@
 ---
-# Exposes cluster UIs (Grafana, Alertmanager, VictoriaMetrics, Longhorn) as
-# tailnet-only HTTPS hostnames via the Tailscale Kubernetes Operator, using a
-# shared ProxyGroup instead of one proxy pod per service.
+# Seeds the "operator-oauth" Secret that the tailscale-operator chart expects
+# to already exist (its own oauth-secret.yaml template only renders when
+# oauth.clientId is set in Helm values - and it's deliberately left unset in
+# Argo CD's tailscale-operator Application, see the home-pi-gitops repo,
+# since that repo must never contain real credentials). The chart install,
+# ProxyGroup, and per-service Ingresses now live entirely in that Application.
 #
 # Requires tailscale_oauth_client_id / tailscale_oauth_client_secret to be
-# set in the vault-encrypted group_vars/all/main.yaml - see
-# README.md's "Exposing UIs via Tailscale" section for how to generate and
-# add them. This role will
-# fail loudly (undefined variable) if they're missing, rather than silently
-# deploying an operator with no credentials.
-- name: Role Provisioning
+# set in the vault-encrypted group_vars/all/main.yaml - see README.md's
+# "Exposing UIs via Tailscale" section for how to generate and add them.
+- name: Seed Tailscale operator OAuth credentials
   when: inventory_hostname in k3s_map.server.hosts
+  run_once: true
   block:
-    - name: Add repository
-      kubernetes.core.helm_repository:
-        name: '{{ tailscaleoperator_vars.kubernetes.helm.repository.name }}'
-        repo_url: '{{ tailscaleoperator_vars.kubernetes.helm.repository.url }}'
-        force_update: true
-
-    - name: Install operator
-      run_once: true
-      kubernetes.core.helm:
-        chart_ref: '{{ tailscaleoperator_vars.kubernetes.helm.repository.name }}/{{ tailscaleoperator_vars.kubernetes.helm.chart.name }}'
-        chart_version: '{{ tailscaleoperator_vars.kubernetes.helm.chart.version }}'
+    - name: Create namespace
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: '{{ tailscaleoperator_vars.kubernetes.namespace }}'
         kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
-        name: '{{ tailscaleoperator_vars.kubernetes.helm.chart.name }}'
-        namespace: '{{ tailscaleoperator_vars.kubernetes.namespace }}'
-        values:
-          oauth:
-            clientId: '{{ tailscale_oauth_client_id }}'
-            clientSecret: '{{ tailscale_oauth_client_secret }}'
-        create_namespace: true
-        update_repo_cache: true
+        wait: true
+
+    - name: Create operator-oauth secret
+      kubernetes.core.k8s:
+        definition: "{{ lookup('ansible.builtin.template', 'oauth-secret.j2') | from_yaml }}"
+        kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
         wait: true
       no_log: true
-
-    - name: Check for Helm/cluster drift
-      run_once: true
-      ansible.builtin.include_role:
-        name: helm_drift_check
-      vars:
-        helm_drift_check_release: '{{ tailscaleoperator_vars.kubernetes.helm.chart.name }}'
-        helm_drift_check_namespace: '{{ tailscaleoperator_vars.kubernetes.namespace }}'
-
-    - name: Create shared ProxyGroup
-      run_once: true
-      kubernetes.core.k8s:
-        definition:
-          apiVersion: tailscale.com/v1alpha1
-          kind: ProxyGroup
-          metadata:
-            name: '{{ tailscaleoperator_vars.kubernetes.proxy_group.name }}'
-          spec:
-            type: ingress
-            replicas: '{{ tailscaleoperator_vars.kubernetes.proxy_group.replicas }}'
-        kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
-        wait: true
-
-    - name: Create Ingress per exposed service
-      run_once: true
-      kubernetes.core.k8s:
-        definition:
-          apiVersion: networking.k8s.io/v1
-          kind: Ingress
-          metadata:
-            name: '{{ item.hostname }}'
-            namespace: '{{ item.namespace }}'
-            annotations:
-              tailscale.com/proxy-group: '{{ tailscaleoperator_vars.kubernetes.proxy_group.name }}'
-          spec:
-            ingressClassName: tailscale
-            tls:
-              - hosts:
-                  - '{{ item.hostname }}'
-            rules:
-              - http:
-                  paths:
-                    - path: /
-                      pathType: Prefix
-                      backend:
-                        service:
-                          name: '{{ item.service }}'
-                          port:
-                            number: '{{ item.port }}'
-        kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
-        wait: true
-      loop: '{{ tailscaleoperator_vars.kubernetes.services }}'
-      loop_control:
-        label: '{{ item.hostname }}'
