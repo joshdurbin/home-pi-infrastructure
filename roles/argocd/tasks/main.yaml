@@ -56,6 +56,12 @@
             kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
             wait: true
 
+        - name: Register this repo in Argo CD's Settings > Repositories
+          kubernetes.core.k8s:
+            definition: "{{ lookup('ansible.builtin.template', 'repository.yaml.j2') | from_yaml }}"
+            kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
+            wait: true
+
         - name: Apply root Application (app-of-apps)
           kubernetes.core.k8s:
             definition: "{{ lookup('ansible.builtin.template', 'root-application.yaml.j2') | from_yaml }}"

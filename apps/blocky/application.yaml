@@ -5,9 +5,12 @@ metadata:
   namespace: argocd
   annotations:
     # No PVCs at all (Blocky is stateless), so no Longhorn dependency - but
-    # keep it out of wave 0 regardless, no reason to race the storage
-    # foundation on a fresh bootstrap.
-    argocd.argoproj.io/sync-wave: "1"
+    # its VMServiceScrape needs victoria-metrics' operator CRDs
+    # (operator.victoriametrics.com/v1beta1) to already exist, confirmed by
+    # a real failure: "failed to discover server resources for group
+    # version ... the server could not find the requested resource" when
+    # both were at the same wave. Must sync strictly after victoria-metrics.
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   project: home-pi
   destination:

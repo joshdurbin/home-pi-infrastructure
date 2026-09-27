@@ -1,0 +1,15 @@
+# Explicitly registers this repo in Argo CD's Settings > Repositories UI.
+# Not required for syncing - every Application already references
+# {{ argocd_vars.gitops.repo_url }} directly and syncs fine without this -
+# but without it, the repo never shows up there at all, only implicitly via
+# each Application's own source. Public repo, no credentials needed.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: repo-home-pi-infrastructure
+  namespace: {{ argocd_vars.kubernetes.namespace }}
+  labels:
+    argocd.argoproj.io/secret-type: repository
+stringData:
+  type: git
+  url: {{ argocd_vars.gitops.repo_url }}

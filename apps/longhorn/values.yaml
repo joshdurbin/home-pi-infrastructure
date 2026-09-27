@@ -24,3 +24,11 @@ persistence:
   defaultClassReplicaCount: 2
   defaultDataLocality: best-effort
   migratable: true
+# The chart's own values.yaml comment: "Disable this setting when installing
+# Longhorn using Argo CD or other GitOps solutions." Confirmed why: Argo CD
+# maps this chart's pre-upgrade Job to a PreSync hook, which runs before any
+# regular resource - including the ServiceAccount the Job itself needs,
+# which doesn't exist yet. Deadlocks every fresh sync otherwise (real error:
+# "serviceaccount longhorn-service-account not found").
+preUpgradeChecker:
+  jobEnabled: false

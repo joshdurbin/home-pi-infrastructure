@@ -8,7 +8,10 @@ metadata:
     # (monitoring, longhorn, blocky, searxng) - not a hard dependency (a dangling
     # Ingress backend is valid, just unreachable until the Service shows up),
     # but syncing last avoids that transient state on a fresh bootstrap.
-    argocd.argoproj.io/sync-wave: "2"
+    # Confirmed by a real failure on the namespace an earlier-wave app hadn't
+    # created yet: "namespaces \"blocky\" not found". Must stay strictly
+    # after blocky (wave 2).
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   project: home-pi
   destination:
