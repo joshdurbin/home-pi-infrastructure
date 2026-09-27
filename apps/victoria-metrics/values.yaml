@@ -145,12 +145,18 @@ vmsingle:
     nodeSelector:
       telemetry: "true"
     replicaCount: 1
+    # 1024Mi was fine for months, but confirmed live (OOMKilled, exitCode
+    # 137) it's no longer enough now that vmagent scrapes meaningfully more
+    # series than it used to - Longhorn's 59 metrics x 6 nodes and 4 redis
+    # exporters (blocky-cache/searxng-cache x2 pods each), all added the
+    # same day this started OOMKilling. Runs on a telemetry=true 8GB Pi 5
+    # node with room to spare, so doubled rather than nudged.
     resources:
       limits:
-        memory: 1024Mi
+        memory: 2048Mi
       requests:
         cpu: 10m
-        memory: 1024Mi
+        memory: 2048Mi
     retentionPeriod: 48h
     storage:
       accessModes:
