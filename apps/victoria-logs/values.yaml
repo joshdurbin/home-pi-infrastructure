@@ -23,3 +23,95 @@ vector:
     requests:
       cpu: 10m
       memory: 128Mi
+  # The chart's default image (distroless) has no shell and no journalctl
+  # binary - confirmed live by exec'ing into a running vector pod, every
+  # basic command failed with "executable file not found in $PATH". Vector's
+  # journald source works by spawning journalctl as a subprocess, so it's a
+  # hard requirement. image.base: debian switches the tag from
+  # "0.57.0-distroless-libc" to "0.57.0-debian" (confirmed this tag actually
+  # exists on Docker Hub) - the debian variant installs the systemd apt
+  # package, which provides journalctl.
+  image:
+    base: debian
+  # Confirmed live on both a control-plane (4B) and an agent (5) node: these
+  # nodes run journald in volatile mode. /var/log/journal exists but is
+  # empty (no active journal files); the real, actively-written journal
+  # lives under /run/log/journal. Mounted read-only, same as the chart's own
+  # existing hostPath mounts for /var/log and /var/lib elsewhere in this
+  # subchart.
+  extraVolumes:
+    - name: run-log-journal
+      hostPath:
+        path: /run/log/journal
+  extraVolumeMounts:
+    - name: run-log-journal
+      mountPath: /run/log/journal
+      readOnly: true
+  # Full replace, not a merge (the chart's own comment: "if used all options
+  # need to be specified") - this is the chart's exact default
+  # (victoria-logs-single 0.13.9) plus a journald source/sink pair added.
+  # Re-diff against the chart's own values.yaml on any future chart bump -
+  # same class of drift risk hit with defaultDashboards.defaultTimezone on
+  # the victoria-metrics-k8s-stack upgrade earlier.
+  customConfig:
+    data_dir: /vector-data-dir
+    api:
+      enabled: false
+      address: 0.0.0.0:8686
+    sources:
+      k8s:
+        type: kubernetes_logs
+      internal_metrics:
+        type: internal_metrics
+      journal:
+        type: journald
+        journal_directory: /run/log/journal
+    transforms:
+      parser:
+        type: remap
+        inputs: [k8s]
+        source: |
+          .log = parse_json(.message) ?? .message
+          del(.message)
+    sinks:
+      exporter:
+        type: prometheus_exporter
+        address: 0.0.0.0:9090
+        inputs: [internal_metrics]
+      vlogs:
+        type: elasticsearch
+        inputs: [parser]
+        mode: bulk
+        api_version: v8
+        compression: gzip
+        healthcheck:
+          enabled: false
+        request:
+          headers:
+            VL-Time-Field: timestamp
+            VL-Stream-Fields: stream,kubernetes.pod_name,kubernetes.container_name,kubernetes.pod_namespace
+            VL-Msg-Field: message,msg,_msg,log.msg,log.message,log
+            AccountID: "0"
+            ProjectID: "0"
+      # Separate sink, not reusing vlogs above - journald events don't carry
+      # any of the kubernetes.* fields vlogs's VL-Stream-Fields expects, so
+      # sharing one sink would mean every host-log entry indexes on absent
+      # fields. No `endpoints` set here (same as vlogs above) - the chart's
+      # own vector-config.yaml template auto-fills it for every elasticsearch
+      # sink that omits it, from server.mode/replicaCount, so this doesn't
+      # need to be (and shouldn't be) hardcoded.
+      vlogs_host:
+        type: elasticsearch
+        inputs: [journal]
+        mode: bulk
+        api_version: v8
+        compression: gzip
+        healthcheck:
+          enabled: false
+        request:
+          headers:
+            VL-Time-Field: timestamp
+            VL-Stream-Fields: host,_SYSTEMD_UNIT,PRIORITY
+            VL-Msg-Field: message,MESSAGE
+            AccountID: "0"
+            ProjectID: "0"
