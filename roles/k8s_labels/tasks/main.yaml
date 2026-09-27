@@ -17,6 +17,3 @@
     state: patched
   loop: "{{ groups['all'] }}"
   run_once: true
-  ignore_errors: true
-  async: 30
-  poll: 2
