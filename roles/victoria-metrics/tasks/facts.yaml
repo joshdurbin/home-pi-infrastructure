@@ -1,7 +1,0 @@
----
-- name: Set map fact
-  ansible.builtin.set_fact:
-    victoriametrics_map:
-      credentials:
-        secret: vmks-credentials
-  run_once: true

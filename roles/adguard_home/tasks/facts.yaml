@@ -1,9 +1,0 @@
----
-- name: Set map fact
-  ansible.builtin.set_fact:
-    adguardhome_map:
-      configmap:
-        name: adguard-home-seed-config
-      secret:
-        exporter_creds: adguard-exporter-creds
-  run_once: true

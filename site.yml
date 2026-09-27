@@ -148,34 +148,20 @@
 
 # Longhorn, VictoriaMetrics, VictoriaLogs, AdGuard Home, and the Tailscale
 # Operator's chart installs are no longer driven from here - Argo CD (below)
-# owns that now, syncing from this same repo's apps/ directory. These three
-# plays only seed the handful of real Secrets/ConfigMaps those Applications
+# owns that now, syncing from this same repo's apps/ directory. This play
+# only seeds the handful of real Secrets/ConfigMaps those Applications
 # depend on but can never define themselves, since apps/ must never contain
-# real credentials. They must run before the Argo CD bootstrap play below,
-# so those objects already exist the first time each Application syncs.
-- name: Seed telemetry credentials
+# real credentials (see group_vars/all/cluster_secrets.yaml - one list,
+# every seeded object, in one place). It must run before the Argo CD
+# bootstrap play below, so those objects already exist the first time each
+# Application syncs.
+- name: Seed cluster secrets for Argo CD-managed apps
   hosts: server
   gather_facts: false
   roles:
-    - victoria-metrics
+    - k8s_secrets
   become: yes
-  tags: [telemetry, secrets]
-
-- name: Seed AdGuard Home credentials and config
-  hosts: server
-  gather_facts: false
-  roles:
-    - adguard_home
-  become: yes
-  tags: [dns, adguard, secrets]
-
-- name: Seed Tailscale operator OAuth credentials
-  hosts: server
-  gather_facts: false
-  roles:
-    - tailscale_operator
-  become: yes
-  tags: [tailscale-ingress, secrets]
+  tags: [secrets]
 
 - name: Bootstrap Argo CD
   hosts: server

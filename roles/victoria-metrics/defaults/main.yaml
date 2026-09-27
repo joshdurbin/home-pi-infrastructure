@@ -1,8 +1,0 @@
----
-victoriametrics_vars:
-  kubernetes:
-    namespace: monitoring
-    grafana:
-      admin:
-        user: admin
-        password: changeme

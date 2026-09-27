@@ -2,7 +2,7 @@
 
 Deploys Tailscale VPN to enable secure remote access to Raspberry Pi cluster nodes.
 
-**Not the same thing as `roles/tailscale_operator`** — that one runs the Tailscale *Kubernetes Operator*
+**Not the same thing as `apps/tailscale-operator`** — that one runs the Tailscale *Kubernetes Operator*
 in-cluster to expose specific web UIs (Grafana, Longhorn, etc.) at tailnet-only HTTPS hostnames. This role
 installs the Tailscale *client* directly on each Pi's OS, for VPN/SSH access to the node itself. See the
 main README's "Exposing UIs via Tailscale Operator" section for that one.

@@ -1,0 +1,35 @@
+---
+# Generic "seed a Secret/ConfigMap the cluster needs but git never can"
+# mechanism, driven entirely by the k8s_secrets list (see
+# group_vars/all/cluster_secrets.yaml). This exists because apps/ (the
+# Argo CD GitOps directory) must never contain real credentials - every
+# Argo CD Application that needs one references it by name instead
+# (existingSecret, or a chart's own "expects a pre-created Secret"
+# convention), and this role is what actually puts it there.
+#
+# To add another one: add an entry to k8s_secrets, not a new role - that's
+# the whole point of this being data-driven instead of one role per app.
+- name: Ensure namespaces exist for cluster secrets
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: '{{ item }}'
+    kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
+    wait: true
+  loop: "{{ k8s_secrets | map(attribute='namespace') | unique | list }}"
+  loop_control:
+    label: '{{ item }}'
+  run_once: true
+
+- name: Apply cluster secrets/configmaps
+  kubernetes.core.k8s:
+    definition: '{{ item.manifest }}'
+    kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
+    wait: true
+  loop: '{{ k8s_secrets }}'
+  loop_control:
+    label: '{{ item.manifest.kind }}/{{ item.manifest.metadata.name }}'
+  run_once: true
+  no_log: true

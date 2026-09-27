@@ -1,4 +1,0 @@
----
-tailscaleoperator_vars:
-  kubernetes:
-    namespace: tailscale

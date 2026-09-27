@@ -9,7 +9,7 @@ http:
       - GET /dns-query/{ClientID}
       - POST /dns-query/{ClientID}
     insecure_enabled: false
-  address: 0.0.0.0:{{ adguardhome_vars.kubernetes.service.web_port }}
+  address: 0.0.0.0:{{ adguard_web_port }}
   session_ttl: 30d
 users:
   - name: {{ adguard_home_admin_username | default('admin') }}
@@ -30,10 +30,10 @@ dns:
   ratelimit_whitelist: []
   refuse_any: true
   upstream_dns:
-    - {{ adguardhome_vars.kubernetes.dns.upstream }}
+    - {{ adguard_dns_upstream }}
   upstream_dns_file: ""
   bootstrap_dns:
-{% for ip in adguardhome_vars.kubernetes.dns.bootstrap %}
+{% for ip in adguard_dns_bootstrap %}
     - {{ ip }}
 {% endfor %}
   fallback_dns: []
@@ -112,7 +112,7 @@ filters:
     url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt
     name: AdGuard DNS filter
     id: 1
-{% for f in adguardhome_vars.kubernetes.filters %}
+{% for f in adguard_filters %}
   - enabled: {{ f.enabled | lower }}
     url: {{ f.url }}
     name: {{ f.name }}
@@ -193,4 +193,4 @@ os:
   group: ""
   user: ""
   rlimit_nofile: 0
-schema_version: {{ adguardhome_vars.kubernetes.schema_version }}
+schema_version: {{ adguard_schema_version }}

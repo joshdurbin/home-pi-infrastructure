@@ -63,11 +63,9 @@ home-pi-infrastructure/
 │   ├── helm/                     # Helm binary install (apt + official GPG key)
 │   ├── k8s_labels/                # Applies node labels declared in host_vars (k8s_labels var)
 │   ├── argocd/                   # Bootstraps Argo CD + the root Application (see GitOps section)
+│   ├── k8s_secrets/               # Seeds every Secret/ConfigMap apps/ can't (see GitOps section)
 │   ├── helm_drift_check/         # Post-install verification that Helm's manifest matches live state
 │   ├── longhorn/                 # Host prereqs only now (open-iscsi/nfs-common) - chart is Argo CD's job
-│   ├── victoria-metrics/         # Seeds Grafana admin credentials only - chart is Argo CD's job
-│   ├── adguard_home/             # Seeds AdGuard's credentials/config only - chart is Argo CD's job
-│   ├── tailscale_operator/       # Seeds the operator's OAuth Secret only - chart is Argo CD's job
 │   └── tailscale/                # Tailscale VPN client on each node (optional)
 ├── k3s-ansible/                  # k3s-ansible submodule
 └── k3s-maintenance               # k3s maintenance utility script
@@ -547,14 +545,23 @@ All five child Applications (plus `root`) should show `Synced`/`Healthy`. Access
 `server.insecure: true` (TLS is terminated by Tailscale, same as every other UI in this cluster), and
 `dex`/`notifications` are disabled (no SSO, unused in a single-user homelab).
 
-**Secrets bridge**: the GitOps repo must never contain real credentials, but a few of these apps need
-some (Grafana admin password, AdGuard admin password, Tailscale OAuth client). Those stay exactly where
-they already were — Ansible Vault, in `group_vars/all/main.yaml` — and three now-trimmed roles
-(`victoria-metrics`, `adguard_home`, `tailscale_operator`) apply just the resulting `Secret`/`ConfigMap`
-objects directly to the cluster, decoupled from git entirely. The GitOps repo's `values.yaml` files
-reference those objects by name (`existingSecret: ...`, or a chart's own "expects a pre-created Secret"
-convention) rather than embedding any credential inline. Run these before the Argo CD bootstrap above (or
-any time after — they're idempotent) so the objects exist before each Application's first sync:
+**Secrets bridge**: `apps/` must never contain real credentials, but a few of these apps need some
+(Grafana admin password, AdGuard admin password, Tailscale OAuth client). Those stay exactly where they
+already were — Ansible Vault, in `group_vars/all/main.yaml` — and a single role, **`k8s_secrets`**, applies
+the resulting `Secret`/`ConfigMap` objects directly to the cluster, decoupled from git entirely.
+
+This one role replaced what used to be three separate roles (`victoria-metrics`, `adguard_home`,
+`tailscale_operator`), each named after an app it no longer actually manages — misleading, since none of
+them touch the app itself anymore, only a credential it needs. `k8s_secrets` is deliberately generic and
+data-driven instead: it's a two-task loop (`roles/k8s_secrets/tasks/main.yaml`) over a single list,
+**`k8s_secrets`**, defined in `group_vars/all/cluster_secrets.yaml` — one file that's the complete answer
+to "what gets seeded into the cluster and why." Adding another one later means adding a list entry there,
+not writing a new role.
+
+`apps/`'s `values.yaml` files reference those objects by name (`existingSecret: ...`, or a chart's own
+"expects a pre-created Secret" convention) rather than embedding any credential inline. Run this before the
+Argo CD bootstrap above (or any time after — it's idempotent) so the objects exist before each
+Application's first sync:
 ```bash
 ansible-playbook site.yml -i inventory.dist -t secrets --ask-vault-pass
 ```
@@ -601,8 +608,8 @@ kubectl -n longhorn get pods
 Metrics and logs for the whole cluster, both retained for **48 hours**. Namespace: `monitoring`.
 **The chart installs and all settings now live in this repo's `apps/` directory** (see [GitOps (Argo CD)](#gitops-argo-cd))
 (`apps/victoria-metrics/`, `apps/victoria-logs/`) — Argo CD reconciles them continuously. This repo's only
-remaining job here is seeding the Grafana admin credentials Secret (`roles/victoria-metrics`, now
-secrets-only — see [Secrets bridge](#gitops-argo-cd) below for why that can't live in git).
+remaining job here is seeding the Grafana admin credentials Secret via the generic `k8s_secrets` role (see
+[Secrets bridge](#gitops-argo-cd) above for why that can't live in git).
 
 - **Metrics**: `victoria-metrics-k8s-stack` Helm chart — bundles the VictoriaMetrics operator, `vmsingle`
   (metrics storage), `vmagent` (scraper, cluster-wide), `vmalert`, Alertmanager, kube-state-metrics,
@@ -619,7 +626,7 @@ secrets-only — see [Secrets bridge](#gitops-argo-cd) below for why that can't 
 **Seed/update the Grafana admin credentials Secret** (for the actual chart config, edit
 `apps/victoria-metrics/values.yaml` and commit):
 ```bash
-ansible-playbook site.yml -i inventory.dist -t telemetry,secrets --ask-vault-pass
+ansible-playbook site.yml -i inventory.dist -t secrets --ask-vault-pass
 ```
 
 ### Accessing Grafana
@@ -696,11 +703,12 @@ credentials Secret and the AdGuardHome.yaml seed ConfigMap (both contain the bcr
 - **Services**: two dedicated `LoadBalancer` Services (via k3s's built-in ServiceLB, same mechanism as
   Traefik) — `adguard-home-dns` (53/tcp+udp, for LAN clients) and `adguard-home-web` (3000/tcp, the admin
   UI — also reachable via the Tailscale Operator, see below).
-- **Egress NetworkPolicy**: locks down where the pod can reach *outbound* (LAN clients querying it is
-  ingress, unaffected). Port 853 (DoT) is restricted to the exact Cloudflare IPs in
-  `adguardhome_vars.kubernetes.dns.upstream_ips`; port 53 to CoreDNS only (needed for the pod's own
-  hostname lookups when fetching blocklists); port 443 is left broad since blocklist CDNs rotate IPs.
-  Auto-update-checking is disabled outright (`--no-check-update`) rather than allowlisted.
+- **Egress NetworkPolicy** (`apps/adguard-home/manifests/networkpolicy.yaml`, a plain manifest — no
+  credentials in it, so it's fully git-managed like everything else in `apps/`): locks down where the pod
+  can reach *outbound* (LAN clients querying it is ingress, unaffected). Port 853 (DoT) is restricted to
+  the exact Cloudflare upstream IPs; port 53 to CoreDNS only (needed for the pod's own hostname lookups
+  when fetching blocklists); port 443 is left broad since blocklist CDNs rotate IPs. Auto-update-checking
+  is disabled outright (`--no-check-update`) rather than allowlisted.
 
 **One-time**: create the admin credentials in Vault before first deploy:
 ```bash
@@ -712,9 +720,10 @@ adguard_home_admin_username: "<your choice>"
 adguard_home_admin_password: "<your choice>"
 ```
 
-**Seed/update the credentials and config:**
+**Seed/update the credentials and config** (via the generic `k8s_secrets` role — see
+[Secrets bridge](#gitops-argo-cd)):
 ```bash
-ansible-playbook site.yml -i inventory.dist -t dns,secrets --ask-vault-pass
+ansible-playbook site.yml -i inventory.dist -t secrets --ask-vault-pass
 ```
 
 **Point a client at it**: use either node's IP (ServiceLB exposes every node's own IP) or, once the
@@ -722,10 +731,9 @@ Tailscale Operator step below is done, `https://adguard.<tailnet>.ts.net` for th
 service itself is only reachable via plain LAN IP:53, not through Tailscale.
 
 To change the blocklist or add more, edit `apps/adguard-home/manifests/networkpolicy.yaml` (for the
-NetworkPolicy) or `roles/adguard_home/defaults/main.yaml`'s `adguardhome_vars.kubernetes.filters` (for the
-seed ConfigMap) — the seeded ConfigMap only takes effect on a first-run install; changes after that are
-best made live in the AdGuard UI, since the ConfigMap is just the *initial* seed, not an ongoing source
-of truth.
+NetworkPolicy) or `group_vars/all/cluster_secrets.yaml`'s `adguard_filters` (for the seed ConfigMap) — the
+seeded ConfigMap only takes effect on a first-run install; changes after that are best made live in the
+AdGuard UI, since the ConfigMap is just the *initial* seed, not an ongoing source of truth.
 
 ## Exposing UIs via Tailscale Operator
 
@@ -738,8 +746,8 @@ repo's only remaining job is seeding the OAuth credentials Secret.
 
 This is a different thing from the [Tailscale Integration](#tailscale-integration-optional) section
 below: that one installs the Tailscale *client* on each Pi node itself (node-level VPN/SSH access).
-This one runs the Tailscale *Kubernetes Operator* as an in-cluster pod, which creates tailnet-only
-HTTPS ingress for specific services — `roles/tailscale_operator`, distinct from `roles/tailscale`.
+This one runs the Tailscale *Kubernetes Operator* as an in-cluster pod (`apps/tailscale-operator/`), which
+creates tailnet-only HTTPS ingress for specific services — distinct from `roles/tailscale`.
 
 ### One-time tailnet setup (do this before deploying)
 
@@ -787,8 +795,10 @@ HTTPS ingress for specific services — `roles/tailscale_operator`, distinct fro
 
 ### Deploying
 
+Seed the OAuth Secret (the only Ansible-driven step left — Argo CD handles the actual operator install and
+Ingresses once it's bootstrapped, see [GitOps (Argo CD)](#gitops-argo-cd)):
 ```bash
-ansible-playbook site.yml -i inventory.dist -t tailscale-ingress,secrets --ask-vault-pass
+ansible-playbook site.yml -i inventory.dist -t secrets --ask-vault-pass
 ```
 
 ### Access URLs
@@ -815,8 +825,9 @@ broken — there's a known, unrelated local-resolver quirk that can affect just 
 - **Application**: `apps/tailscale-operator/` — `values.yaml` (chart values, oauth
   deliberately left unset) and `manifests/` (the `ProxyGroup` plus one `Ingress` per exposed UI, sharing
   a single ProxyGroup, `ingress-proxies`, 2 replicas for HA, instead of one proxy pod per service).
-- **Role**: `roles/tailscale_operator/` — now only seeds the `operator-oauth` Secret the chart expects
-  to find pre-created.
+- **Secret**: the `operator-oauth` Secret the chart expects to find pre-created is one entry in the
+  generic `k8s_secrets` role's list (`group_vars/all/cluster_secrets.yaml`) — see
+  [Secrets bridge](#gitops-argo-cd).
 - To add another service later, add an `Ingress` to `apps/tailscale-operator/manifests/ingresses.yaml`
   and commit — no Ansible run needed, Argo CD picks it up on its own.
 - To make a specific one of these public (Funnel, not tailnet-only), add the annotation
