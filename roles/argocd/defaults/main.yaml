@@ -9,11 +9,9 @@ argocd_vars:
       repository:
         name: argo
         url: https://argoproj.github.io/argo-helm
-  # This Mac, served over the LAN via `git daemon` (see README.md's "GitOps
-  # (Argo CD)" section for the one-time manual setup - Ansible controls the
-  # Pis, not this Mac, so that step can't be automated from here). Update the
-  # IP if it changes; there's no DNS name for it today.
+  # Public GitHub repo - no credentials needed, same as the public Helm
+  # chart repos above. See README.md's "GitOps (Argo CD)" section.
   gitops:
-    repo_url: git://192.168.1.57/home-pi-infrastructure
+    repo_url: https://github.com/joshdurbin/home-pi-infrastructure.git
     target_revision: master
     path: apps

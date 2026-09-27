@@ -33,9 +33,9 @@ spec:
         releaseName: blocky
         valueFiles:
           - $values/apps/blocky/values.yaml
-    - repoURL: git://192.168.1.57/home-pi-infrastructure
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
       targetRevision: master
       ref: values
-    - repoURL: git://192.168.1.57/home-pi-infrastructure
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
       targetRevision: master
       path: apps/blocky/manifests

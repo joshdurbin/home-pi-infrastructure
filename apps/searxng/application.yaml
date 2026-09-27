@@ -32,9 +32,9 @@ spec:
         releaseName: searxng
         valueFiles:
           - $values/apps/searxng/values.yaml
-    - repoURL: git://192.168.1.57/home-pi-infrastructure
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
       targetRevision: master
       ref: values
-    - repoURL: git://192.168.1.57/home-pi-infrastructure
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
       targetRevision: master
       path: apps/searxng/manifests

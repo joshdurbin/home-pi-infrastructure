@@ -142,8 +142,7 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass
 - **Maintenance Tools**: Deploys k3s-maintenance script to all nodes
 - **Argo CD Bootstrap**: Installs Argo CD and its root Application, which then continuously syncs
   Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, and the Tailscale Operator from this repo's own
-  `apps/` directory — see [GitOps (Argo CD)](#gitops-argo-cd) for the one-time `git daemon` setup this
-  depends on.
+  `apps/` directory on GitHub — see [GitOps (Argo CD)](#gitops-argo-cd).
 
 This is idempotent - safe to run repeatedly to ensure everything stays configured.
 
@@ -519,20 +518,17 @@ Keeping Argo CD's own bootstrap config in the same repo it manages (rather than 
 to operate day to day, and there's no real conflict: the two halves don't overlap and each tool ignores
 the other's files entirely.
 
-**Why local instead of GitHub**: this repo is plain local git for now — no GitHub involved — served over
-the LAN via git's own built-in `git daemon`, since Argo CD runs in-cluster on the Pis and needs *some*
-network path to the repo; it can't just read files off this Mac's disk.
+**Where Argo CD reads from**: this repo is public on GitHub
+(`https://github.com/joshdurbin/home-pi-infrastructure.git`), so Argo CD (running in-cluster on the Pis)
+just points straight at it — no credentials needed, same as the public Helm chart repos above. `git push`
+from anywhere and Argo CD picks it up within its next poll cycle (or immediately via `argocd app sync` /
+the UI).
 
-**One-time setup** (manual — Ansible controls the Pis, not this Mac):
-```bash
-git daemon --reuseaddr --base-path=~/dev --export-all --verbose ~/dev/home-pi-infrastructure
-```
-Set up a LaunchAgent so it survives logout/reboot, and confirm this Mac's firewall allows inbound
-connections on port `9418` from the LAN. `roles/argocd/defaults/main.yaml`'s `argocd_vars.gitops.repo_url`
-points at this Mac's LAN IP (`git://192.168.1.57/home-pi-infrastructure` today — update it if the IP
-changes, there's no DNS name for it). **Tradeoff to know about**: Argo CD can only see new commits while
-this Mac is on, awake, and reachable on the LAN — nothing breaks if it's off, sync just pauses until it's
-back.
+(This repo started out served locally over the LAN via `git daemon`, back when it wasn't yet pushed to
+GitHub — that's gone now that it's a public GitHub repo. If it were private instead, Argo CD would need a
+credential: either a read-only SSH deploy key or a fine-grained PAT, stored as a `Secret` in the `argocd`
+namespace labeled `argocd.argoproj.io/secret-type: repository` — worth revisiting if this repo is ever made
+private.)
 
 **Bootstrap Argo CD:**
 ```bash
@@ -543,7 +539,7 @@ Then check in:
 kubectl -n argocd get pods
 kubectl -n argocd get applications
 ```
-All five child Applications (plus `root`) should show `Synced`/`Healthy`. Access the UI at
+All six child Applications (plus `root`) should show `Synced`/`Healthy`. Access the UI at
 `https://argocd.<tailnet>.ts.net` once the Tailscale Operator Application has synced (see below), or via
 `kubectl -n argocd port-forward svc/argocd-server 8080:443` in the meantime — it runs with
 `server.insecure: true` (TLS is terminated by Tailscale, same as every other UI in this cluster), and
