@@ -27,7 +27,6 @@ See `group_vars/all/main.yaml`:
 - `enable_cgroups` - Enable kernel cgroups only
 - `k3s_optimization` - GPU/camera/HAT optimizations only
 - `blacklist_modules` - Kernel module blacklisting only
-- `user_management` - User management only
 - `remove_services` - Remove unnecessary services only
 
 ## Dependencies

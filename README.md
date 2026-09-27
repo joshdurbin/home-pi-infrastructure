@@ -70,8 +70,9 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
    All nodes should show `Ready`, all Argo CD Applications `Synced`/`Healthy`.
 
 From there, Longhorn (storage), VictoriaMetrics/VictoriaLogs/Grafana (monitoring), Blocky (DNS), SearXNG
-(search), and the Tailscale Operator all come up on their own — Argo CD manages them from this repo's
-`apps/` directory. See [docs/REFERENCE.md](docs/REFERENCE.md) for what each one does.
+(search), the redis-operator (Blocky's and SearXNG's own small caching clusters), and the Tailscale
+Operator all come up on their own — Argo CD manages them from this repo's `apps/` directory. See
+[docs/REFERENCE.md](docs/REFERENCE.md) for what each one does.
 
 ## Make targets
 

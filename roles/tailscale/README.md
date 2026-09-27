@@ -78,8 +78,8 @@ ssh ansible@rpi-4b-1
 
 ## Targets
 
-- **Included**: Pi4 and Pi5 instances
-- **Excluded**: Pi 3B+
+- **Included**: Pi4 and Pi5 instances (`hosts: pi4,pi5` in `site.yml`) - every node currently in this
+  cluster's inventory.
 
 ## Tags
 

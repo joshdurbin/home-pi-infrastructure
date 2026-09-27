@@ -1,8 +1,9 @@
 ---
 # Bootstraps Argo CD itself (the one remaining Ansible-driven Helm install)
 # and the root Application that then takes over syncing everything else
-# (Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, Tailscale Operator)
-# from this repo's own apps/ directory. See README.md's "GitOps (Argo CD)" section.
+# (Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, the redis-operator
+# and its Blocky/SearXNG cache clusters, and the Tailscale Operator) from this
+# repo's own apps/ directory. See README.md's "GitOps (Argo CD)" section.
 - name: Role Facts
   ansible.builtin.include_role:
     name: argocd

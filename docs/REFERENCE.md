@@ -20,6 +20,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [Monitoring & Logging (VictoriaMetrics, VictoriaLogs, Grafana)](#monitoring--logging-victoriametrics-victorialogs-grafana)
 - [DNS (Blocky)](#dns-blocky)
 - [Search (SearXNG)](#search-searxng)
+- [Redis Clusters (Blocky + SearXNG Caching)](#redis-clusters-blocky--searxng-caching)
 - [Exposing UIs via Tailscale Operator](#exposing-uis-via-tailscale-operator)
 - [Tailscale Integration (Optional)](#tailscale-integration-optional)
 - [Cluster Configuration](#cluster-configuration)
@@ -28,9 +29,12 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 
 ## Hardware Setup
 
-- **Control Plane**: 3x Raspberry Pi 4B (8GB RAM, 128GB SSD) — `rpi-4b-1`, `rpi-4b-2`, `rpi-4b-3`
+- **Control Plane**: 3x Raspberry Pi 4B (4GB RAM, 128GB SSD) — `rpi-4b-1`, `rpi-4b-2`, `rpi-4b-3`
 - **Worker Nodes**: 3x Raspberry Pi 5 (8GB RAM) — `rpi-5-1`, `rpi-5-2`, `rpi-5-3`
-- **Excluded**: Raspberry Pi 3B+ (optional other roles)
+
+(RAM figures confirmed live via `kubectl get nodes -o jsonpath='{.status.capacity.memory}'` - the 4B nodes
+report ~3.9GiB, i.e. 4GB boards; this matters for anything sizing container `resources.limits.memory`
+against the smaller of the two node classes.)
 
 Two of the Pi 5 nodes (`rpi-5-2`, `rpi-5-3`) carry a `storage=true` Kubernetes node label and back Longhorn's
 distributed storage. Two Pi 5 nodes (`rpi-5-1`, `rpi-5-2`) carry a `telemetry=true` label and host the
@@ -58,8 +62,11 @@ home-pi-infrastructure/
 │   ├── longhorn/{application.yaml, values.yaml}
 │   ├── victoria-metrics/{application.yaml, values.yaml}
 │   ├── victoria-logs/{application.yaml, values.yaml, manifests/}
-│   ├── blocky/{application.yaml, values.yaml, manifests/}
-│   ├── searxng/{application.yaml, values.yaml, manifests/}
+│   ├── redis-operator/{application.yaml, values.yaml}   # manages Blocky's/SearXNG's own redis clusters
+│   ├── blocky/{application.yaml, values.yaml, manifests/}          # manifests/ includes blocky-cache's
+│   │                                                                # RedisReplication/RedisSentinel CRs
+│   ├── searxng/{application.yaml, values.yaml, manifests/}         # manifests/ includes searxng-cache's
+│   │                                                                # RedisReplication/RedisSentinel CRs
 │   └── tailscale-operator/{application.yaml, values.yaml, manifests/}
 ├── group_vars/                   # Group-based variables
 │   ├── all/                      # Variables for all hosts
@@ -73,11 +80,13 @@ home-pi-infrastructure/
 │   ├── argocd/                   # Bootstraps Argo CD + the root Application (see GitOps section)
 │   ├── k8s_secrets/               # Seeds every Secret/ConfigMap apps/ can't (see GitOps section)
 │   ├── helm_drift_check/         # Post-install verification that Helm's manifest matches live state
-│   ├── longhorn/                 # Host prereqs only now (open-iscsi/nfs-common) - chart is Argo CD's job
+│   ├── longhorn_prereqs/         # Host prereqs only now (open-iscsi/nfs-common) - chart is Argo CD's job
 │   └── tailscale/                # Tailscale VPN client on each node (optional)
-├── k3s-ansible/                  # k3s-ansible submodule
-└── k3s-maintenance               # k3s maintenance utility script
+└── k3s-ansible/                  # k3s-ansible submodule
 ```
+
+(`roles/k3s_maintenance/files/k3s-maintenance` is the actual maintenance script - it's a role file, not a
+repo-root file.)
 
 
 ## Prerequisites
@@ -145,8 +154,9 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass
 - **K3S Deployment**: Installs and configures k3s cluster (servers + agents)
 - **Maintenance Tools**: Deploys k3s-maintenance script to all nodes
 - **Argo CD Bootstrap**: Installs Argo CD and its root Application, which then continuously syncs
-  Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, and the Tailscale Operator from this repo's own
-  `apps/` directory on GitHub — see [GitOps (Argo CD)](#gitops-argo-cd).
+  Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, the redis-operator (Blocky's and SearXNG's own
+  cache clusters), and the Tailscale Operator from this repo's own `apps/` directory on GitHub — see
+  [GitOps (Argo CD)](#gitops-argo-cd).
 
 This is idempotent - safe to run repeatedly to ensure everything stays configured.
 
@@ -502,9 +512,9 @@ cluster-admin access — fine for a single-user homelab, but keep it as private 
 
 ## GitOps (Argo CD)
 
-Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, and the Tailscale Operator are no longer installed
-or upgraded by Ansible. Argo CD runs in-cluster (namespace `argocd`) and continuously reconciles all five
-from this **same** repo's `apps/` directory — edit a file there, commit, and Argo CD applies it within its
+Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, redis-operator, and the Tailscale Operator are no
+longer installed or upgraded by Ansible. Argo CD runs in-cluster (namespace `argocd`) and continuously
+reconciles all seven from this **same** repo's `apps/` directory — edit a file there, commit, and Argo CD applies it within its
 next poll cycle (or immediately via `argocd app sync` / the UI). This replaced hand-templating every
 chart's values through Jinja and running `kubectl`/`helm` manually to fix drift — Argo CD's own continuous
 reconciliation makes drift structurally impossible to miss.
@@ -545,7 +555,7 @@ Then check in:
 kubectl -n argocd get pods
 kubectl -n argocd get applications
 ```
-All six child Applications (plus `root`) should show `Synced`/`Healthy`. Access the UI at
+All seven child Applications (plus `root`) should show `Synced`/`Healthy`. Access the UI at
 `https://argocd.<tailnet>.ts.net` once the Tailscale Operator Application has synced (see below), or via
 `kubectl -n argocd port-forward svc/argocd-server 8080:443` in the meantime — it runs with
 `server.insecure: true` (TLS is terminated by Tailscale, same as every other UI in this cluster), and
@@ -709,7 +719,12 @@ ConfigMap-seeding dance. Config schema below was verified directly against
   init-container seed-once workaround like AdGuard needed: Blocky is genuinely stateless and never
   rewrites its own config, so a plain read-only ConfigMap mount is all that's required.
 - **Blocklist**: OISD (small) — same list AdGuard used, a low-false-positive list.
-- **Storage**: none. Blocky has no PVC at all — no mutable runtime config, no required local persistence.
+- **Cache backend**: Blocky's native `redis:` config (in `configmap.yaml`) points at `blocky-cache`'s
+  Sentinel cluster for master discovery — see [Redis Clusters](#redis-clusters-blocky--searxng-caching)
+  below. `required: false`, so a cache outage degrades to in-memory-only caching rather than blocking DNS
+  resolution.
+- **Storage**: none for Blocky itself — no mutable runtime config, no required local persistence. Its
+  cache backend does have storage, see [Redis Clusters](#redis-clusters-blocky--searxng-caching) below.
 - **Metrics**: native Prometheus endpoint at `/metrics` (port 4000), wired to `vmagent` via a
   `VMServiceScrape` (`apps/blocky/manifests/vmservicescrape.yaml`) — verified this actually gets scraped
   (`vmagent`'s `serviceScrapeSelector` is `selectAllByDefault: true` in this chart, confirmed against the
@@ -755,16 +770,17 @@ is a web UI, not a port every LAN client needs to hit directly (same pattern as 
   actual entrypoint script — so it has to live inside the seeded settings.yml, which is why (unlike Blocky)
   this one *does* need an entry in `group_vars/all/cluster_secrets.yaml` and a vault-encrypted
   `searxng_secret_key`.
-- **Storage**: none. SearXNG stores no user data or query history server-side by design (that's the whole
-  point of it), and its on-disk cache is fine to lose on restart.
-- **Rate-limiting / bot-protection**: not configured. SearXNG's optional "limiter" feature (backed by
-  Redis/Valkey) helps the instance avoid looking like a bot to the search engines it queries, at the cost
-  of a second stateful component. Skipped for now given the low query volume of a single-user homelab
-  instance — worth adding later if upstream engines start rate-limiting or blocking it.
-- **Metrics**: none wired up. Stock SearXNG has no native Prometheus endpoint (unlike Blocky) — if metrics
-  are wanted later this would need a separate exporter sidecar, not attempted here since it wasn't asked
-  for and nothing in this repo should claim scraping wiring that doesn't actually exist (see the
+- **Storage**: none for SearXNG itself — it stores no user data or query history server-side by design
+  (that's the whole point of it), and its on-disk cache is fine to lose on restart. Its own redis/valkey
+  cache does have storage, see [Redis Clusters](#redis-clusters-blocky--searxng-caching) below.
+- **Rate-limiting / bot-protection**: configured via `valkey.url` in
+  `roles/k8s_secrets/templates/searxng-config.yaml.j2`, pointing at `searxng-cache` — see
+  [Redis Clusters](#redis-clusters-blocky--searxng-caching) below for the real caveat: SearXNG's client
+  can't discover a new master after a failover, unlike Blocky's.
+- **Metrics**: SearXNG itself still has no native Prometheus endpoint (unlike Blocky) — not attempted here
+  since nothing in this repo should claim scraping wiring that doesn't actually exist (see the
   adguard-exporter note in [DNS (Blocky)](#dns-blocky) for exactly the mistake this is avoiding repeating).
+  Its redis cache's own metrics *are* scraped, though — see below.
 - **Egress NetworkPolicy** (`apps/searxng/manifests/networkpolicy.yaml`): port 443 stays broad by
   necessity — search engines have far too many arbitrary/rotating IPs to allowlist, unlike Blocky/AdGuard's
   fixed Cloudflare DoT IPs. Port 53 to CoreDNS resolves each engine's hostname.
@@ -786,6 +802,68 @@ ansible-playbook site.yml -i inventory.dist -t secrets --ask-vault-pass
 ```
 
 **Access it**: `https://search.<tailnet>.ts.net` once the Tailscale Operator step below has synced.
+
+## Redis Clusters (Blocky + SearXNG Caching)
+
+Two small, independent master+replica redis clusters — one backing Blocky's cache/blocking-state, one
+backing SearXNG's rate-limiter — each with automatic failover via Sentinel. **Everything here lives in
+`apps/redis-operator/`, `apps/blocky/manifests/`, and `apps/searxng/manifests/`** (see
+[GitOps (Argo CD)](#gitops-argo-cd)) — Argo CD reconciles all of it continuously; nothing here needs
+Ansible except SearXNG's `valkey.url` setting (part of its seeded `settings.yml`, see
+[Search (SearXNG)](#search-searxng) above).
+
+- **Operator**: [OT-Container-Kit redis-operator](https://github.com/OT-CONTAINER-KIT/redis-operator)
+  (`apps/redis-operator/`), namespace `redis-operator`, watches every namespace for its `RedisReplication`
+  and `RedisSentinel` CRDs. Chosen over a Bitnami-style Helm chart specifically to avoid depending on
+  Bitnami's chart/image catalog, which has been moving free rolling updates behind a paid tier.
+- **Topology per cluster**: a `RedisReplication` (`clusterSize: 2` — one master, one replica, each with its
+  own 512Mi Longhorn PVC) plus a separate `RedisSentinel` (`clusterSize: 3`, quorum 2-of-3 — a real
+  majority, which 2 sentinels can't provide) monitoring it. Namespaces: `blocky-cache`, `searxng-cache` —
+  deliberately **not** the `blocky`/`searxng` namespaces themselves, so those apps' existing egress-only
+  `NetworkPolicy` (`podSelector: {}` — every pod in the namespace) doesn't accidentally clamp down the
+  redis/sentinel pods' own intra-cluster traffic too.
+- **Sizing**: `maxmemory 128mb` / `allkeys-lru` (set via `redisConfig.dynamicConfig` on the
+  `RedisReplication`) — these are small caches, not a source of truth. Each redis container gets a 192Mi
+  memory limit — `maxmemory` plus headroom for redis's own process overhead, client buffers and
+  replication backlog, not `maxmemory` itself. Sized for the smaller of this cluster's two node classes
+  (the 4B control-plane nodes are 4GB boards, not 8GB — see [Hardware Setup](#hardware-setup)).
+- **Metrics**: a `redis_exporter` sidecar on every replication pod (port 9121), scraped by a `VMPodScrape`
+  (not a `VMServiceScrape` like Blocky's own — the operator doesn't document a stable Service port *name*
+  for the exporter, only the container port number) in each cache namespace.
+- **How Blocky connects**: natively Sentinel-aware — its `redis.sentinelAddresses` (in
+  `apps/blocky/manifests/configmap.yaml`) points at the round-robin `blocky-cache-sentinel-sentinel`
+  Service, and `redis.address: blocky-cache` is the Sentinel master group name
+  (`redisSentinelConfig.masterGroupName`). Always finds the current master, even after a failover.
+- **How SearXNG connects**: **not** Sentinel-aware — its `valkey.url` only takes a single connection
+  string, so it points directly at `searxng-cache-0`'s own pod DNS name
+  (`searxng-cache-0.searxng-cache-headless.searxng-cache.svc.cluster.local`). Sentinel still promotes the
+  replica automatically if the master pod dies, but SearXNG's own connection won't follow it there — a
+  known, deliberate limitation, not a bug. If `searxng-cache-0` is ever *not* the master (check with
+  `kubectl -n searxng-cache get redisreplication searxng-cache` — the `MASTER` column shows which pod), the
+  cache is effectively down for SearXNG until someone repoints this URL and re-seeds
+  (`ansible-playbook site.yml -i inventory.dist -t secrets --ask-vault-pass`) or the original pod recovers.
+
+**A real gotcha, confirmed live, worth remembering**: the operator appends its own `-sentinel` suffix to
+whatever name a `RedisSentinel` CR is given — so a CR named `blocky-cache-sentinel` actually produces a
+StatefulSet/Service named `blocky-cache-sentinel-sentinel` (`kubectl -n blocky-cache get svc` to check),
+**not** `blocky-cache-sentinel`. This bit the very first deploy of this feature — Blocky logged
+`sentinel: ... no such host` and silently ran with no cache until the address was corrected.
+
+**Troubleshooting:**
+```bash
+# Cluster health
+kubectl -n blocky-cache get pods,pvc,redisreplication,redissentinel
+kubectl -n searxng-cache get pods,pvc,redisreplication,redissentinel
+
+# Which pod is master right now
+kubectl -n blocky-cache get redisreplication blocky-cache
+
+# Actual Service names the operator created (don't assume - check)
+kubectl -n blocky-cache get svc
+
+# Confirm Blocky actually connected (look for "sentinel: new master=..." not "no such host")
+kubectl -n blocky logs deployment/blocky | grep -i redis
+```
 
 ## Exposing UIs via Tailscale Operator
 
@@ -948,7 +1026,8 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass --tags tailscale
 
 Or just run `make deploy` — it's part of the full playbook now.
 
-**Deployed to:** Pi4 and Pi5 instances only (excludes Pi 3B+)
+**Deployed to:** Pi4 and Pi5 instances (`hosts: pi4,pi5` in `site.yml`) - every node in this cluster's
+inventory.
 
 ### Configuration
 
@@ -1157,7 +1236,8 @@ most commonly after that resource was deleted or modified out-of-band (e.g. `kub
 
 The `helm_drift_check` role now only runs after Argo CD's own chart install (the one Helm release Ansible
 still manages directly) and checks whether every resource in its current manifest actually exists live.
-For every other chart (Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, Tailscale Operator), this
+For every other chart (Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, redis-operator, Tailscale
+Operator), this
 class of drift can't happen anymore in practice — Argo CD's continuous reconciliation would just re-apply
 the missing resource on its next sync — but for the Argo CD install itself, if it detects drift, the
 playbook **fails with the exact recovery command to run** (a `helm upgrade` invoked directly rather than
