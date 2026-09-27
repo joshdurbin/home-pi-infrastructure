@@ -67,17 +67,11 @@ grafana:
   # is even scheduled.
   deploymentStrategy:
     type: Recreate
-  # Temporarily 0 - see the PVC-wipe step in git log around this commit.
-  # Grafana 13.1.1 (bundled by this chart version) crash-loops against the
-  # existing grafana.db: "Datasource provisioning error: data source not
-  # found" - Grafana 13 made datasource-UID validation against the DB
-  # strict/fatal (was a non-fatal warning in 12.x), and this PVC has been
-  # through many chart versions' worth of provisioning history. Nothing
-  # here is hand-curated in the UI - admin creds come from a Secret,
-  # datasources/dashboards are all GitOps-provisioned - so a fresh DB costs
-  # nothing. Scaling to 0 first so the PVC can actually be deleted (it
-  # can't while a pod - even a crash-looping one - still holds it mounted).
-  replicas: 0
+  # Back to 1 - the stale vmks-grafana PVC (crash-looping under Grafana
+  # 13.1.1 with "Datasource provisioning error: data source not found",
+  # see git log) has been deleted. A fresh PVC + fresh grafana.db gets
+  # created on this sync, with no legacy UID history to conflict with.
+  replicas: 1
   resources:
     limits:
       memory: 256Mi
