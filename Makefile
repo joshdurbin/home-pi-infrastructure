@@ -1,4 +1,4 @@
-.PHONY: help install deploy deploy-system deploy-k3s deploy-users deploy-maintenance verify logs clean status drain uncordon syntax-check lint
+.PHONY: help install deploy deploy-system deploy-k3s deploy-users deploy-secrets deploy-argocd deploy-maintenance verify logs clean status drain uncordon syntax-check lint
 
 INVENTORY := inventory.dist
 VAULT_PASS := --ask-vault-pass
@@ -15,6 +15,8 @@ help:
 	@echo "  make deploy-system        Deploy only system setup"
 	@echo "  make deploy-k3s           Deploy only k3s cluster"
 	@echo "  make deploy-users         Deploy only user management"
+	@echo "  make deploy-secrets       Seed cluster Secrets/ConfigMaps only"
+	@echo "  make deploy-argocd        Bootstrap Argo CD only"
 	@echo "  make deploy-maintenance   Deploy only maintenance tools"
 	@echo ""
 	@echo "Verification & Monitoring:"
@@ -52,17 +54,25 @@ deploy-users:
 	@echo "Deploying user management only..."
 	ansible-playbook site.yml -i $(INVENTORY) $(VAULT_PASS) --tags user_management
 
+deploy-secrets:
+	@echo "Seeding cluster secrets only..."
+	ansible-playbook site.yml -i $(INVENTORY) $(VAULT_PASS) --tags secrets
+
+deploy-argocd:
+	@echo "Bootstrapping Argo CD only..."
+	ansible-playbook site.yml -i $(INVENTORY) $(VAULT_PASS) --tags helm,argocd
+
 deploy-maintenance:
 	@echo "Deploying maintenance tools only..."
 	ansible-playbook site.yml -i $(INVENTORY) $(VAULT_PASS) --tags maintenance
 
 verify:
 	@echo "Verifying cluster health..."
-	ansible $(FIRST_SERVER) -i $(INVENTORY) -m command -a "sudo kubectl get nodes && echo '---' && sudo kubectl get pods -A | grep -E 'coredns|metrics-server|local-path'"
+	ansible $(FIRST_SERVER) -i $(INVENTORY) -m command -a "sudo kubectl get nodes && echo '---' && sudo kubectl get pods -A | grep -E 'coredns|metrics-server|local-path' && echo '---' && sudo kubectl get applications -n argocd"
 
 status:
 	@echo "Cluster Status:"
-	ansible $(FIRST_SERVER) -i $(INVENTORY) -m command -a "sudo kubectl get nodes"
+	ansible $(FIRST_SERVER) -i $(INVENTORY) -m command -a "sudo kubectl get nodes && echo '---' && sudo kubectl get applications -n argocd"
 
 logs:
 	@echo "Tailing k3s logs from first server..."
