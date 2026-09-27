@@ -72,12 +72,20 @@ grafana:
   # see git log) has been deleted. A fresh PVC + fresh grafana.db gets
   # created on this sync, with no legacy UID history to conflict with.
   replicas: 1
+  # 256Mi was right-sized for Grafana 12.4.2. Confirmed live (OOMKilled,
+  # exitCode 137) that Grafana 13.1.1 (bundled by this chart version) is a
+  # meaningfully heavier process - its startup log shows a whole new
+  # apiserver/unified-storage/bleve-search-index subsystem set that 12.x
+  # never had - and it was still climbing past 256Mi under nothing more
+  # than a single dashboard being viewed (`kubectl top pod` showed ~201Mi at
+  # idle, right after a restart). Doubled, matching this repo's other
+  # "give it real headroom rather than nudge it" sizing (e.g. vmagent).
   resources:
     limits:
-      memory: 256Mi
+      memory: 512Mi
     requests:
       cpu: 10m
-      memory: 256Mi
+      memory: 512Mi
 kube-state-metrics:
   replicas: 1
   resources:
