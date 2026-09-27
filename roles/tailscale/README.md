@@ -25,10 +25,8 @@ sudo tailscale up
 
 ## Usage
 
-There is no standalone playbook for this role — uncomment its play in `site.yml` first, then:
-
 ```bash
-# Full deployment (includes Tailscale once uncommented)
+# Full deployment (includes Tailscale)
 make deploy
 
 # Or just this role, via its tag
@@ -98,7 +96,8 @@ sudo tailscale logout
 
 ## Notes
 
-- Currently commented out in site.yml (disabled by default)
 - Idempotent - safe to run multiple times
-- Nodes must be individually authenticated after installation
+- Installs the client only - **nodes must still be individually authenticated after installation** (see
+  Configuration above); this role does not run `tailscale up` for you, since that's an interactive login
+  flow (or requires a pre-generated auth key, which this role doesn't currently support)
 - Free tier includes up to 100 devices

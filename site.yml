@@ -138,13 +138,10 @@
 - name: Longhorn host prerequisites
   hosts: k3s_cluster
   gather_facts: false
+  roles:
+    - longhorn_prereqs
   become: yes
   tags: [storage, longhorn]
-  tasks:
-    - name: Install Longhorn host dependencies
-      ansible.builtin.import_role:
-        name: longhorn
-        tasks_from: prereq
 
 # Longhorn, VictoriaMetrics, VictoriaLogs, AdGuard Home, and the Tailscale
 # Operator's chart installs are no longer driven from here - Argo CD (below)
@@ -171,10 +168,15 @@
   become: yes
   tags: [argocd, charts]
 
-# Uncomment below to deploy Tailscale
-# - name: Deploy Tailscale
-#   hosts: pi4,pi5
-#   roles:
-#     - tailscale
-#   become: yes
-#   tags: [tailscale]
+# Installs the Tailscale client on every Pi node's OS (not a Kubernetes
+# object - this is why it's a plain Ansible role and always will be, even
+# with everything cluster-side now on Argo CD) so each node is reachable by
+# SSH from any device on the tailnet. Node-level VPN access, distinct from
+# the Tailscale Kubernetes Operator (apps/tailscale-operator/) that exposes
+# in-cluster UIs - see "Exposing UIs via Tailscale Operator" in README.md.
+- name: Deploy Tailscale
+  hosts: pi4,pi5
+  roles:
+    - tailscale
+  become: yes
+  tags: [tailscale]

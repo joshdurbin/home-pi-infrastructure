@@ -870,17 +870,18 @@ operator's logs for OAuth/ACL errors first — the most common cause is the `tag
 
 ## Tailscale Integration (Optional)
 
-Tailscale is a zero-config VPN built on WireGuard that securely connects nodes over the internet.
-
-**Note:** Currently commented out in `site.yml`. To enable, uncomment the Tailscale play.
+Tailscale is a zero-config VPN built on WireGuard that securely connects nodes over the internet. This
+installs the Tailscale *client* directly on each Pi's OS for node-level SSH/VPN access — distinct from the
+Tailscale *Kubernetes Operator* (`apps/tailscale-operator/`) that exposes in-cluster UIs; see
+[Exposing UIs via Tailscale Operator](#exposing-uis-via-tailscale-operator) for that one.
 
 ### Installation
 
 ```bash
-ansible-playbook tailscale_deploy.yml -i inventory.dist --ask-vault-pass
+ansible-playbook site.yml -i inventory.dist --ask-vault-pass --tags tailscale
 ```
 
-Or uncomment in `site.yml` and run `make deploy`.
+Or just run `make deploy` — it's part of the full playbook now.
 
 **Deployed to:** Pi4 and Pi5 instances only (excludes Pi 3B+)
 
