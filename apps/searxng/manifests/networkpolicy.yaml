@@ -1,0 +1,32 @@
+# Egress-only restriction (Tailscale reaching SearXNG's web UI is ingress,
+# unaffected). Unlike Blocky/AdGuard, there's no small fixed IP set to lock
+# 443 down to here - SearXNG's whole purpose is querying many different
+# search engines (Google, Bing, DuckDuckGo, Wikipedia, and whatever else is
+# enabled), each with their own arbitrary/rotating IPs. So 443 stays broad,
+# same rationale as Blocky/AdGuard's blocklist-download rule, just covering
+# all of this app's egress instead of one exception within it.
+# - 53/udp+tcp to CoreDNS resolves every search engine's hostname.
+# - 443/tcp is broad by necessity - this is what the app is for.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: searxng-egress
+  namespace: searxng
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - ports:
+        - protocol: TCP
+          port: 443

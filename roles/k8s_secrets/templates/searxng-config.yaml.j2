@@ -1,0 +1,17 @@
+# Deliberately minimal - `use_default_settings: true` inherits SearXNG's
+# entire shipped default engine list and general settings, so this only
+# needs to override what's actually secret or environment-specific. This is
+# the exact shape of the vendor's own template.settings.yml, verified via a
+# real `docker run` against docker.io/searxng/searxng:2026.9.25-12f8b6515
+# (not assumed from docs) - including confirming server.secret_key has no
+# environment-variable equivalent, so it has to live in this file, and that
+# omitting server.base_url (this cluster's tailnet hostname isn't known
+# here) is fine - SearXNG auto-detects it from request headers.
+use_default_settings: true
+
+server:
+  secret_key: "{{ searxng_secret_key }}"
+  image_proxy: true
+
+ui:
+  static_use_hash: true

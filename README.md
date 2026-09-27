@@ -15,6 +15,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [Storage (Longhorn)](#storage-longhorn)
 - [Monitoring & Logging (VictoriaMetrics, VictoriaLogs, Grafana)](#monitoring--logging-victoriametrics-victorialogs-grafana)
 - [DNS (Blocky)](#dns-blocky)
+- [Search (SearXNG)](#search-searxng)
 - [Exposing UIs via Tailscale Operator](#exposing-uis-via-tailscale-operator)
 - [Tailscale Integration (Optional)](#tailscale-integration-optional)
 - [Cluster Configuration](#cluster-configuration)
@@ -54,6 +55,7 @@ home-pi-infrastructure/
 │   ├── victoria-metrics/{application.yaml, values.yaml}
 │   ├── victoria-logs/{application.yaml, values.yaml, manifests/}
 │   ├── blocky/{application.yaml, values.yaml, manifests/}
+│   ├── searxng/{application.yaml, values.yaml, manifests/}
 │   └── tailscale-operator/{application.yaml, values.yaml, manifests/}
 ├── group_vars/                   # Group-based variables
 │   ├── all/                      # Variables for all hosts
@@ -139,7 +141,7 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass
 - **K3S Deployment**: Installs and configures k3s cluster (servers + agents)
 - **Maintenance Tools**: Deploys k3s-maintenance script to all nodes
 - **Argo CD Bootstrap**: Installs Argo CD and its root Application, which then continuously syncs
-  Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, and the Tailscale Operator from this repo's own
+  Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, and the Tailscale Operator from this repo's own
   `apps/` directory — see [GitOps (Argo CD)](#gitops-argo-cd) for the one-time `git daemon` setup this
   depends on.
 
@@ -495,7 +497,7 @@ cluster-admin access — fine for a single-user homelab, but keep it as private 
 
 ## GitOps (Argo CD)
 
-Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, and the Tailscale Operator are no longer installed
+Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, and the Tailscale Operator are no longer installed
 or upgraded by Ansible. Argo CD runs in-cluster (namespace `argocd`) and continuously reconciles all five
 from this **same** repo's `apps/` directory — edit a file there, commit, and Argo CD applies it within its
 next poll cycle (or immediately via `argocd app sync` / the UI). This replaced hand-templating every
@@ -547,10 +549,11 @@ All five child Applications (plus `root`) should show `Synced`/`Healthy`. Access
 `server.insecure: true` (TLS is terminated by Tailscale, same as every other UI in this cluster), and
 `dex`/`notifications` are disabled (no SSO, unused in a single-user homelab).
 
-**Secrets bridge**: `apps/` must never contain real credentials, but a couple of these apps need some
-(Grafana admin password, Tailscale OAuth client — Blocky needs none at all, see below). Those stay exactly
-where they already were — Ansible Vault, in `group_vars/all/main.yaml` — and a single role,
-**`k8s_secrets`**, applies the resulting `Secret` objects directly to the cluster, decoupled from git
+**Secrets bridge**: `apps/` must never contain real credentials, but a few of these apps need some (Grafana
+admin password, Tailscale OAuth client, SearXNG's `secret_key` — Blocky needs none at all, see below).
+Those stay exactly where they already were — Ansible Vault, in `group_vars/all/main.yaml` — and a single
+role, **`k8s_secrets`**, applies the resulting `Secret`/`ConfigMap` objects directly to the cluster,
+decoupled from git
 entirely.
 
 This one role replaced what used to be three separate roles (`victoria-metrics`, `adguard_home`,
@@ -727,9 +730,64 @@ blocklists) directly and commit; Argo CD picks it up on its own.
 Tailscale Operator step below is done, `https://blocky.<tailnet>.ts.net` for `/metrics` — the DNS service
 itself is only reachable via plain LAN IP:53, not through Tailscale.
 
+## Search (SearXNG)
+
+A single [SearXNG](https://docs.searxng.org/) metasearch instance — queries multiple search engines
+(Google, Bing, DuckDuckGo, Wikipedia, and whatever else ships in its default engine set) and aggregates
+results without tracking or profiling you. Namespace: `searxng`. **The chart install, config, and
+NetworkPolicy all live in `apps/searxng/`** (see [GitOps (Argo CD)](#gitops-argo-cd)) — Argo CD reconciles
+them continuously. **Tailscale-only** — unlike Blocky/AdGuard there's no LAN-wide LoadBalancer, since this
+is a web UI, not a port every LAN client needs to hit directly (same pattern as Grafana/Longhorn/Argo CD).
+
+- **Chart**: `bjw-s-labs/app-template`, running the official `docker.io/searxng/searxng` image directly —
+  one container, no sidecar.
+- **Engines**: ships with SearXNG's own defaults (`use_default_settings: true`) rather than a curated list
+  — broad coverage, maintained upstream. Trim or add engines later by editing
+  `roles/k8s_secrets/templates/searxng-config.yaml.j2`.
+- **Config**: deliberately minimal, matching the vendor's own template settings.yml almost exactly —
+  verified directly against `docker.io/searxng/searxng:2026.9.25-12f8b6515` (`docker run`, real startup
+  logs, a real `200` from the homepage), not assumed from docs. `server.base_url` is left unset — this
+  cluster's tailnet hostname isn't known to Ansible, and SearXNG auto-detects it from request headers
+  instead, which is fine here.
+- **Secret**: `server.secret_key` has no environment-variable equivalent — confirmed by reading the image's
+  actual entrypoint script — so it has to live inside the seeded settings.yml, which is why (unlike Blocky)
+  this one *does* need an entry in `group_vars/all/cluster_secrets.yaml` and a vault-encrypted
+  `searxng_secret_key`.
+- **Storage**: none. SearXNG stores no user data or query history server-side by design (that's the whole
+  point of it), and its on-disk cache is fine to lose on restart.
+- **Rate-limiting / bot-protection**: not configured. SearXNG's optional "limiter" feature (backed by
+  Redis/Valkey) helps the instance avoid looking like a bot to the search engines it queries, at the cost
+  of a second stateful component. Skipped for now given the low query volume of a single-user homelab
+  instance — worth adding later if upstream engines start rate-limiting or blocking it.
+- **Metrics**: none wired up. Stock SearXNG has no native Prometheus endpoint (unlike Blocky) — if metrics
+  are wanted later this would need a separate exporter sidecar, not attempted here since it wasn't asked
+  for and nothing in this repo should claim scraping wiring that doesn't actually exist (see the
+  adguard-exporter note in [DNS (Blocky)](#dns-blocky) for exactly the mistake this is avoiding repeating).
+- **Egress NetworkPolicy** (`apps/searxng/manifests/networkpolicy.yaml`): port 443 stays broad by
+  necessity — search engines have far too many arbitrary/rotating IPs to allowlist, unlike Blocky/AdGuard's
+  fixed Cloudflare DoT IPs. Port 53 to CoreDNS resolves each engine's hostname.
+
+**One-time**: create the secret key in Vault before first deploy — a fresh random value is fine, there's
+nothing to remember about it:
+```bash
+openssl rand -hex 32
+ansible-vault edit group_vars/all/main.yaml
+```
+Add:
+```yaml
+searxng_secret_key: "<paste the generated value>"
+```
+
+**Seed/update the config:**
+```bash
+ansible-playbook site.yml -i inventory.dist -t secrets --ask-vault-pass
+```
+
+**Access it**: `https://search.<tailnet>.ts.net` once the Tailscale Operator step below has synced.
+
 ## Exposing UIs via Tailscale Operator
 
-Reaches Grafana, Alertmanager, the VictoriaMetrics UI, the Longhorn UI, Blocky's `/metrics`, and the Argo CD
+Reaches Grafana, Alertmanager, the VictoriaMetrics UI, the Longhorn UI, Blocky's `/metrics`, SearXNG, and the Argo CD
 UI privately from any device signed into your tailnet (e.g. the Tailscale app on your phone) — no VPN
 config, no port-forwarding, valid HTTPS. This is **not** Funnel — nothing here is reachable from the public
 internet, only from devices in your own tailnet. **The operator install, ProxyGroup, and per-service
@@ -806,6 +864,7 @@ hostname shown there):
 | VictoriaMetrics | `https://victoriametrics.<tailnet>.ts.net` |
 | Longhorn | `https://longhorn.<tailnet>.ts.net` |
 | Blocky (`/metrics`) | `https://blocky.<tailnet>.ts.net` |
+| SearXNG | `https://search.<tailnet>.ts.net` |
 | Argo CD | `https://argocd.<tailnet>.ts.net` |
 
 Confirmed working from a phone with the Tailscale app active. If you test from a **Mac terminal or
@@ -1002,7 +1061,7 @@ Update `inventory.dist` if your network differs.
 ### Secrets & Variables
 
 - **Encrypted with Vault**: `group_vars/all/main.yaml` — `k3s_join_token`, `tailscale_oauth_client_id`,
-  `tailscale_oauth_client_secret`. These never appear in `apps/` — see
+  `tailscale_oauth_client_secret`, `searxng_secret_key`. These never appear in `apps/` — see
   [GitOps (Argo CD)](#gitops-argo-cd)'s "Secrets bridge".
 - **Unencrypted**: All other group_vars and host_vars
 
@@ -1082,7 +1141,7 @@ most commonly after that resource was deleted or modified out-of-band (e.g. `kub
 
 The `helm_drift_check` role now only runs after Argo CD's own chart install (the one Helm release Ansible
 still manages directly) and checks whether every resource in its current manifest actually exists live.
-For every other chart (Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, Tailscale Operator), this
+For every other chart (Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, Tailscale Operator), this
 class of drift can't happen anymore in practice — Argo CD's continuous reconciliation would just re-apply
 the missing resource on its next sync — but for the Argo CD install itself, if it detects drift, the
 playbook **fails with the exact recovery command to run** (a `helm upgrade` invoked directly rather than

@@ -143,7 +143,7 @@
   become: yes
   tags: [storage, longhorn]
 
-# Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, and the Tailscale
+# Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, and the Tailscale
 # Operator's chart installs are no longer driven from here - Argo CD (below)
 # owns that now, syncing from this same repo's apps/ directory. This play
 # only seeds the handful of real Secrets/ConfigMaps those Applications
