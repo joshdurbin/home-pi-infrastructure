@@ -95,9 +95,13 @@ vmagent:
         memory: 512Mi
     scrapeInterval: 30s
     scrapeTimeout: 25s
-    storage:
-      emptyDir:
-        sizeLimit: 1Gi
+    # VMAgent.spec has no "storage" field at all (confirmed via
+    # `kubectl explain vmagent.spec.storage` against the real CRD - a real
+    # sync failure: ".spec.storage: field not declared in schema"). The
+    # closest field, statefulStorage, switches vmagent from a Deployment to
+    # a StatefulSet, which is a bigger behavioral change than intended just
+    # to cap ephemeral disk use - not worth it for this workload, so this is
+    # dropped rather than guess-substituted.
 vmalert:
   spec:
     replicaCount: 1
