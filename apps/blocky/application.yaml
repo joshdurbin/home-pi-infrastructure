@@ -1,16 +1,18 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: adguard-home
+  name: blocky
   namespace: argocd
   annotations:
-    # Uses Longhorn-backed PVCs, so syncs after it.
+    # No PVCs at all (Blocky is stateless), so no Longhorn dependency - but
+    # keep it out of wave 0 regardless, no reason to race the storage
+    # foundation on a fresh bootstrap.
     argocd.argoproj.io/sync-wave: "1"
 spec:
   project: home-pi
   destination:
     server: https://kubernetes.default.svc
-    namespace: adguard
+    namespace: blocky
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
@@ -28,12 +30,12 @@ spec:
       chart: app-template
       targetRevision: 5.2.1
       helm:
-        releaseName: adguard-home
+        releaseName: blocky
         valueFiles:
-          - $values/apps/adguard-home/values.yaml
+          - $values/apps/blocky/values.yaml
     - repoURL: git://192.168.1.57/home-pi-infrastructure
       targetRevision: master
       ref: values
     - repoURL: git://192.168.1.57/home-pi-infrastructure
       targetRevision: master
-      path: apps/adguard-home/manifests
+      path: apps/blocky/manifests

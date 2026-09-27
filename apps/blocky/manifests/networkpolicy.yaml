@@ -1,0 +1,41 @@
+# Egress-only restriction (LAN clients reaching Blocky's DNS/HTTP ports is
+# unaffected - that's ingress, a separate concern). Same shape as the
+# AdGuard Home policy it replaces:
+# - DNS (853/tcp, DoT) is locked to the exact Cloudflare upstream IPs;
+#   nothing else legitimately needs it.
+# - 53/udp+tcp to CoreDNS lets the pod resolve blocklist hostnames (e.g.
+#   small.oisd.nl) and bootstrap-resolve the upstream DoT hostnames.
+# - 443/tcp is broad (blocklist downloads come from many/rotating CDN IPs
+#   that aren't practical to allowlist without a FQDN-aware CNI like
+#   Cilium, which this cluster doesn't run).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: blocky-egress
+  namespace: blocky
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 1.1.1.1/32
+        - ipBlock:
+            cidr: 1.0.0.1/32
+      ports:
+        - protocol: TCP
+          port: 853
+    - ports:
+        - protocol: TCP
+          port: 443

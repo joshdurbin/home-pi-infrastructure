@@ -89,14 +89,14 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: adguard
-  namespace: adguard
+  name: blocky
+  namespace: blocky
   annotations:
     tailscale.com/proxy-group: ingress-proxies
 spec:
   ingressClassName: tailscale
   tls:
-    - hosts: [adguard]
+    - hosts: [blocky]
   rules:
     - http:
         paths:
@@ -104,9 +104,9 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: adguard-home-web
+                name: blocky-http
                 port:
-                  number: 3000
+                  number: 4000
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress

@@ -1,0 +1,45 @@
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: ghcr.io/0xerr0r/blocky
+          tag: v0.35.0
+        probes:
+          liveness:
+            enabled: false
+          readiness:
+            enabled: false
+          startup:
+            enabled: false
+
+service:
+  dns:
+    controller: main
+    type: LoadBalancer
+    ports:
+      dns-tcp:
+        port: 53
+        protocol: TCP
+      dns-udp:
+        port: 53
+        protocol: UDP
+  http:
+    controller: main
+    type: LoadBalancer
+    ports:
+      http:
+        port: 4000
+
+persistence:
+  # Blocky is stateless - it never rewrites its own config, unlike AdGuard
+  # Home - so a plain read-only ConfigMap mount is all that's needed. No
+  # init-container seed-once workaround, no PVC at all.
+  config:
+    enabled: true
+    type: configMap
+    name: blocky-config
+    globalMounts:
+      - path: /app/config.yml
+        subPath: config.yml
+        readOnly: true

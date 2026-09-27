@@ -1,0 +1,21 @@
+# Wires Blocky's native /metrics into vmagent. Verified against the real
+# victoria-metrics-k8s-stack chart (0.74.1): vmagent's serviceScrapeSelector
+# is selectAllByDefault: true, so any VMServiceScrape anywhere in the
+# cluster gets picked up automatically - this is that object for Blocky.
+#
+# Note: this same wiring never existed for the old adguard-exporter sidecar
+# it replaces - despite the earlier docs claiming vmagent scraped it
+# automatically, no VMServiceScrape/ServiceMonitor for it was ever actually
+# created, so it was never really being scraped. Not repeating that here.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: blocky
+  namespace: blocky
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/service: blocky-http
+  endpoints:
+    - port: http
+      path: /metrics

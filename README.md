@@ -11,8 +11,10 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [K3S Verification](#k3s-verification)
 - [K3S Maintenance](#k3s-maintenance)
 - [kubectl Access From Your Machine](#kubectl-access-from-your-machine)
+- [GitOps (Argo CD)](#gitops-argo-cd)
 - [Storage (Longhorn)](#storage-longhorn)
 - [Monitoring & Logging (VictoriaMetrics, VictoriaLogs, Grafana)](#monitoring--logging-victoriametrics-victorialogs-grafana)
+- [DNS (Blocky)](#dns-blocky)
 - [Exposing UIs via Tailscale Operator](#exposing-uis-via-tailscale-operator)
 - [Tailscale Integration (Optional)](#tailscale-integration-optional)
 - [Cluster Configuration](#cluster-configuration)
@@ -51,7 +53,7 @@ home-pi-infrastructure/
 │   ├── longhorn/{application.yaml, values.yaml}
 │   ├── victoria-metrics/{application.yaml, values.yaml}
 │   ├── victoria-logs/{application.yaml, values.yaml, manifests/}
-│   ├── adguard-home/{application.yaml, values.yaml, manifests/}
+│   ├── blocky/{application.yaml, values.yaml, manifests/}
 │   └── tailscale-operator/{application.yaml, values.yaml, manifests/}
 ├── group_vars/                   # Group-based variables
 │   ├── all/                      # Variables for all hosts
@@ -137,7 +139,7 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass
 - **K3S Deployment**: Installs and configures k3s cluster (servers + agents)
 - **Maintenance Tools**: Deploys k3s-maintenance script to all nodes
 - **Argo CD Bootstrap**: Installs Argo CD and its root Application, which then continuously syncs
-  Longhorn, VictoriaMetrics, VictoriaLogs, AdGuard Home, and the Tailscale Operator from this repo's own
+  Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, and the Tailscale Operator from this repo's own
   `apps/` directory — see [GitOps (Argo CD)](#gitops-argo-cd) for the one-time `git daemon` setup this
   depends on.
 
@@ -493,7 +495,7 @@ cluster-admin access — fine for a single-user homelab, but keep it as private 
 
 ## GitOps (Argo CD)
 
-Longhorn, VictoriaMetrics, VictoriaLogs, AdGuard Home, and the Tailscale Operator are no longer installed
+Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, and the Tailscale Operator are no longer installed
 or upgraded by Ansible. Argo CD runs in-cluster (namespace `argocd`) and continuously reconciles all five
 from this **same** repo's `apps/` directory — edit a file there, commit, and Argo CD applies it within its
 next poll cycle (or immediately via `argocd app sync` / the UI). This replaced hand-templating every
@@ -545,10 +547,11 @@ All five child Applications (plus `root`) should show `Synced`/`Healthy`. Access
 `server.insecure: true` (TLS is terminated by Tailscale, same as every other UI in this cluster), and
 `dex`/`notifications` are disabled (no SSO, unused in a single-user homelab).
 
-**Secrets bridge**: `apps/` must never contain real credentials, but a few of these apps need some
-(Grafana admin password, AdGuard admin password, Tailscale OAuth client). Those stay exactly where they
-already were — Ansible Vault, in `group_vars/all/main.yaml` — and a single role, **`k8s_secrets`**, applies
-the resulting `Secret`/`ConfigMap` objects directly to the cluster, decoupled from git entirely.
+**Secrets bridge**: `apps/` must never contain real credentials, but a couple of these apps need some
+(Grafana admin password, Tailscale OAuth client — Blocky needs none at all, see below). Those stay exactly
+where they already were — Ansible Vault, in `group_vars/all/main.yaml` — and a single role,
+**`k8s_secrets`**, applies the resulting `Secret` objects directly to the cluster, decoupled from git
+entirely.
 
 This one role replaced what used to be three separate roles (`victoria-metrics`, `adguard_home`,
 `tailscale_operator`), each named after an app it no longer actually manages — misleading, since none of
@@ -679,65 +682,54 @@ Labels are declared per-host in `host_vars/rpi-5-*.yaml` under the `k8s_labels` 
 cluster by the `k8s_labels` role (which reads every host's `k8s_labels` var and patches the matching
 Kubernetes Node object — not tied to any single chart-deploying role).
 
-## DNS (AdGuard Home)
+## DNS (Blocky)
 
-A single AdGuard Home instance for the whole LAN — resolves DNS for any client pointed at it, blocking
-ads/trackers and forwarding everything else upstream over **DNS-over-TLS to Cloudflare**
-(`tls://one.one.one.one`). Namespace: `adguard`. DHCP is out of scope — point clients at it manually or
-via your router's DNS setting. **The chart install, NetworkPolicy, and all settings now live in the
-`apps/` directory** (`apps/adguard-home/`, see [GitOps (Argo CD)](#gitops-argo-cd)) — Argo CD reconciles them continuously.
-This repo's only remaining job is seeding the two things that can never be committed to git: the exporter
-credentials Secret and the AdGuardHome.yaml seed ConfigMap (both contain the bcrypt-hashed admin password).
+A single [Blocky](https://0xerr0r.github.io/blocky/) instance for the whole LAN — resolves DNS for any
+client pointed at it, blocking ads/trackers and forwarding everything else upstream over
+**DNS-over-TLS to Cloudflare**. Namespace: `blocky`. DHCP is out of scope — point clients at it manually or
+via your router's DNS setting. **The chart install, config, NetworkPolicy, and metrics wiring all live in
+the `apps/` directory** (`apps/blocky/`, see [GitOps (Argo CD)](#gitops-argo-cd)) — Argo CD reconciles them
+continuously. Unlike every other app here, **this one needs nothing from Ansible at all**: Blocky has no
+admin login, so its entire config is non-secret and lives as a plain git-managed manifest.
 
-- **Chart**: `bjw-s-labs/app-template` (the generic "common" chart) running the `adguard/adguardhome`
-  image, plus a `henrywhitaker3/adguard-exporter` sidecar for Prometheus-format metrics (AdGuard Home has
-  no native metrics endpoint) — scraped automatically by `vmagent` like everything else in the cluster.
-- **Config seeding**: AdGuard normally requires its first-run setup wizard to be completed via the UI
-  before any config file exists. This role skips that entirely by generating a complete
-  `AdGuardHome.yaml` from a template (admin credentials bcrypt-hashed, upstream/bootstrap DNS, blocklists)
-  and mounting it read-write via a ConfigMap — the container boots already configured.
-- **Blocklist**: OISD (small) — a low-false-positive list, on top of AdGuard's own default filter.
-- **Storage**: two Longhorn-backed PVCs (`/opt/adguardhome/conf` for the mutable runtime config,
-  `/opt/adguardhome/work` for query log/stats/cache) — both replicated per the [Storage](#storage-longhorn)
-  settings above.
+(Previously AdGuard Home + a separate `adguard-exporter` sidecar. Replaced because Blocky ships native
+Prometheus metrics — no exporter needed — and its config is a single static YAML file with no setup wizard
+and no self-rewriting state, which is a meaningfully simpler deployment than AdGuard's install-wizard/
+ConfigMap-seeding dance. Config schema below was verified directly against
+`ghcr.io/0xerr0r/blocky:v0.35.0` — a real `docker run` against a candidate config, not assumed from docs.)
+
+- **Chart**: `bjw-s-labs/app-template` (the same generic "common" chart used for every non-vendor-chart app
+  here) running the `ghcr.io/0xerr0r/blocky` image directly — one container, no sidecar.
+- **Config**: `apps/blocky/manifests/configmap.yaml`, mounted **read-only** at `/app/config.yml`. No
+  init-container seed-once workaround like AdGuard needed: Blocky is genuinely stateless and never
+  rewrites its own config, so a plain read-only ConfigMap mount is all that's required.
+- **Blocklist**: OISD (small) — same list AdGuard used, a low-false-positive list.
+- **Storage**: none. Blocky has no PVC at all — no mutable runtime config, no required local persistence.
+- **Metrics**: native Prometheus endpoint at `/metrics` (port 4000), wired to `vmagent` via a
+  `VMServiceScrape` (`apps/blocky/manifests/vmservicescrape.yaml`) — verified this actually gets scraped
+  (`vmagent`'s `serviceScrapeSelector` is `selectAllByDefault: true` in this chart, confirmed against the
+  real `victoria-metrics-k8s-stack` chart templates). Worth calling out: the old adguard-exporter never
+  actually had this wiring despite the docs here previously claiming it was "scraped automatically" — no
+  `VMServiceScrape`/`ServiceMonitor` for it ever existed, so it was never really being scraped. Not
+  repeating that mistake for Blocky.
 - **Services**: two dedicated `LoadBalancer` Services (via k3s's built-in ServiceLB, same mechanism as
-  Traefik) — `adguard-home-dns` (53/tcp+udp, for LAN clients) and `adguard-home-web` (3000/tcp, the admin
-  UI — also reachable via the Tailscale Operator, see below).
-- **Egress NetworkPolicy** (`apps/adguard-home/manifests/networkpolicy.yaml`, a plain manifest — no
-  credentials in it, so it's fully git-managed like everything else in `apps/`): locks down where the pod
-  can reach *outbound* (LAN clients querying it is ingress, unaffected). Port 853 (DoT) is restricted to
-  the exact Cloudflare upstream IPs; port 53 to CoreDNS only (needed for the pod's own hostname lookups
-  when fetching blocklists); port 443 is left broad since blocklist CDNs rotate IPs. Auto-update-checking
-  is disabled outright (`--no-check-update`) rather than allowlisted.
+  Traefik) — `blocky-dns` (53/tcp+udp, for LAN clients) and `blocky-http` (4000/tcp, metrics + the
+  DNS-over-HTTPS endpoint — Blocky has no admin dashboard to expose, unlike AdGuard, but this is still
+  reachable via the Tailscale Operator, see below, for checking `/metrics` remotely).
+- **Egress NetworkPolicy** (`apps/blocky/manifests/networkpolicy.yaml`) — same shape as the AdGuard policy
+  it replaces: DNS-over-TLS (853/tcp) locked to the exact Cloudflare upstream IPs, port 53 to CoreDNS only
+  (blocklist hostname lookups), port 443 left broad (blocklist CDNs rotate IPs).
 
-**One-time**: create the admin credentials in Vault before first deploy:
-```bash
-ansible-vault edit group_vars/all/main.yaml
-```
-Add:
-```yaml
-adguard_home_admin_username: "<your choice>"
-adguard_home_admin_password: "<your choice>"
-```
-
-**Seed/update the credentials and config** (via the generic `k8s_secrets` role — see
-[Secrets bridge](#gitops-argo-cd)):
-```bash
-ansible-playbook site.yml -i inventory.dist -t secrets --ask-vault-pass
-```
+**Deploy/update**: nothing Ansible-side to run — edit `apps/blocky/manifests/configmap.yaml` (upstreams,
+blocklists) directly and commit; Argo CD picks it up on its own.
 
 **Point a client at it**: use either node's IP (ServiceLB exposes every node's own IP) or, once the
-Tailscale Operator step below is done, `https://adguard.<tailnet>.ts.net` for the admin UI — the DNS
-service itself is only reachable via plain LAN IP:53, not through Tailscale.
-
-To change the blocklist or add more, edit `apps/adguard-home/manifests/networkpolicy.yaml` (for the
-NetworkPolicy) or `group_vars/all/cluster_secrets.yaml`'s `adguard_filters` (for the seed ConfigMap) — the
-seeded ConfigMap only takes effect on a first-run install; changes after that are best made live in the
-AdGuard UI, since the ConfigMap is just the *initial* seed, not an ongoing source of truth.
+Tailscale Operator step below is done, `https://blocky.<tailnet>.ts.net` for `/metrics` — the DNS service
+itself is only reachable via plain LAN IP:53, not through Tailscale.
 
 ## Exposing UIs via Tailscale Operator
 
-Reaches Grafana, Alertmanager, the VictoriaMetrics UI, the Longhorn UI, AdGuard's admin UI, and the Argo CD
+Reaches Grafana, Alertmanager, the VictoriaMetrics UI, the Longhorn UI, Blocky's `/metrics`, and the Argo CD
 UI privately from any device signed into your tailnet (e.g. the Tailscale app on your phone) — no VPN
 config, no port-forwarding, valid HTTPS. This is **not** Funnel — nothing here is reachable from the public
 internet, only from devices in your own tailnet. **The operator install, ProxyGroup, and per-service
@@ -813,7 +805,7 @@ hostname shown there):
 | Alertmanager | `https://alertmanager.<tailnet>.ts.net` |
 | VictoriaMetrics | `https://victoriametrics.<tailnet>.ts.net` |
 | Longhorn | `https://longhorn.<tailnet>.ts.net` |
-| AdGuard Home | `https://adguard.<tailnet>.ts.net` |
+| Blocky (`/metrics`) | `https://blocky.<tailnet>.ts.net` |
 | Argo CD | `https://argocd.<tailnet>.ts.net` |
 
 Confirmed working from a phone with the Tailscale app active. If you test from a **Mac terminal or
@@ -1010,8 +1002,8 @@ Update `inventory.dist` if your network differs.
 ### Secrets & Variables
 
 - **Encrypted with Vault**: `group_vars/all/main.yaml` — `k3s_join_token`, `tailscale_oauth_client_id`,
-  `tailscale_oauth_client_secret`, `adguard_home_admin_username`, `adguard_home_admin_password`. These
-  never appear in `apps/` — see [GitOps (Argo CD)](#gitops-argo-cd)'s "Secrets bridge".
+  `tailscale_oauth_client_secret`. These never appear in `apps/` — see
+  [GitOps (Argo CD)](#gitops-argo-cd)'s "Secrets bridge".
 - **Unencrypted**: All other group_vars and host_vars
 
 To rotate secrets:
@@ -1090,7 +1082,7 @@ most commonly after that resource was deleted or modified out-of-band (e.g. `kub
 
 The `helm_drift_check` role now only runs after Argo CD's own chart install (the one Helm release Ansible
 still manages directly) and checks whether every resource in its current manifest actually exists live.
-For every other chart (Longhorn, VictoriaMetrics, VictoriaLogs, AdGuard Home, Tailscale Operator), this
+For every other chart (Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, Tailscale Operator), this
 class of drift can't happen anymore in practice — Argo CD's continuous reconciliation would just re-apply
 the missing resource on its next sync — but for the Argo CD install itself, if it detects drift, the
 playbook **fails with the exact recovery command to run** (a `helm upgrade` invoked directly rather than
