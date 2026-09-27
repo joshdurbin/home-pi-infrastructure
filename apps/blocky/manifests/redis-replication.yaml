@@ -1,0 +1,56 @@
+# Blocky's own cache backend (its native `redis:` config block - see
+# configmap.yaml - lets it synchronize cache/blocking state through redis,
+# with sentinel-based master discovery). Two pods (master + one replica),
+# each with its own PVC; automatic failover comes from redis-sentinel.yaml
+# in this same directory monitoring this RedisReplication.
+#
+# Sizing: this is a cache, not a source of truth, so 128MB of actual
+# keyspace (maxmemory) is deliberately tiny. The container's memory
+# limit/request (192Mi) is maxmemory plus headroom for redis's own process
+# overhead, client buffers and replication backlog - not maxmemory itself -
+# per the real constraint here: these run on a mix of 4GB and 8GB
+# Raspberry Pis, several of which already run Longhorn, VictoriaMetrics and
+# other apps.
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisReplication
+metadata:
+  name: blocky-cache
+  namespace: blocky-cache
+spec:
+  clusterSize: 2
+  podSecurityContext:
+    runAsUser: 1000
+    fsGroup: 1000
+  redisConfig:
+    dynamicConfig:
+      - maxmemory 128mb
+      - maxmemory-policy allkeys-lru
+  kubernetesConfig:
+    image: quay.io/opstree/redis:v8.10.1
+    imagePullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 50m
+        memory: 192Mi
+      limits:
+        cpu: 200m
+        memory: 192Mi
+  redisExporter:
+    enabled: true
+    image: quay.io/opstree/redis-exporter:v1.89.0
+    imagePullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: longhorn
+        resources:
+          requests:
+            storage: 512Mi

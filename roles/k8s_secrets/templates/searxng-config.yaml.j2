@@ -15,3 +15,14 @@ server:
 
 ui:
   static_use_hash: true
+
+# Rate-limiter/bot-detection cache (searxng-cache, see
+# apps/searxng/manifests/redis-replication.yaml). Points directly at the
+# replication StatefulSet's pod-0 rather than through sentinel - SearXNG's
+# valkey client only takes one connection URL, so it can't discover a new
+# master after a failover on its own. See redis-sentinel.yaml's comment in
+# that same directory for why this is a deliberate, accepted limitation
+# rather than a bug: the sentinel-driven failover at the storage layer
+# still works, this URL just won't follow it.
+valkey:
+  url: "redis://searxng-cache-0.searxng-cache-headless.searxng-cache.svc.cluster.local:6379/0"

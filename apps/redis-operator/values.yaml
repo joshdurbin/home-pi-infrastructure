@@ -1,0 +1,12 @@
+# Manages Blocky's and SearXNG's own tiny redis clusters (RedisReplication +
+# RedisSentinel CRs in apps/blocky/manifests/ and apps/searxng/manifests/) -
+# the operator itself just reconciles a handful of small CRs, so it gets a
+# fraction of the chart's own default request/limit (500m/500Mi), sized for
+# the pi fleet rather than a real datacenter.
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi

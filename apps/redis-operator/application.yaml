@@ -1,0 +1,45 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: redis-operator
+  namespace: argocd
+  annotations:
+    # No PVC of its own, but it owns the RedisReplication/RedisSentinel
+    # CRDs that Blocky's and SearXNG's own redis clusters (apps/blocky/manifests/,
+    # apps/searxng/manifests/) depend on - those must sync strictly after this,
+    # same race class as the VMServiceScrape CRD issue fixed for Blocky
+    # (see victoria-metrics's sync-wave comment). Keep this at wave 1 so
+    # anything consuming its CRDs starts at wave 2+.
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: redis-operator
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      # The chart bundles the RedisReplication/RedisSentinel/etc CRDs
+      # directly (crds/crds.yaml) - same large-annotation issue as
+      # Longhorn's and prometheus-operator-crds' own CRDs.
+      - ServerSideApply=true
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  sources:
+    - repoURL: https://ot-container-kit.github.io/helm-charts
+      chart: redis-operator
+      targetRevision: 0.26.1
+      helm:
+        releaseName: redis-operator
+        valueFiles:
+          - $values/apps/redis-operator/values.yaml
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      ref: values

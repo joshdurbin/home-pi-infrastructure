@@ -4,12 +4,15 @@ metadata:
   name: blocky
   namespace: argocd
   annotations:
-    # No PVCs at all (Blocky is stateless), so no Longhorn dependency - but
-    # its VMServiceScrape needs victoria-metrics' operator CRDs
+    # Blocky itself is stateless, but manifests/ now also owns blocky-cache's
+    # redis PVCs (redis-replication.yaml) - needs Longhorn (wave 0). Its
+    # VMServiceScrape/VMPodScrape need victoria-metrics' operator CRDs
     # (operator.victoriametrics.com/v1beta1) to already exist, confirmed by
     # a real failure: "failed to discover server resources for group
     # version ... the server could not find the requested resource" when
-    # both were at the same wave. Must sync strictly after victoria-metrics.
+    # both were at the same wave. And redis-replication.yaml/redis-sentinel.yaml
+    # need redis-operator's own CRDs (wave 1) to exist first, same race
+    # class. Must sync strictly after victoria-metrics and redis-operator.
     argocd.argoproj.io/sync-wave: "2"
 spec:
   project: home-pi

@@ -4,9 +4,12 @@ metadata:
   name: searxng
   namespace: argocd
   annotations:
-    # No PVC/storage dependency, but no reason to race the storage
-    # foundation on a fresh bootstrap either.
-    argocd.argoproj.io/sync-wave: "1"
+    # Now has a real PVC dependency (searxng-cache's redis PVCs, see
+    # manifests/redis-replication.yaml) and needs redis-operator's CRDs to
+    # already exist - moved from wave 1 to strictly after both Longhorn
+    # (wave 0) and redis-operator (wave 1), same race class as the
+    # VMServiceScrape CRD issue fixed for Blocky.
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   project: home-pi
   destination:

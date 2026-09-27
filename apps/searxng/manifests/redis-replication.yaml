@@ -1,0 +1,56 @@
+# SearXNG's redis/valkey cache backend (its rate-limiter/bot-detection
+# state - see roles/k8s_secrets/templates/searxng-config.yaml.j2's valkey.url).
+# Two pods (master + one replica), each with its own PVC. redis-sentinel.yaml
+# in this directory still monitors this and fails over automatically at the
+# storage layer - but see that file's comment: SearXNG itself can't do
+# sentinel-based master discovery (it only takes one connection URL), so its
+# own config points at a fixed pod rather than through sentinel. A deliberate,
+# user-accepted tradeoff, not an oversight.
+#
+# Sizing: same reasoning as apps/blocky/manifests/redis-replication.yaml -
+# this is a cache, 128MB of maxmemory is intentionally tiny, and 192Mi of
+# container memory is that plus headroom for redis's own overhead, not
+# maxmemory itself. Pi fleet, several nodes already running other apps.
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisReplication
+metadata:
+  name: searxng-cache
+  namespace: searxng-cache
+spec:
+  clusterSize: 2
+  podSecurityContext:
+    runAsUser: 1000
+    fsGroup: 1000
+  redisConfig:
+    dynamicConfig:
+      - maxmemory 128mb
+      - maxmemory-policy allkeys-lru
+  kubernetesConfig:
+    image: quay.io/opstree/redis:v8.10.1
+    imagePullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 50m
+        memory: 192Mi
+      limits:
+        cpu: 200m
+        memory: 192Mi
+  redisExporter:
+    enabled: true
+    image: quay.io/opstree/redis-exporter:v1.89.0
+    imagePullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: longhorn
+        resources:
+          requests:
+            storage: 512Mi

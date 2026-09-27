@@ -41,3 +41,17 @@ data:
     prometheus:
       enable: true
       path: /metrics
+
+    # Cache/blocking-state backend: blocky-cache (redis-replication.yaml),
+    # discovered via its sentinels (redis-sentinel.yaml) rather than a
+    # direct pod address so Blocky always finds the current master, even
+    # after a failover. required: false - if the cache is ever unreachable,
+    # DNS resolution itself (Blocky's actual job) must keep working,
+    # degraded to in-memory-only caching, not fail outright.
+    redis:
+      address: blocky-cache
+      required: false
+      sentinelAddresses:
+        - blocky-cache-sentinel-0.blocky-cache-sentinel-headless.blocky-cache.svc.cluster.local:26379
+        - blocky-cache-sentinel-1.blocky-cache-sentinel-headless.blocky-cache.svc.cluster.local:26379
+        - blocky-cache-sentinel-2.blocky-cache-sentinel-headless.blocky-cache.svc.cluster.local:26379

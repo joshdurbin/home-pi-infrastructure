@@ -1,0 +1,18 @@
+# Scrapes the redis_exporter sidecar redis-replication.yaml adds to each
+# searxng-cache pod (master and replica). See
+# apps/blocky/manifests/redis-vmpodscrape.yaml for why this is a
+# VMPodScrape (targets pods+container port directly) rather than a
+# VMServiceScrape.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: searxng-cache-redis-exporter
+  namespace: searxng-cache
+spec:
+  selector:
+    matchLabels:
+      app: searxng-cache
+      redis_setup_type: replication
+  podMetricsEndpoints:
+    - targetPort: 9121
+      path: /metrics

@@ -1,0 +1,9 @@
+# Kept separate from the blocky namespace itself so the existing egress-only
+# NetworkPolicy there (podSelector: {} - every pod in that namespace) never
+# ends up silently governing this cluster's own redis<->redis and
+# redis<->sentinel traffic too. See redis-networkpolicy.yaml in this
+# directory for what actually is allowed here.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: blocky-cache

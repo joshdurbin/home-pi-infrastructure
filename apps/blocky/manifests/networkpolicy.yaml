@@ -8,6 +8,10 @@
 # - 443/tcp is broad (blocklist downloads come from many/rotating CDN IPs
 #   that aren't practical to allowlist without a FQDN-aware CNI like
 #   Cilium, which this cluster doesn't run).
+# - 6379/26379 to the blocky-cache namespace: Blocky's own redis cache
+#   cluster (see redis-replication.yaml, redis-sentinel.yaml) - kept in its
+#   own namespace specifically so it needed its own egress rule here rather
+#   than silently falling under this same policy's podSelector: {}.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -39,3 +43,12 @@ spec:
     - ports:
         - protocol: TCP
           port: 443
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: blocky-cache
+      ports:
+        - protocol: TCP
+          port: 6379
+        - protocol: TCP
+          port: 26379
