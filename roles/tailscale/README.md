@@ -12,16 +12,47 @@ main README's "Exposing UIs via Tailscale Operator" section for that one.
 - Adds Tailscale GPG key and repository
 - Installs tailscale package
 - Enables and starts tailscaled service
+- Joins the tailnet automatically, non-interactively, if not already connected (see below) — no manual
+  `tailscale up` needed
 
-## Configuration
+## One-time setup (before first deploy)
 
-After installation, each node must be authenticated:
+Node-level joins use a **dedicated** OAuth client — deliberately separate from the one
+`apps/tailscale-operator/` uses (see the main README's "Exposing UIs via Tailscale Operator" section),
+least-privilege: a leaked node-join credential shouldn't also be able to act as the Kubernetes operator,
+and vice versa.
 
-```bash
-ssh ansible@rpi-4b-1
-sudo tailscale up
-# Follow the login URL to authenticate
-```
+1. **Create the OAuth client** — Tailscale admin console → Settings → OAuth clients → Generate. `write`
+   scope for **Auth Keys** only. Tag: `tag:pi-node`.
+
+2. **Add the tag to your ACL** — Settings → Access Controls, merge in:
+   ```json
+   "tagOwners": {
+     "tag:pi-node": []
+   }
+   ```
+
+3. **Store the credentials in Vault:**
+   ```bash
+   ansible-vault edit group_vars/all/main.yaml
+   ```
+   ```yaml
+   tailscale_node_oauth_client_id: "<client ID from step 1>"
+   tailscale_node_oauth_client_secret: "<client secret from step 1>"
+   ```
+
+## How the automatic join works
+
+On every run, this role checks `tailscale status --json` first. If the node isn't already connected
+(`BackendState` isn't `"Running"`), it:
+1. Exchanges the OAuth client credentials for a short-lived API access token
+   (`POST /api/v2/oauth/token`).
+2. Mints a **one-time, non-ephemeral** auth key tagged `tag:pi-node`, pre-authorized, expiring in 5 minutes
+   (`POST /api/v2/tailnet/-/keys`) — long enough for this same playbook run to consume it, short enough
+   that a leaked/unused key is worthless shortly after.
+3. Runs `tailscale up --authkey=... --hostname={{ inventory_hostname }}` locally.
+
+Already-connected nodes skip all of this — no new key gets minted on every routine `make deploy`.
 
 ## Usage
 
@@ -58,6 +89,7 @@ ssh ansible@rpi-4b-1
 
 - Internet connectivity
 - Tailscale account (free for up to 100 devices)
+- `tailscale_node_oauth_client_id` / `tailscale_node_oauth_client_secret` in Vault (see One-time setup above)
 
 ## Advanced Features
 
@@ -96,8 +128,5 @@ sudo tailscale logout
 
 ## Notes
 
-- Idempotent - safe to run multiple times
-- Installs the client only - **nodes must still be individually authenticated after installation** (see
-  Configuration above); this role does not run `tailscale up` for you, since that's an interactive login
-  flow (or requires a pre-generated auth key, which this role doesn't currently support)
+- Idempotent - safe to run multiple times; the join step is skipped entirely once a node is connected
 - Free tier includes up to 100 devices

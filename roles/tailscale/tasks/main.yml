@@ -43,3 +43,65 @@
     state: started
   tags:
     - tailscale
+
+- name: Check current tailscale connection status
+  ansible.builtin.command: tailscale status --json
+  register: tailscale_status_raw
+  changed_when: false
+  failed_when: false
+  tags:
+    - tailscale
+
+# Non-interactive tailnet join via a dedicated OAuth client (see README.md
+# for the one-time setup this needs: creating the client, tagged tag:pi-node,
+# and adding that tag to your ACL's tagOwners). `tailscale up` itself has no
+# OAuth support - it only accepts an authkey, so this mints a fresh one-time
+# key via the API first. Guarded so it only runs when actually needed: a
+# fresh key is minted (and immediately consumed) only if this node isn't
+# already connected, rather than on every single playbook run.
+- name: Join the tailnet if not already connected
+  when: >
+    tailscale_status_raw.rc != 0 or
+    (tailscale_status_raw.stdout | from_json).BackendState != "Running"
+  no_log: true
+  tags:
+    - tailscale
+  block:
+    - name: Get an OAuth API access token
+      ansible.builtin.uri:
+        url: https://api.tailscale.com/api/v2/oauth/token
+        method: POST
+        body_format: form-urlencoded
+        body:
+          client_id: '{{ tailscale_node_oauth_client_id }}'
+          client_secret: '{{ tailscale_node_oauth_client_secret }}'
+        status_code: 200
+      register: tailscale_oauth_token
+
+    - name: Mint a one-time auth key for this node
+      ansible.builtin.uri:
+        url: https://api.tailscale.com/api/v2/tailnet/-/keys
+        method: POST
+        headers:
+          Authorization: 'Bearer {{ tailscale_oauth_token.json.access_token }}'
+        body_format: json
+        body:
+          capabilities:
+            devices:
+              create:
+                reusable: false
+                ephemeral: false
+                preauthorized: true
+                tags:
+                  - '{{ tailscale_node_tag }}'
+          expirySeconds: '{{ tailscale_node_authkey_expiry_seconds }}'
+          description: 'ansible-{{ inventory_hostname }}'
+        status_code: 200
+      register: tailscale_node_authkey
+
+    - name: Authenticate this node to the tailnet
+      ansible.builtin.command: >
+        tailscale up
+        --authkey={{ tailscale_node_authkey.json.key }}
+        --hostname={{ inventory_hostname }}
+      changed_when: true

@@ -1,0 +1,10 @@
+---
+# Separate tag from tag:k8s-operator (used by the Tailscale Kubernetes
+# Operator, see roles/argocd and apps/tailscale-operator/) - deliberately a
+# different OAuth client and a different tag, least-privilege: a leaked
+# node-join credential shouldn't also be able to act as the k8s operator,
+# and vice versa.
+tailscale_node_tag: 'tag:pi-node'
+# Long enough for this playbook run to consume it, short enough that a
+# leaked/unused key is worthless shortly after.
+tailscale_node_authkey_expiry_seconds: 300

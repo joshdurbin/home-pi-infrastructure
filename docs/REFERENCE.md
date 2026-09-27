@@ -928,6 +928,18 @@ installs the Tailscale *client* directly on each Pi's OS for node-level SSH/VPN 
 Tailscale *Kubernetes Operator* (`apps/tailscale-operator/`) that exposes in-cluster UIs; see
 [Exposing UIs via Tailscale Operator](#exposing-uis-via-tailscale-operator) for that one.
 
+### One-time setup (before first deploy)
+
+Uses a **dedicated** OAuth client, deliberately separate from the one `apps/tailscale-operator/` uses for
+the in-cluster operator — least-privilege, so a leaked node-join credential can't also act as the
+Kubernetes operator:
+
+1. Tailscale admin console → Settings → OAuth clients → Generate. `write` scope for **Auth Keys** only.
+   Tag: `tag:pi-node`.
+2. Settings → Access Controls, merge in: `"tagOwners": { "tag:pi-node": [] }`
+3. `ansible-vault edit group_vars/all/main.yaml`, add `tailscale_node_oauth_client_id` and
+   `tailscale_node_oauth_client_secret`.
+
 ### Installation
 
 ```bash
@@ -940,13 +952,12 @@ Or just run `make deploy` — it's part of the full playbook now.
 
 ### Configuration
 
-After installation, authenticate each node:
-
-```bash
-ssh ansible@rpi-4b-1
-sudo tailscale up
-# Follow the login URL to authenticate
-```
+Nodes join the tailnet automatically — no manual step needed. On every run, the role checks
+`tailscale status --json` first; if a node isn't already connected, it exchanges the OAuth credentials
+above for an API token, mints a one-time auth key (tagged `tag:pi-node`, expiring in 5 minutes), and runs
+`tailscale up --authkey=... --hostname={{ inventory_hostname }}` — see `roles/tailscale/README.md` for the
+full mechanics. Already-connected nodes skip this entirely, so routine `make deploy` runs don't mint new
+keys.
 
 ### Verify Connection
 
@@ -1063,8 +1074,11 @@ Update `inventory.dist` if your network differs.
 ### Secrets & Variables
 
 - **Encrypted with Vault**: `group_vars/all/main.yaml` — `k3s_join_token`, `tailscale_oauth_client_id`,
-  `tailscale_oauth_client_secret`, `searxng_secret_key`. These never appear in `apps/` — see
-  [GitOps (Argo CD)](#gitops-argo-cd)'s "Secrets bridge".
+  `tailscale_oauth_client_secret` (used by `apps/tailscale-operator/`), `tailscale_node_oauth_client_id`,
+  `tailscale_node_oauth_client_secret` (used by `roles/tailscale` to join nodes to the tailnet -
+  deliberately a separate OAuth client from the operator's), `searxng_secret_key`. The first pair never
+  appear in `apps/` — see [GitOps (Argo CD)](#gitops-argo-cd)'s "Secrets bridge"; the node-join pair are
+  consumed directly by `roles/tailscale` and never touch `apps/` either.
 - **Unencrypted**: All other group_vars and host_vars
 
 To rotate secrets:

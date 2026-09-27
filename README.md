@@ -27,12 +27,20 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
    make install
    ```
 
-4. Set up Tailscale (needed before deploying):
-   - Tailscale admin console → Settings → OAuth clients → Generate. Scope: `write` for Services, Devices
-     Core, and Auth Keys. Tag: `tag:k8s-operator`.
+4. Set up Tailscale (needed before deploying) — **two** separate OAuth clients, least-privilege (one lets
+   nodes join the tailnet, the other lets the in-cluster operator expose UIs; a leaked credential for one
+   shouldn't work for the other):
+   - **Node-join client**: Tailscale admin console → Settings → OAuth clients → Generate. Scope: `write`
+     for **Auth Keys** only. Tag: `tag:pi-node`.
+   - **Operator client**: Generate another. Scope: `write` for Services, Devices Core, and Auth Keys. Tag:
+     `tag:k8s-operator`.
    - Settings → Access Controls, merge into your policy:
      ```json
-     "tagOwners": { "tag:k8s-operator": [], "tag:k8s": ["tag:k8s-operator"] },
+     "tagOwners": {
+       "tag:pi-node": [],
+       "tag:k8s-operator": [],
+       "tag:k8s": ["tag:k8s-operator"]
+     },
      "autoApprovers": { "services": { "tag:k8s": ["tag:k8s"] } }
      ```
    - Settings → enable "HTTPS Certificates".
@@ -43,8 +51,10 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
    ```
    ```yaml
    k3s_join_token: "<any random string>"
-   tailscale_oauth_client_id: "<from step 4>"
-   tailscale_oauth_client_secret: "<from step 4>"
+   tailscale_node_oauth_client_id: "<node-join client from step 4>"
+   tailscale_node_oauth_client_secret: "<node-join client from step 4>"
+   tailscale_oauth_client_id: "<operator client from step 4>"
+   tailscale_oauth_client_secret: "<operator client from step 4>"
    searxng_secret_key: "<output of: openssl rand -hex 32>"
    ```
 
