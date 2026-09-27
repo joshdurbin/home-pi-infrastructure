@@ -1,6 +1,6 @@
 ---
 # Seeds the Secret + ConfigMap that Argo CD's adguard-home Application
-# (see the home-pi-gitops repo) depends on but can never define itself,
+# (see this repo's apps/ directory) depends on but can never define itself,
 # since both carry real credentials that must never be committed to git.
 # The chart install, egress NetworkPolicy, and everything else non-secret
 # now live entirely in that Application. Requires adguard_home_admin_username

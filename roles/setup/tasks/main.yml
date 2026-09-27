@@ -1,58 +1,58 @@
 ---
-
 - name: include kill radios tasks
-  include_tasks: kill_radios.yml
+  ansible.builtin.include_tasks: kill_radios.yml
 
 - name: include kill audio tasks
-  include_tasks: kill_audio.yml
+  ansible.builtin.include_tasks: kill_audio.yml
 
 - name: include enable cgroups tasks
-  include_tasks: enable_cgroups.yml
+  ansible.builtin.include_tasks: enable_cgroups.yml
 
 - name: include k3s hardware optimization tasks
-  include_tasks: k3s_hardware_optimization.yml
+  ansible.builtin.include_tasks: k3s_hardware_optimization.yml
 
 - name: include kernel module blacklisting tasks
-  include_tasks: blacklist_modules.yml
+  ansible.builtin.include_tasks: blacklist_modules.yml
 
 - name: include disable vim GUI tasks
-  include_tasks: disable_vim_gui.yml
+  ansible.builtin.include_tasks: disable_vim_gui.yml
 
 - name: include remove unnecessary services tasks
-  include_tasks: remove_unnecessary_services.yml
+  ansible.builtin.include_tasks: remove_unnecessary_services.yml
 
 - name: setting locale to {{ locale }}
-  locale_gen:
+  community.general.locale_gen:
     name: '{{ locale }}'
     state: present
 
 - name: set timezone to {{ timezone }}
-  timezone: name={{ timezone }}
+  ansible.builtin.timezone:
+    name: '{{ timezone }}'
 
 - name: set keyboard layout to {{ keyboard_layout }}
-  lineinfile:
+  ansible.builtin.lineinfile:
     dest: /etc/default/keyboard
     regexp: '^XKBLAYOUT=.*$'
     line: 'XKBLAYOUT="{{ keyboard_layout }}"'
   register: keyboard_layout_result
 
 - name: activate keyboard layout {{ keyboard_layout }}
-  shell: "dpkg-reconfigure -f noninteractive keyboard-configuration"
+  ansible.builtin.shell: dpkg-reconfigure -f noninteractive keyboard-configuration
   when: keyboard_layout_result.changed
   changed_when: false
 
 - name: Update all packages to the latest version
-  apt:
-    update_cache: yes
+  ansible.builtin.apt:
+    update_cache: true
     upgrade: dist
 
 - name: remove unattended-upgrades
-  apt:
+  ansible.builtin.apt:
     name: unattended-upgrades
     state: absent
 
 - name: install basic set of packages
-  apt:
+  ansible.builtin.apt:
     pkg:
       - git
       - iotop
@@ -70,7 +70,3 @@
       - wrk
       - pwgen
     state: present
-
-- name: include longhorn storage preparation tasks
-  include_tasks: longhorn-storage.yml
-

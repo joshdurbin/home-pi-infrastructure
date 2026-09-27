@@ -1,19 +1,18 @@
 ---
-
 - name: create managed users
-  user:
+  ansible.builtin.user:
     name: "{{ item.username }}"
     groups: "{{ item.groups | join(',') }}"
     shell: /bin/bash
     password: "!"
     update_password: on_create
-    append: yes
+    append: true
   loop: "{{ managed_users }}"
   tags:
     - user_management
 
 - name: create ssh directories for managed users
-  file:
+  ansible.builtin.file:
     path: "/home/{{ item.username }}/.ssh"
     state: directory
     owner: "{{ item.username }}"
@@ -24,7 +23,7 @@
     - user_management
 
 - name: configure ssh public keys for managed users
-  authorized_key:
+  ansible.posix.authorized_key:
     user: "{{ item.username }}"
     key: "{{ item.ssh_public_key }}"
     state: present
@@ -33,10 +32,10 @@
     - user_management
 
 - name: ensure adm group has passwordless sudo access
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /etc/sudoers.d/adm-passwordless
     line: "%adm ALL=(ALL) NOPASSWD:ALL"
-    create: yes
+    create: true
     mode: '0440'
     validate: 'visudo -cf %s'
   tags:

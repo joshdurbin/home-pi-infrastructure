@@ -1,7 +1,6 @@
 ---
-
 - name: create keyring directory
-  file:
+  ansible.builtin.file:
     path: /usr/share/keyrings
     state: directory
     mode: '0755'
@@ -9,7 +8,7 @@
     - tailscale
 
 - name: download tailscale gpg key
-  get_url:
+  ansible.builtin.get_url:
     url: https://pkgs.tailscale.com/stable/raspbian/trixie.noarmor.gpg
     dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
     mode: '0644'
@@ -17,7 +16,7 @@
     - tailscale
 
 - name: add tailscale repository
-  get_url:
+  ansible.builtin.get_url:
     url: https://pkgs.tailscale.com/stable/raspbian/trixie.tailscale-keyring.list
     dest: /etc/apt/sources.list.d/tailscale.list
     mode: '0644'
@@ -25,22 +24,22 @@
     - tailscale
 
 - name: update apt cache
-  apt:
-    update_cache: yes
+  ansible.builtin.apt:
+    update_cache: true
   tags:
     - tailscale
 
 - name: install tailscale
-  apt:
+  ansible.builtin.apt:
     name: tailscale
     state: present
   tags:
     - tailscale
 
 - name: enable and start tailscale service
-  systemd:
+  ansible.builtin.systemd:
     name: tailscaled
-    enabled: yes
+    enabled: true
     state: started
   tags:
     - tailscale

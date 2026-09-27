@@ -3,6 +3,9 @@ kind: Application
 metadata:
   name: victoria-metrics
   namespace: argocd
+  annotations:
+    # Uses Longhorn-backed PVCs (vmsingle), so syncs after it.
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   project: home-pi
   destination:
@@ -11,9 +14,18 @@ spec:
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
+      # prometheus-operator-crds ships large CRDs - same annotation-size
+      # rationale as Longhorn's ServerSideApply=true above.
+      - ServerSideApply=true
     automated:
       selfHeal: true
       prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
   sources:
     - repoURL: https://prometheus-community.github.io/helm-charts
       chart: prometheus-operator-crds

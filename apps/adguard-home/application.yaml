@@ -3,6 +3,9 @@ kind: Application
 metadata:
   name: adguard-home
   namespace: argocd
+  annotations:
+    # Uses Longhorn-backed PVCs, so syncs after it.
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   project: home-pi
   destination:
@@ -14,6 +17,12 @@ spec:
     automated:
       selfHeal: true
       prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
   sources:
     - repoURL: https://bjw-s-labs.github.io/helm-charts
       chart: app-template

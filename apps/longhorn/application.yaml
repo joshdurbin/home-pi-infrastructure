@@ -3,6 +3,10 @@ kind: Application
 metadata:
   name: longhorn
   namespace: argocd
+  annotations:
+    # Storage foundation - everything else's PVCs need the StorageClass this
+    # creates, so it syncs first among the root Application's children.
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   project: home-pi
   destination:
@@ -11,9 +15,20 @@ spec:
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
+      # Longhorn's CRDs are large enough that the client-side 3-way merge's
+      # kubectl.kubernetes.io/last-applied-configuration annotation can hit
+      # Kubernetes' 262144-byte annotation limit. Server-side apply avoids
+      # that entirely (no client-side diff annotation at all).
+      - ServerSideApply=true
     automated:
       selfHeal: true
       prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
   sources:
     - repoURL: https://charts.longhorn.io
       chart: longhorn

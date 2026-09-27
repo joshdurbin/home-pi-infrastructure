@@ -15,8 +15,10 @@
 - name: System preparation and user management
   hosts: all
   roles:
-    - user_management
-    - setup
+    - role: user_management
+      tags: [user_management]
+    - role: setup
+      tags: [setup]
   become: yes
 
 # Handles any /boot/firmware/config.txt change from the play above (the
@@ -146,11 +148,11 @@
 
 # Longhorn, VictoriaMetrics, VictoriaLogs, AdGuard Home, and the Tailscale
 # Operator's chart installs are no longer driven from here - Argo CD (below)
-# owns that now, syncing from the home-pi-gitops repo. These three plays only
-# seed the handful of real Secrets/ConfigMaps those Applications depend on
-# but can never define themselves, since that repo must never contain real
-# credentials. They must run before the Argo CD bootstrap play below, so
-# those objects already exist the first time each Application syncs.
+# owns that now, syncing from this same repo's apps/ directory. These three
+# plays only seed the handful of real Secrets/ConfigMaps those Applications
+# depend on but can never define themselves, since apps/ must never contain
+# real credentials. They must run before the Argo CD bootstrap play below,
+# so those objects already exist the first time each Application syncs.
 - name: Seed telemetry credentials
   hosts: server
   gather_facts: false

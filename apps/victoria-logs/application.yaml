@@ -3,6 +3,9 @@ kind: Application
 metadata:
   name: victoria-logs
   namespace: argocd
+  annotations:
+    # Uses a Longhorn-backed PVC (the VictoriaLogs server), so syncs after it.
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   project: home-pi
   destination:
@@ -14,6 +17,12 @@ spec:
     automated:
       selfHeal: true
       prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
   sources:
     - repoURL: https://victoriametrics.github.io/helm-charts
       chart: victoria-logs-single

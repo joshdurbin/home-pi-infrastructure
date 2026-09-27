@@ -1,7 +1,6 @@
 ---
-
 - name: create modprobe blacklist file for k3s
-  file:
+  ansible.builtin.file:
     path: /etc/modprobe.d
     state: directory
     mode: '0755'
@@ -9,10 +8,10 @@
     - blacklist_modules
 
 - name: blacklist unused camera kernel modules
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /etc/modprobe.d/blacklist-k3s.conf
     line: '{{ item }}'
-    create: yes
+    create: true
     mode: '0644'
   loop:
     - 'blacklist bcm2835_camera'
@@ -22,7 +21,7 @@
     - blacklist_modules
 
 - name: blacklist unused bluetooth modules
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /etc/modprobe.d/blacklist-k3s.conf
     line: '{{ item }}'
   loop:
@@ -32,7 +31,7 @@
     - blacklist_modules
 
 - name: blacklist snd-bcm2835 audio module
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /etc/modprobe.d/blacklist-k3s.conf
     line: 'blacklist snd_bcm2835'
   tags:

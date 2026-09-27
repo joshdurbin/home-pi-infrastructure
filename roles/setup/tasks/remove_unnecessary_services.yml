@@ -1,17 +1,16 @@
 ---
-
 - name: remove mpris-proxy
-  apt:
+  ansible.builtin.apt:
     name: mpris-proxy
     state: absent
   tags:
     - remove_services
 
 - name: disable avahi-daemon
-  systemd:
+  ansible.builtin.systemd:
     name: avahi-daemon.service
     state: stopped
-    enabled: no
-  ignore_errors: yes
+    enabled: false
+  ignore_errors: true
   tags:
     - remove_services

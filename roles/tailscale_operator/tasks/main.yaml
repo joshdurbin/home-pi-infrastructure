@@ -2,8 +2,8 @@
 # Seeds the "operator-oauth" Secret that the tailscale-operator chart expects
 # to already exist (its own oauth-secret.yaml template only renders when
 # oauth.clientId is set in Helm values - and it's deliberately left unset in
-# Argo CD's tailscale-operator Application, see the home-pi-gitops repo,
-# since that repo must never contain real credentials). The chart install,
+# Argo CD's tailscale-operator Application, see this repo's apps/ directory,
+# since apps/ must never contain real credentials). The chart install,
 # ProxyGroup, and per-service Ingresses now live entirely in that Application.
 #
 # Requires tailscale_oauth_client_id / tailscale_oauth_client_secret to be

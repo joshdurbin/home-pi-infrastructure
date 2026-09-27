@@ -55,8 +55,7 @@ home-pi-infrastructure/
 │   └── tailscale-operator/{application.yaml, values.yaml, manifests/}
 ├── group_vars/                   # Group-based variables
 │   ├── all/                      # Variables for all hosts
-│   ├── server/                   # k3s server (control plane) config
-│   └── agent/                    # k3s agent (worker) config
+│   └── k3s_cluster/              # Shared server+agent config (k3s version, cluster API facts)
 ├── roles/                        # Custom Ansible roles
 │   ├── setup/                    # System optimization & packages
 │   ├── user_management/          # User & SSH key management
@@ -69,7 +68,6 @@ home-pi-infrastructure/
 │   ├── victoria-metrics/         # Seeds Grafana admin credentials only - chart is Argo CD's job
 │   ├── adguard_home/             # Seeds AdGuard's credentials/config only - chart is Argo CD's job
 │   ├── tailscale_operator/       # Seeds the operator's OAuth Secret only - chart is Argo CD's job
-│   ├── airplay_audio/            # AirPlay audio receiver
 │   └── tailscale/                # Tailscale VPN client on each node (optional)
 ├── k3s-ansible/                  # k3s-ansible submodule
 └── k3s-maintenance               # k3s maintenance utility script
@@ -963,7 +961,8 @@ sudo tailscale logout
 
 ### K3S Version
 
-Edit `group_vars/server/k3s.yaml` and `group_vars/agent/k3s.yaml`:
+Edit `group_vars/k3s_cluster/k3s.yaml` (shared by every server + agent node — was previously duplicated
+identically in separate `group_vars/server/k3s.yaml` and `group_vars/agent/k3s.yaml` files):
 
 ```yaml
 k3s_version: v1.36.4+k3s1
@@ -1021,7 +1020,7 @@ sudo journalctl -u k3s-agent -f
 
 Common issues:
 - **Token mismatch**: Verify `k3s_join_token` in `group_vars/all/main.yaml`
-- **Server unreachable**: Check server IP in `group_vars/agent/k3s.yaml`
+- **Server unreachable**: Check server IP in `group_vars/k3s_cluster/k3s.yaml`
 - **Port blocked**: Ensure port 6443 is open between nodes
 
 ### System Pods Not Running

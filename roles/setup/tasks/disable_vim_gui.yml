@@ -1,14 +1,13 @@
 ---
-
 - name: ensure gvim is not installed
-  apt:
+  ansible.builtin.apt:
     name: gvim
     state: absent
   tags:
     - disable_vim_gui
 
 - name: create system-wide vimrc to disable GUI
-  copy:
+  ansible.builtin.copy:
     dest: /etc/vim/vimrc.local
     content: |
       " Disable GUI elements for all users

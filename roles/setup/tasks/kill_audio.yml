@@ -1,33 +1,33 @@
 ---
-
 - name: disable alsa-state.service
-  systemd:
+  ansible.builtin.systemd:
     name: alsa-state
     state: stopped
-    enabled: no
+    enabled: false
   tags:
     - kill_audio
 
 - name: disable alsa-restore.service
-  systemd:
+  ansible.builtin.systemd:
     name: alsa-restore
     state: stopped
-    enabled: no
+    enabled: false
   tags:
     - kill_audio
 
 - name: disable alsa-utils.service
-  systemd:
+  ansible.builtin.systemd:
     name: alsa-utils
     state: stopped
-    enabled: no
+    enabled: false
   tags:
     - kill_audio
 
 - name: disable onboard audio
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /boot/firmware/config.txt
     regexp: '^dtparam=audio'
     line: 'dtparam=audio=off'
+  notify: restart pi after config change
   tags:
     - kill_audio

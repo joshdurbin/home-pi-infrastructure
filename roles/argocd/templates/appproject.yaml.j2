@@ -4,12 +4,35 @@ metadata:
   name: home-pi
   namespace: {{ argocd_vars.kubernetes.namespace }}
 spec:
-  description: Everything in the home-pi-gitops repo
+  description: Everything in this repo's apps/ directory
+  # Scoped to the actual chart repos and this repo's own git source - not a
+  # wildcard. These only change when a new app is added (rare, deliberate),
+  # unlike clusterResourceWhitelist below.
   sourceRepos:
-    - '*'
+    - https://charts.longhorn.io
+    - https://prometheus-community.github.io/helm-charts
+    - https://victoriametrics.github.io/helm-charts
+    - https://bjw-s-labs.github.io/helm-charts
+    - https://pkgs.tailscale.com/helmcharts
+    - '{{ argocd_vars.gitops.repo_url }}'
+  # Scoped to the namespaces these apps actually use.
   destinations:
-    - namespace: '*'
+    - namespace: {{ argocd_vars.kubernetes.namespace }}
       server: https://kubernetes.default.svc
+    - namespace: longhorn
+      server: https://kubernetes.default.svc
+    - namespace: monitoring
+      server: https://kubernetes.default.svc
+    - namespace: adguard
+      server: https://kubernetes.default.svc
+    - namespace: tailscale
+      server: https://kubernetes.default.svc
+  # Left wildcarded deliberately, unlike the two above: Longhorn,
+  # VictoriaMetrics, and the Tailscale Operator each install their own CRDs
+  # and ClusterRoles, and a chart upgrade can introduce new cluster-scoped
+  # kinds at any time. Enumerating them here would mean this list going stale
+  # (and syncs silently failing) on every such upgrade, for little real
+  # benefit in a single-tenant homelab with one AppProject.
   clusterResourceWhitelist:
     - group: '*'
       kind: '*'

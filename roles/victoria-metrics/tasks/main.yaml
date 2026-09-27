@@ -1,6 +1,6 @@
 ---
 # Seeds the Grafana admin credentials Secret that Argo CD's victoria-metrics
-# Application (see the home-pi-gitops repo) references via
+# Application (see this repo's apps/ directory) references via
 # grafana.admin.existingSecret - the chart install and everything else now
 # lives entirely in that Application.
 - name: Role Facts

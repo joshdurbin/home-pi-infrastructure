@@ -3,6 +3,12 @@ kind: Application
 metadata:
   name: tailscale-operator
   namespace: argocd
+  annotations:
+    # Its Ingresses reference Services in every other app's namespace
+    # (monitoring, longhorn, adguard) - not a hard dependency (a dangling
+    # Ingress backend is valid, just unreachable until the Service shows up),
+    # but syncing last avoids that transient state on a fresh bootstrap.
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   project: home-pi
   destination:
@@ -14,6 +20,12 @@ spec:
     automated:
       selfHeal: true
       prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
   sources:
     - repoURL: https://pkgs.tailscale.com/helmcharts
       chart: tailscale-operator

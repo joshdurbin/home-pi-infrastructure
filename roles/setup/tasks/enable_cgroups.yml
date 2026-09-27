@@ -1,10 +1,10 @@
 ---
-
 - name: enable cgroups
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /boot/firmware/config.txt
     regexp: '^cgroup_memory='
     line: "cgroup_memory=1 cgroup_enable=memory"
     insertafter: EOF
+  notify: restart pi after config change
   tags:
     - enable_cgroups

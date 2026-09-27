@@ -11,7 +11,6 @@ Prepares Raspberry Pi instances for k3s by optimizing for minimal resource usage
 - Installs essential packages for system administration
 - Configures locale, timezone, and keyboard layout
 - Applies a per-board-model mild overclock (see below)
-- Prepares the Longhorn storage directory on `pi5` nodes (`tasks/longhorn-storage.yml`)
 
 ## Variables
 
