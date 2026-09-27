@@ -46,6 +46,7 @@ grafana:
       org_role: Admin
   plugins:
     - victoriametrics-logs-datasource
+    - victoriametrics-metrics-datasource
   persistence:
     accessModes:
       - ReadWriteOnce
