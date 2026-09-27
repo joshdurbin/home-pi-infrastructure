@@ -17,12 +17,18 @@ ui:
   static_use_hash: true
 
 # Rate-limiter/bot-detection cache (searxng-cache, see
-# apps/searxng/manifests/redis-replication.yaml). Points directly at the
-# replication StatefulSet's pod-0 rather than through sentinel - SearXNG's
-# valkey client only takes one connection URL, so it can't discover a new
-# master after a failover on its own. See redis-sentinel.yaml's comment in
-# that same directory for why this is a deliberate, accepted limitation
-# rather than a bug: the sentinel-driven failover at the storage layer
-# still works, this URL just won't follow it.
+# apps/searxng/manifests/redis-replication.yaml). SearXNG's valkey client
+# only takes one connection URL (no Sentinel awareness), but points at the
+# RedisReplication's own operator-maintained "-master" Service rather than
+# a specific pod - confirmed live that the redis-operator keeps this
+# Service's endpoint pointed at whichever pod is actually master:
+#   kubectl -n searxng-cache get redisreplication searxng-cache -o jsonpath='{.status.connectionInfo}'
+#   -> {"host":"searxng-cache-master.searxng-cache.svc.cluster.local","port":6379}
+# i.e. this is the CR's own documented recommended connection endpoint, so
+# this *is* failover-aware despite the plain-URL limitation - an earlier
+# version of this comment claimed otherwise based on incomplete research
+# (the operator's docs describe roles as determined dynamically with no
+# stable label, which is true, but missed that it still maintains this
+# Service off that same dynamic determination).
 valkey:
-  url: "redis://searxng-cache-0.searxng-cache-headless.searxng-cache.svc.cluster.local:6379/0"
+  url: "redis://searxng-cache-master.searxng-cache.svc.cluster.local:6379/0"

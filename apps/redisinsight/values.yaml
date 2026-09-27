@@ -1,0 +1,77 @@
+# No official Helm chart exists for RedisInsight (Redis Ltd never
+# published one) - only a handful of community charts with 1-8 GitHub
+# stars each, too thin to depend on long-term. Same generic
+# `bjw-s-labs/app-template` chart already used for Blocky/SearXNG instead,
+# running the official `redis/redisinsight` image directly - one container,
+# no sidecar.
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: redis/redisinsight
+          tag: 3.8.0
+        env:
+          # Path to the pre-configured-databases file below - the officially
+          # supported non-interactive setup mechanism (confirmed directly
+          # against RedisInsight's own source,
+          # redisinsight/api/src/modules/database-discovery/utils/pre-setup.discovery.util.ts
+          # - fields it actually reads: id, host, port, db, name, username,
+          # password, tls, compressor, caCert, clientCert,
+          # verifyServerCert). No Sentinel-specific fields exist in this
+          # mechanism at all - not a gap here, though: both host/port
+          # values below point at each RedisReplication's own operator-
+          # maintained "-master" Service, which the operator's own
+          # RedisSentinel keeps pointed at whichever pod is actually master
+          # (confirmed live: `kubectl -n blocky-cache get redisreplication
+          # blocky-cache -o jsonpath='{.status.connectionInfo}'` names this
+          # exact Service as the CR's own recommended connection endpoint).
+          # So this is failover-aware despite using the "plain host/port"
+          # pre-setup mechanism, not a workaround.
+          RI_PRE_SETUP_DATABASES_PATH: /pre-setup/databases.json
+        resources:
+          requests:
+            cpu: 50m
+            memory: 256Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        probes:
+          liveness:
+            enabled: false
+          readiness:
+            enabled: false
+          startup:
+            enabled: false
+
+service:
+  main:
+    controller: main
+    ports:
+      http:
+        port: 5540
+
+persistence:
+  # RedisInsight's own local settings store (connection list, saved
+  # Workbench commands, etc.) - /data is the image's own documented
+  # persistence path. Small: none of this cluster's redis instances have a
+  # password (confirmed - neither apps/blocky/manifests/redis-replication.yaml
+  # nor apps/searxng/manifests/redis-replication.yaml sets one), so there's
+  # no actual secret material for RedisInsight's at-rest encryption to
+  # protect here either.
+  data:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 256Mi
+    storageClass: longhorn
+    globalMounts:
+      - path: /data
+  pre-setup-databases:
+    enabled: true
+    type: configMap
+    name: redisinsight-pre-setup-databases
+    globalMounts:
+      - path: /pre-setup/databases.json
+        subPath: databases.json
+        readOnly: true

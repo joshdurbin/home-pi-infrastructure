@@ -1,11 +1,11 @@
 # SearXNG's redis/valkey cache backend (its rate-limiter/bot-detection
 # state - see roles/k8s_secrets/templates/searxng-config.yaml.j2's valkey.url).
 # Two pods (master + one replica), each with its own PVC. redis-sentinel.yaml
-# in this directory still monitors this and fails over automatically at the
-# storage layer - but see that file's comment: SearXNG itself can't do
-# sentinel-based master discovery (it only takes one connection URL), so its
-# own config points at a fixed pod rather than through sentinel. A deliberate,
-# user-accepted tradeoff, not an oversight.
+# in this directory monitors this and fails over automatically at the
+# storage layer; SearXNG's own config follows it via this CR's own
+# operator-maintained "-master" Service rather than Sentinel directly (its
+# valkey client has no Sentinel-discovery support) - see that config's
+# comment for how that Service still tracks the real master.
 #
 # Sizing: same reasoning as apps/blocky/manifests/redis-replication.yaml -
 # this is a cache, 128MB of maxmemory is intentionally tiny, and 192Mi of

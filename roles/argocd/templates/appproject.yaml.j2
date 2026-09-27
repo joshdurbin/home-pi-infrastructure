@@ -43,6 +43,8 @@ spec:
       server: https://kubernetes.default.svc
     - namespace: searxng-cache
       server: https://kubernetes.default.svc
+    - namespace: redisinsight
+      server: https://kubernetes.default.svc
     # victoria-metrics-k8s-stack creates a few VMServiceScrapes directly in
     # kube-system (matching upstream kube-prometheus-stack convention) to
     # scrape control-plane components like CoreDNS from where they actually

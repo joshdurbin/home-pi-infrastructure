@@ -155,7 +155,7 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass
 - **Maintenance Tools**: Deploys k3s-maintenance script to all nodes
 - **Argo CD Bootstrap**: Installs Argo CD and its root Application, which then continuously syncs
   Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, the redis-operator (Blocky's and SearXNG's own
-  cache clusters), and the Tailscale Operator from this repo's own `apps/` directory on GitHub — see
+  cache clusters), RedisInsight, and the Tailscale Operator from this repo's own `apps/` directory on GitHub — see
   [GitOps (Argo CD)](#gitops-argo-cd).
 
 This is idempotent - safe to run repeatedly to ensure everything stays configured.
@@ -512,9 +512,9 @@ cluster-admin access — fine for a single-user homelab, but keep it as private 
 
 ## GitOps (Argo CD)
 
-Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, redis-operator, and the Tailscale Operator are no
-longer installed or upgraded by Ansible. Argo CD runs in-cluster (namespace `argocd`) and continuously
-reconciles all seven from this **same** repo's `apps/` directory — edit a file there, commit, and Argo CD applies it within its
+Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, redis-operator, RedisInsight, and the Tailscale
+Operator are no longer installed or upgraded by Ansible. Argo CD runs in-cluster (namespace `argocd`) and
+continuously reconciles all eight from this **same** repo's `apps/` directory — edit a file there, commit, and Argo CD applies it within its
 next poll cycle (or immediately via `argocd app sync` / the UI). This replaced hand-templating every
 chart's values through Jinja and running `kubectl`/`helm` manually to fix drift — Argo CD's own continuous
 reconciliation makes drift structurally impossible to miss.
@@ -555,7 +555,7 @@ Then check in:
 kubectl -n argocd get pods
 kubectl -n argocd get applications
 ```
-All seven child Applications (plus `root`) should show `Synced`/`Healthy`. Access the UI at
+All eight child Applications (plus `root`) should show `Synced`/`Healthy`. Access the UI at
 `https://argocd.<tailnet>.ts.net` once the Tailscale Operator Application has synced (see below), or via
 `kubectl -n argocd port-forward svc/argocd-server 8080:443` in the meantime — it runs with
 `server.insecure: true` (TLS is terminated by Tailscale, same as every other UI in this cluster), and
@@ -834,14 +834,15 @@ Ansible except SearXNG's `valkey.url` setting (part of its seeded `settings.yml`
   `apps/blocky/manifests/configmap.yaml`) points at the round-robin `blocky-cache-sentinel-sentinel`
   Service, and `redis.address: blocky-cache` is the Sentinel master group name
   (`redisSentinelConfig.masterGroupName`). Always finds the current master, even after a failover.
-- **How SearXNG connects**: **not** Sentinel-aware — its `valkey.url` only takes a single connection
-  string, so it points directly at `searxng-cache-0`'s own pod DNS name
-  (`searxng-cache-0.searxng-cache-headless.searxng-cache.svc.cluster.local`). Sentinel still promotes the
-  replica automatically if the master pod dies, but SearXNG's own connection won't follow it there — a
-  known, deliberate limitation, not a bug. If `searxng-cache-0` is ever *not* the master (check with
-  `kubectl -n searxng-cache get redisreplication searxng-cache` — the `MASTER` column shows which pod), the
-  cache is effectively down for SearXNG until someone repoints this URL and re-seeds
-  (`ansible-playbook site.yml -i inventory.dist -t secrets --ask-vault-pass`) or the original pod recovers.
+- **How SearXNG connects**: its `valkey.url` only takes a single connection string, with no
+  Sentinel-discovery support at the protocol level — but rather than pointing at a specific pod, it points
+  at `searxng-cache`'s own operator-maintained **`searxng-cache-master`** Service
+  (`searxng-cache-master.searxng-cache.svc.cluster.local`), confirmed live to be exactly what the
+  `RedisReplication` CR itself recommends:
+  `kubectl -n searxng-cache get redisreplication searxng-cache -o jsonpath='{.status.connectionInfo}'`. The
+  redis-operator keeps this Service's endpoint pointed at whichever pod is actually master, so this *is*
+  failover-aware despite the plain-URL limitation — SearXNG follows a failover automatically, same as
+  Blocky, just via a different (non-Sentinel) mechanism.
 
 **A real gotcha, confirmed live, worth remembering**: the operator appends its own `-sentinel` suffix to
 whatever name a `RedisSentinel` CR is given — so a CR named `blocky-cache-sentinel` actually produces a
@@ -864,6 +865,29 @@ kubectl -n blocky-cache get svc
 # Confirm Blocky actually connected (look for "sentinel: new master=..." not "no such host")
 kubectl -n blocky logs deployment/blocky | grep -i redis
 ```
+
+### Browsing the data (RedisInsight)
+
+A single [RedisInsight](https://redis.io/insight/) instance for browsing/querying both clusters above -
+**not** a redis-operator feature, a separate app (`apps/redisinsight/`). No official Helm chart exists for
+it (Redis Ltd never published one, and the handful of community charts found have 1-8 GitHub stars each) -
+runs the official `redis/redisinsight` image directly via the same `bjw-s-labs/app-template` chart used for
+Blocky/SearXNG. Namespace: `redisinsight`.
+
+- **Pre-configured connections**: both `blocky-cache` and `searxng-cache` are pre-wired in via
+  `RI_PRE_SETUP_DATABASES_PATH` (`apps/redisinsight/manifests/pre-setup-databases-configmap.yaml`) - the
+  officially supported non-interactive setup mechanism, confirmed directly against RedisInsight's own
+  source. That mechanism has no Sentinel-specific fields at all, so both entries point at each cluster's
+  own operator-maintained `-master` Service (`blocky-cache-master`/`searxng-cache-master`) rather than
+  Sentinel directly or a specific pod - failover-aware for the same reason SearXNG's own connection is (see
+  above).
+- **Storage**: a small (256Mi) Longhorn PVC at `/data` - RedisInsight's own local settings store (saved
+  connections, Workbench history). Neither redis cluster has a password, so there's no actual secret
+  material for its at-rest encryption to protect here.
+- **Egress NetworkPolicy** (`apps/redisinsight/manifests/networkpolicy.yaml`): only CoreDNS plus port 6379
+  into the `blocky-cache`/`searxng-cache` namespaces - no port 26379, it never talks to Sentinel directly.
+
+**Access it**: `https://redisinsight.<tailnet>.ts.net` once the Tailscale Operator step below has synced.
 
 ## Exposing UIs via Tailscale Operator
 
@@ -945,6 +969,7 @@ hostname shown there):
 | Longhorn | `https://longhorn.<tailnet>.ts.net` |
 | Blocky (`/metrics`) | `https://blocky.<tailnet>.ts.net` |
 | SearXNG | `https://search.<tailnet>.ts.net` |
+| RedisInsight | `https://redisinsight.<tailnet>.ts.net` |
 | Argo CD | `https://argocd.<tailnet>.ts.net` |
 
 Confirmed working from a phone with the Tailscale app active. If you test from a **Mac terminal or
@@ -1236,8 +1261,8 @@ most commonly after that resource was deleted or modified out-of-band (e.g. `kub
 
 The `helm_drift_check` role now only runs after Argo CD's own chart install (the one Helm release Ansible
 still manages directly) and checks whether every resource in its current manifest actually exists live.
-For every other chart (Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, redis-operator, Tailscale
-Operator), this
+For every other chart (Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, redis-operator,
+RedisInsight, Tailscale Operator), this
 class of drift can't happen anymore in practice — Argo CD's continuous reconciliation would just re-apply
 the missing resource on its next sync — but for the Argo CD install itself, if it detects drift, the
 playbook **fails with the exact recovery command to run** (a `helm upgrade` invoked directly rather than
