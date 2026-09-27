@@ -53,6 +53,16 @@ grafana:
     enabled: true
     size: 2Gi
     storageClassName: longhorn
+  # Confirmed live deadlock: default RollingUpdate tries to bring up a new
+  # pod before killing the old one, but with a single ReadWriteOnce PVC and
+  # replicas: 1, the new pod (often scheduled to a different node) can never
+  # attach the volume - it's still mounted by the old pod, which RollingUpdate
+  # won't kill until the new one is Ready. Deadlocks every rollout
+  # (ProgressDeadlineExceeded) until someone manually deletes the old pod.
+  # Recreate kills the old pod first, releasing the PVC before the new one
+  # is even scheduled.
+  deploymentStrategy:
+    type: Recreate
   replicas: 1
   resources:
     limits:
