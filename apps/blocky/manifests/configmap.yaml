@@ -48,10 +48,17 @@ data:
     # after a failover. required: false - if the cache is ever unreachable,
     # DNS resolution itself (Blocky's actual job) must keep working,
     # degraded to in-memory-only caching, not fail outright.
+    #
+    # sentinelAddresses points at the operator's own round-robin ClusterIP
+    # service for the RedisSentinel - confirmed live (kubectl get svc -n
+    # blocky-cache) as "blocky-cache-sentinel-sentinel", not
+    # "blocky-cache-sentinel": the operator appends its own "-sentinel"
+    # suffix to whatever name the RedisSentinel CR is given, on top of the
+    # "-sentinel" already in this CR's own name. go-redis only needs one
+    # reachable sentinel to bootstrap - it learns the others from
+    # `SENTINEL SENTINELS` once connected.
     redis:
       address: blocky-cache
       required: false
       sentinelAddresses:
-        - blocky-cache-sentinel-0.blocky-cache-sentinel-headless.blocky-cache.svc.cluster.local:26379
-        - blocky-cache-sentinel-1.blocky-cache-sentinel-headless.blocky-cache.svc.cluster.local:26379
-        - blocky-cache-sentinel-2.blocky-cache-sentinel-headless.blocky-cache.svc.cluster.local:26379
+        - blocky-cache-sentinel-sentinel.blocky-cache.svc.cluster.local:26379
