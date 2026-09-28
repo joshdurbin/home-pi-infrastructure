@@ -24,11 +24,23 @@
 #   instances: 2 gives this cluster a primary and a replica.
 #
 # Egress: CoreDNS, the Kubernetes API server (CNPG's instance manager talks
-# to it directly for coordination - k3s runs it embedded in the k3s
-# process on control-plane nodes, not as a Pod, so it can't be targeted
-# with a podSelector; confirmed live via `kubectl -n default get svc
-# kubernetes` that this is a fixed ClusterIP, 10.43.0.1:443, hence the
-# ipBlock below), and other postgres-cluster pods for replication.
+# to it directly for coordination), and other postgres-cluster pods for
+# replication.
+#
+# Confirmed live (broke the first real rollout): an ipBlock targeting the
+# "kubernetes" Service's ClusterIP (10.43.0.1:443) does NOT work here - for
+# pod-originated traffic, kube-proxy's DNAT rewrites the destination to a
+# real backend IP:port before the packet ever reaches the point where
+# NetworkPolicy evaluates ipBlock rules, so a ClusterIP-targeted ipBlock
+# never actually matches any real packet. The instance manager's own logs
+# showed "dial tcp 10.43.0.1:443: connect: connection refused" - not a
+# timeout, which is what pointed at NetworkPolicy specifically (a dropped
+# packet times out; this was an active reject from no rule matching).
+# Fixed by targeting the real control-plane node IPs on the real apiserver
+# port (6443, not 443 - that's only the Service's own port) instead - a
+# well-documented general NetworkPolicy + Kubernetes Service gotcha, not
+# specific to CNPG. k3s's server nodes are the API server itself (embedded
+# in the k3s process, not a Pod), so this can't be a podSelector either.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -86,10 +98,10 @@ spec:
           port: 53
     - to:
         - ipBlock:
-            cidr: 10.43.0.1/32
+            cidr: 192.168.1.0/24
       ports:
         - protocol: TCP
-          port: 443
+          port: 6443
     - to:
         - podSelector:
             matchLabels:
@@ -101,8 +113,11 @@ spec:
 # The two Poolers - egress-only, ingress deliberately unrestricted (see
 # comment above): applications elsewhere in the cluster need to reach
 # these freely. Only bounds what the poolers themselves can reach out to:
-# CoreDNS, and the postgres Cluster's own pods (to actually proxy to
-# Postgres).
+# CoreDNS, the Kubernetes API server (confirmed live: CNPG's PgBouncer
+# instance manager needs this too, not just the Postgres instances - see
+# the cluster policy's own comment above for why this is an ipBlock on the
+# real node IPs/port rather than the "kubernetes" Service's ClusterIP),
+# and the postgres Cluster's own pods (to actually proxy to Postgres).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -126,6 +141,12 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    - to:
+        - ipBlock:
+            cidr: 192.168.1.0/24
+      ports:
+        - protocol: TCP
+          port: 6443
     - to:
         - podSelector:
             matchLabels:
