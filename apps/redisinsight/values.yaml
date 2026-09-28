@@ -6,6 +6,17 @@
 # no sidecar.
 controllers:
   main:
+    pod:
+      # Confirmed live: the redis/redisinsight image runs as a non-root
+      # user (uid=1000, gid=1000, "node") with no securityContext set
+      # anywhere here to match - the /data PVC (Longhorn-provisioned) mounts
+      # owned by root by default, so the container couldn't mkdir its own
+      # logs directory ("Failed to initialize file logging EACCES:
+      # permission denied, mkdir '/data/logs'") and crash-looped. fsGroup
+      # makes Kubernetes chown the volume's group ownership to 1000 at
+      # mount time, matching the container's own gid.
+      securityContext:
+        fsGroup: 1000
     containers:
       main:
         image:
