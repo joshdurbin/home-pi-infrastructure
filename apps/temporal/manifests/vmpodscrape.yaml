@@ -1,0 +1,17 @@
+# Scrapes all four server components (frontend/history/matching/worker) -
+# each exposes native Prometheus metrics on port 9090 (named "metrics") by
+# default, confirmed via `helm template` against the real chart, not
+# assumed. Same selectAllByDefault: true auto-pickup as every other
+# VM*Scrape in this repo.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: temporal
+  namespace: temporal
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: temporal
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics

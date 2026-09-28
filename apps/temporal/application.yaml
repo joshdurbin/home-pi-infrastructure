@@ -1,0 +1,47 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: temporal
+  namespace: argocd
+  annotations:
+    # Needs apps/postgres/'s temporal-database.yaml (DatabaseRole + two
+    # Databases) to have already been applied AND reconciled into real
+    # Postgres objects by the operator before its schema-setup Job (a Helm
+    # pre-install/pre-upgrade hook) can successfully connect - wave 3, one
+    # strictly after postgres's own wave 2. The schema job's generous
+    # backoffLimit (100, chart default) covers the remaining gap between
+    # "wave synced" and "operator actually finished reconciling the new
+    # role/databases", same self-healing-via-retry pattern already proven
+    # for the Postgres Cluster's own initdb job.
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: temporal
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  sources:
+    - repoURL: https://go.temporal.io/helm-charts
+      chart: temporal
+      targetRevision: 1.7.0
+      helm:
+        releaseName: temporal
+        valueFiles:
+          - $values/apps/temporal/values.yaml
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      ref: values
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      path: apps/temporal/manifests

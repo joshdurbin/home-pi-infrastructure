@@ -1,0 +1,102 @@
+# No bundled Cassandra/MySQL/PostgreSQL/Elasticsearch dependencies in this
+# chart version (checked Chart.yaml directly - none exist), so there's
+# nothing to disable, only the external persistence config below to set.
+server:
+  image:
+    repository: temporalio/server
+    tag: 1.32.0
+  config:
+    persistence:
+      defaultStore: default
+      visibilityStore: visibility
+      # Chart default (512) is sized for real production scale and cannot
+      # be changed after the initial deployment. 4 matches Temporal's own
+      # small-scale/docker-compose defaults - appropriate here, this is a
+      # homelab-scale deployment, not a case for 512-way history sharding.
+      numHistoryShards: 4
+      datastores:
+        default:
+          sql:
+            createDatabase: false
+            manageSchema: true
+            pluginName: postgres12_pgx
+            driverName: postgres12_pgx
+            databaseName: temporal
+            connectAddr: "postgres-pooler-rw.postgres.svc.cluster.local:5432"
+            connectProtocol: tcp
+            user: temporal
+            existingSecret: temporal-db-credentials
+            secretKey: password
+        visibility:
+          sql:
+            createDatabase: false
+            manageSchema: true
+            pluginName: postgres12_pgx
+            driverName: postgres12_pgx
+            databaseName: temporal_visibility
+            connectAddr: "postgres-pooler-rw.postgres.svc.cluster.local:5432"
+            connectProtocol: tcp
+            user: temporal
+            existingSecret: temporal-db-credentials
+            secretKey: password
+    # Native Prometheus metrics already on by default (port 9090, no toggle
+    # needed) - only disabling the chart's own annotation-based scrape
+    # hints here, since this repo scrapes via a hand-written VMPodScrape
+    # (apps/temporal/manifests/vmpodscrape.yaml) instead, same reasoning as
+    # every other app here: avoids depending on the VM operator's
+    # ServiceMonitor/PodMonitor converter, which this cluster has never
+    # observed actually converting anything.
+    metrics:
+      annotations:
+        enabled: false
+  frontend:
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+  history:
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+  matching:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+  worker:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+
+web:
+  enabled: true
+  image:
+    repository: temporalio/ui
+    tag: 2.54.1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 50m
+      memory: 128Mi
+
+schema:
+  # Helm hooks (pre-install/pre-upgrade Job) translate directly to Argo
+  # CD's own equivalent hook/wave handling - no reason to disable this for
+  # Flux/Rancher/Terraform-style workarounds, which don't apply here.
+  useHelmHooks: true

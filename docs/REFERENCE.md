@@ -22,6 +22,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [Search (SearXNG)](#search-searxng)
 - [Redis Clusters (Blocky + SearXNG Caching)](#redis-clusters-blocky--searxng-caching)
 - [Postgres (CloudNativePG)](#postgres-cloudnativepg)
+- [Temporal](#temporal)
 - [Exposing UIs via Tailscale Operator](#exposing-uis-via-tailscale-operator)
 - [Tailscale Integration (Optional)](#tailscale-integration-optional)
 - [Cluster Configuration](#cluster-configuration)
@@ -975,11 +976,14 @@ deliberately, applications are meant to reach it only through the two poolers be
   `monitoring`'s vmagent; the other is egress-only on the poolers themselves (same shape as every other
   app's NetworkPolicy in this repo), leaving their own ingress open since their whole purpose is being
   reachable from wherever a future application ends up living.
-- **Users/permissions**: CloudNativePG's declarative role management (`Cluster.spec.managed.roles`, not
-  currently used here - nothing beyond the default bootstrap user exists yet) covers role *attributes*
-  (login, superuser, connection limits, password via a Secret reference) declaratively in git. It does
-  **not** cover GRANT-level permissions on specific databases/schemas - that stays each future application's
-  own concern (init SQL, migrations, or a one-off admin connection), same as most Postgres operators.
+- **Users/permissions**: CloudNativePG's declarative `DatabaseRole` and `Database` CRDs (not the older,
+  inline `Cluster.spec.managed.roles` form) create and own individual roles and databases from git, each
+  reconciled independently of the `Cluster` object itself. First real user: Temporal's own `temporal` role
+  and its two databases - see [Temporal](#temporal) below,
+  `apps/postgres/manifests/temporal-database.yaml`. These CRDs cover role *attributes* (login, password via
+  a Secret reference) and database ownership declaratively. They do **not** cover GRANT-level permissions on
+  specific schemas/tables beyond ownership - that stays each application's own concern (init SQL,
+  migrations), same as most Postgres operators.
 - **Why not ProxySQL**: considered first, and its native Postgres protocol support is real and reasonably
   mature (confirmed against ProxySQL's own docs). Dropped in favor of PgBouncer via CNPG's `Pooler` CRD for
   two concrete reasons: ProxySQL's `pgsql_servers` backend registration isn't config-file-driven the way its
@@ -1008,6 +1012,58 @@ kubectl -n postgres cnpg status postgres   # requires the kubectl-cnpg plugin
 
 # Poolers actually reachable
 kubectl -n postgres get svc postgres-pooler-rw postgres-pooler-ro
+```
+
+## Temporal
+
+[Temporal](https://temporal.io/) workflow orchestration, deployed via the official `temporal/temporal` Helm
+chart (`apps/temporal/`, chart repo `https://go.temporal.io/helm-charts`) with its bundled Cassandra/Elasticsearch/
+Postgres subcharts all disabled - it connects to the existing [Postgres cluster](#postgres-cloudnativepg)
+through `postgres-pooler-rw` instead of running its own datastore, the same "apps talk to the pool, never a
+database directly" pattern as everything else in this repo.
+
+- **Database/role**: `apps/postgres/manifests/temporal-database.yaml` creates a CNPG `DatabaseRole` named
+  `temporal` (password from the `temporal-db-credentials` Secret) and two CNPG `Database` resources it owns -
+  `temporal` and `temporal_visibility` - reconciled by the CloudNativePG operator against the `postgres`
+  `Cluster`, not hand-run SQL. See [Users/permissions](#postgres-cloudnativepg) above.
+- **Persistence**: both the `default` (workflow history/state) and `visibility` (search/list-workflows)
+  stores point at the same Postgres cluster via `postgres-pooler-rw.postgres.svc.cluster.local:5432`, using
+  the `postgres12_pgx` SQL driver - standard/SQL-backed visibility, not Elasticsearch, so there's no separate
+  search cluster to run or keep in sync. Since this reuses the existing poolers, Temporal adds no new
+  connection-pooling component of its own.
+- **`numHistoryShards: 4`**: a one-way door - this value is baked into the schema on first deploy and cannot
+  be changed later without standing up a new cluster. Set low deliberately for a homelab's workflow volume;
+  revisit only via a rebuild if that ever changes.
+- **Web UI**: `web.enabled: true`, exposed via the Tailscale Operator like every other UI in this repo - see
+  [Exposing UIs via Tailscale Operator](#exposing-uis-via-tailscale-operator) and the Accessing Things table
+  in the main README. The frontend gRPC API itself (`temporal-frontend:7233`) is left reachable
+  cluster-internally with no additional restriction, the same way the Postgres poolers are, since it's meant
+  to be a general access point for future application workloads.
+- **Metrics**: all four server components (frontend/history/matching/worker) export native Prometheus
+  metrics on port 9090 - scraped via a hand-written `VMPodScrape`
+  (`apps/temporal/manifests/vmpodscrape.yaml`), same reasoning as [Postgres](#postgres-cloudnativepg) and
+  [Redis Clusters](#redis-clusters-blocky--searxng-caching): the native chart toggle depends on the VM
+  operator's unverified ServiceMonitor/PodMonitor converter. The Web UI component exposes no metrics port
+  and isn't scraped.
+- **Sync-wave**: `argocd.argoproj.io/sync-wave: "3"` - strictly after `cloudnative-pg` (wave 1) and
+  `postgres` (wave 2), so the operator and the `temporal` role/databases exist before Temporal's Helm-hook
+  schema-setup Job tries to run against them. Like the original Postgres init, a first-attempt failure here
+  (databases not fully reconciled yet) self-heals via Argo CD's automated retry, not a wait-for step in this
+  repo.
+
+**Prerequisite**: `temporal_db_password` must be set in Vault (`ansible-vault edit group_vars/all/main.yaml`)
+before this deploys successfully - see [Secrets & Variables](#secrets--variables).
+
+**Troubleshooting:**
+```bash
+# Server + web pods
+kubectl -n temporal get pods
+
+# Schema-setup Job logs (first deploy only)
+kubectl -n temporal logs job/temporal-schema-setup
+
+# Confirm the role/databases actually reconciled
+kubectl -n postgres get databaserole,database
 ```
 
 ## Exposing UIs via Tailscale Operator
@@ -1301,9 +1357,11 @@ Update `inventory.dist` if your network differs.
 - **Encrypted with Vault**: `group_vars/all/main.yaml` — `k3s_join_token`, `tailscale_oauth_client_id`,
   `tailscale_oauth_client_secret` (used by `apps/tailscale-operator/`), `tailscale_node_oauth_client_id`,
   `tailscale_node_oauth_client_secret` (used by `roles/tailscale` to join nodes to the tailnet -
-  deliberately a separate OAuth client from the operator's), `searxng_secret_key`. The first pair never
-  appear in `apps/` — see [GitOps (Argo CD)](#gitops-argo-cd)'s "Secrets bridge"; the node-join pair are
-  consumed directly by `roles/tailscale` and never touch `apps/` either.
+  deliberately a separate OAuth client from the operator's), `searxng_secret_key`, `temporal_db_password`
+  (used by both `apps/postgres/manifests/temporal-database.yaml` and `apps/temporal/` - see
+  [Temporal](#temporal)). The first pair never appear in `apps/` — see
+  [GitOps (Argo CD)](#gitops-argo-cd)'s "Secrets bridge"; the node-join pair are consumed directly by
+  `roles/tailscale` and never touch `apps/` either.
 - **Unencrypted**: All other group_vars and host_vars
 
 To rotate secrets:

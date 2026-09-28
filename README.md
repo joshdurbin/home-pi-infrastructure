@@ -73,8 +73,9 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
 From there, Longhorn (storage), VictoriaMetrics/VictoriaLogs/Grafana (monitoring), Blocky (DNS), SearXNG
 (search), the redis-operator (Blocky's and SearXNG's own small caching clusters), RedisInsight (a UI for
 browsing those caches), CloudNativePG (a Postgres cluster on the `database=true` nodes, behind PgBouncer
-poolers), and the Tailscale Operator all come up on their own — Argo CD manages them from this repo's
-`apps/` directory. See [docs/REFERENCE.md](docs/REFERENCE.md) for what each one does.
+poolers), Temporal (a workflow orchestration platform, backed by that same Postgres cluster), and the
+Tailscale Operator all come up on their own — Argo CD manages them from this repo's `apps/` directory. See
+[docs/REFERENCE.md](docs/REFERENCE.md) for what each one does.
 
 ## Make targets
 
@@ -112,6 +113,7 @@ Once Tailscale is set up and synced:
 | SearXNG | `https://search.<tailnet>.ts.net` |
 | Blocky metrics | `https://blocky.<tailnet>.ts.net` |
 | RedisInsight | `https://redisinsight.<tailnet>.ts.net` |
+| Temporal Web UI | `https://temporal.<tailnet>.ts.net` |
 
 (Replace `<tailnet>` with your tailnet's `.ts.net` domain — run `tailscale status` on any connected device
 to find it.)
@@ -130,5 +132,5 @@ kubectl get nodes
 
 [docs/REFERENCE.md](docs/REFERENCE.md) covers: project structure, the GitOps split between Ansible and
 Argo CD, per-app configuration (Longhorn, VictoriaMetrics/VictoriaLogs, Blocky, SearXNG, redis-operator,
-RedisInsight, Postgres/CloudNativePG, Tailscale Operator), user management, node maintenance, and
+RedisInsight, Postgres/CloudNativePG, Temporal, Tailscale Operator), user management, node maintenance, and
 troubleshooting.

@@ -1,0 +1,61 @@
+# Temporal's own Postgres user and databases (apps/temporal/), created
+# declaratively via CloudNativePG's dedicated DatabaseRole/Database CRDs -
+# confirmed live these exist as first-class CRDs on the running operator
+# (1.30.1), cleaner than the inline Cluster.spec.managed.roles mechanism
+# used for the original Postgres setup's own docs. Temporal connects
+# through postgres-pooler-rw (see apps/postgres/manifests/pooler-rw.yaml)
+# like everything else does - shared with whatever else ends up using this
+# cluster, not a dedicated pooler pair, per explicit choice: revisit if
+# Temporal becomes a noisy neighbor.
+#
+# The password Secret (temporal-db-credentials) is seeded by the
+# k8s_secrets Ansible role (group_vars/all/cluster_secrets.yaml) from a
+# Vault-encrypted value - the same Secret content exists in both this
+# namespace (for this DatabaseRole to reference) and the temporal
+# namespace (for Temporal's own Helm chart to reference), since Kubernetes
+# Secrets are namespace-scoped and CNPG requires the referent in the same
+# namespace as the DatabaseRole.
+apiVersion: postgresql.cnpg.io/v1
+kind: DatabaseRole
+metadata:
+  name: temporal
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  name: temporal
+  ensure: present
+  login: true
+  passwordSecret:
+    name: temporal-db-credentials
+---
+# Temporal's "default" store - workflow execution state, history, tasks.
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: temporal
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  name: temporal
+  owner: temporal
+  ensure: present
+---
+# Temporal's "visibility" store - SQL/standard visibility (workflow
+# listing/search), not Elasticsearch - deliberate choice, avoids adding a
+# whole new stateful component for a homelab-scale deployment. Basic
+# filtering works fine; advanced search-by-custom-attribute doesn't -
+# revisit with a dedicated Elasticsearch Cluster later if that's ever
+# actually needed.
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: temporal-visibility
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  name: temporal_visibility
+  owner: temporal
+  ensure: present
