@@ -28,7 +28,8 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass --tags maintenance
 ## Using the Maintenance Script
 
 **Server nodes only** — the script shells out to local `kubectl`, which only has a working kubeconfig on
-server nodes (`/etc/rancher/k3s/k3s.yaml`). Agent nodes (the `pi5` group) have the `kubectl` binary but no
+server nodes (`/etc/rancher/k3s/k3s.yaml`). Agent nodes (the `pi4` group - previously `pi5`, before control
+plane moved to the Pi 5s, see `inventory.dist`'s `[server]` group comment) have the `kubectl` binary but no
 kubeconfig, so running this there fails with a connection-refused error against `localhost:8080`. To
 drain/uncordon an *agent* node, run the commands below from a server node, targeting the agent by name —
 see the "Reboot nodes with pending config.txt changes" play in `site.yml` for a worked example of exactly
@@ -47,18 +48,24 @@ sudo k3s-maintenance -d
 
 ## Reboot Workflow
 
+For an **agent** node (`rpi-4b-*`) - `make drain`/`make uncordon` delegate to a server via Ansible, so this
+works regardless of the target having its own kubeconfig:
 ```bash
 # 1. Drain the node
-make drain NODE=rpi-5-1
+make drain NODE=rpi-4b-1
 
 # 2. Reboot (from control machine or node)
-ssh ansible@rpi-5-1 sudo reboot
+ssh ansible@rpi-4b-1 sudo reboot
 
 # 3. Wait for reboot
 
 # 4. Return to service
-make uncordon NODE=rpi-5-1
+make uncordon NODE=rpi-4b-1
 ```
+
+For a **server** node (`rpi-5-*`), the same commands work, but only reboot one at a time - rebooting
+multiple control-plane nodes together risks etcd losing quorum. `site.yml`'s own "Reboot nodes with pending
+config.txt changes" play already handles this correctly (`serial: 1`); do the same by hand here.
 
 ## State File
 

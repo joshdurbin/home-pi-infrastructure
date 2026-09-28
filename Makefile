@@ -2,7 +2,7 @@
 
 INVENTORY := inventory.dist
 VAULT_PASS := --ask-vault-pass
-FIRST_SERVER := rpi-4b-1
+FIRST_SERVER := rpi-5-1
 
 help:
 	@echo "Home Pi Infrastructure - Makefile Commands"

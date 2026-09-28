@@ -30,8 +30,20 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 
 ## Hardware Setup
 
-- **Control Plane**: 3x Raspberry Pi 4B (4GB RAM, 128GB SSD) — `rpi-4b-1`, `rpi-4b-2`, `rpi-4b-3`
-- **Worker Nodes**: 3x Raspberry Pi 5 (8GB RAM) — `rpi-5-1`, `rpi-5-2`, `rpi-5-3`
+- **Control Plane**: 3x Raspberry Pi 5 (8GB RAM) — `rpi-5-1`, `rpi-5-2`, `rpi-5-3`
+- **Worker Nodes**: 3x Raspberry Pi 4B (4GB RAM, 128GB SSD) — `rpi-4b-1`, `rpi-4b-2`, `rpi-4b-3`
+
+Control plane moved to the Pi 5s deliberately, not by original design - confirmed live that the Pi 4B
+nodes' disks were too slow/inconsistent for etcd's fsync latency sensitivity, causing real API server
+instability (intermittent 503s, TLS handshake timeouts, connection resets) under normal cluster load. See
+`inventory.dist`'s own `[server]` group comment for the full reasoning, including why a future 4th Pi 5
+(`rpi-5-4`) must join `[pi5]`/`[agent]` and never `[server]` - etcd quorum needs a fixed, deliberately-sized
+odd-numbered membership, not "however many Pi 5s happen to exist."
+
+The Pi 5 nodes also carry this cluster's disk-heavy workloads (Longhorn, VictoriaMetrics/VictoriaLogs,
+Postgres - see each `host_vars/rpi-5-*.yaml`'s labels) - accepted deliberately alongside etcd, not
+overlooked; revisit if the Pi 5 disks turn out not to keep up with both together, but that hasn't been
+observed.
 
 (RAM figures confirmed live via `kubectl get nodes -o jsonpath='{.status.capacity.memory}'` - the 4B nodes
 report ~3.9GiB, i.e. 4GB boards; this matters for anything sizing container `resources.limits.memory`
@@ -269,7 +281,7 @@ managed_users:
 
 ```bash
 # Login as user (uses SSH key)
-ssh jdurbin@rpi-4b-1
+ssh jdurbin@rpi-5-1
 
 # Run commands with sudo (no password required)
 sudo systemctl status k3s
@@ -309,7 +321,7 @@ make verify
 Or manually:
 
 ```bash
-ssh ansible@rpi-4b-1
+ssh ansible@rpi-5-1
 
 # View all nodes
 sudo kubectl get nodes
@@ -327,7 +339,7 @@ sudo kubectl top nodes
 ### Quick Health Check
 
 ```bash
-ssh ansible@rpi-4b-1 "sudo kubectl get nodes && echo '---' && sudo kubectl get pods -A | grep -E 'coredns|metrics-server|local-path'"
+ssh ansible@rpi-5-1 "sudo kubectl get nodes && echo '---' && sudo kubectl get pods -A | grep -E 'coredns|metrics-server|local-path'"
 ```
 
 All nodes should show `STATUS: Ready` and system pods should be `Running`.
@@ -335,7 +347,7 @@ All nodes should show `STATUS: Ready` and system pods should be `Running`.
 ### Test Workload Deployment
 
 ```bash
-ssh ansible@rpi-4b-1
+ssh ansible@rpi-5-1
 
 # Deploy test pod
 sudo kubectl run test-pod --image=nginx:latest --restart=Never
@@ -370,8 +382,14 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass --tags maintenance
 
 ### Enable Maintenance Mode (Before Reboot)
 
+`k3s-maintenance` self-targets the node it's run on via a local `kubectl` call, so this simple form only
+works on a **server** node (the only class with a working local kubeconfig - see
+[K3S Maintenance](#k3s-maintenance)'s own role README for why). To drain an **agent** node instead, see the
+reboot workflow below, which uses `make drain`/`make uncordon` (Ansible-delegated from a server) instead of
+this self-targeting form.
+
 ```bash
-ssh ansible@rpi-4b-1
+ssh ansible@rpi-5-1
 sudo k3s-maintenance -e
 ```
 
@@ -388,8 +406,10 @@ sudo k3s-maintenance -e
 
 ### Disable Maintenance Mode (After Reboot)
 
+Same server-node caveat as above.
+
 ```bash
-ssh ansible@rpi-4b-1
+ssh ansible@rpi-5-1
 sudo k3s-maintenance -d
 ```
 
@@ -406,7 +426,7 @@ sudo k3s-maintenance -s
 
 Output:
 ```
-[INFO] Node: rpi-4b-1
+[INFO] Node: rpi-5-1
 [INFO] Status: IN SERVICE
 [INFO] Enabled at: 2026-09-17T14:30:00
 [INFO] Disabled at: 2026-09-17T14:45:00
@@ -414,34 +434,47 @@ Output:
 
 ### Complete Reboot Workflow
 
+**For a server node** (self-targeting `k3s-maintenance` works - it has its own kubeconfig):
 ```bash
 # 1. Enter maintenance mode
-ssh ansible@rpi-4b-2
+ssh ansible@rpi-5-2
 sudo k3s-maintenance -e
 # Wait for drain to complete
 
-# 2. Verify pods are evicted
-ssh ansible@rpi-4b-1
-kubectl get pods -A | grep rpi-4b-2
+# 2. Verify pods are evicted (from any server)
+ssh ansible@rpi-5-1
+kubectl get pods -A | grep rpi-5-2
 # Should be empty
 
 # 3. Reboot the node
-ssh ansible@rpi-4b-2
+ssh ansible@rpi-5-2
 sudo reboot
 # Wait for node to come back up
 
 # 4. Verify node is ready
-ssh ansible@rpi-4b-1
+ssh ansible@rpi-5-1
 kubectl get nodes
-# Wait for rpi-4b-2 to show "Ready"
+# Wait for rpi-5-2 to show "Ready"
 
 # 5. Return to service
-ssh ansible@rpi-4b-2
+ssh ansible@rpi-5-2
 sudo k3s-maintenance -d
 
 # 6. Verify workloads re-scheduled
-ssh ansible@rpi-4b-1
-kubectl get pods -A | grep rpi-4b-2
+ssh ansible@rpi-5-1
+kubectl get pods -A | grep rpi-5-2
+```
+Note: rebooting more than one server node at a time risks etcd quorum - the automated
+`site.yml` reboot play (below) handles this by going one node at a time; do the same by hand here.
+
+**For an agent node** (e.g. `rpi-4b-1`) - `k3s-maintenance` self-targeting doesn't work, it has no local
+kubeconfig (see [K3S Maintenance](#k3s-maintenance) above). Use `make drain`/`make uncordon` instead, which
+delegate to a server via Ansible rather than running on the node itself:
+```bash
+make drain NODE=rpi-4b-1
+ssh ansible@rpi-4b-1 sudo reboot
+# Wait for node to come back up
+make uncordon NODE=rpi-4b-1
 # Should see pods running again
 ```
 
@@ -494,10 +527,10 @@ API server address defaulted to `127.0.0.1`. To use `kubectl` (and `helm`) from 
 brew install kubectl
 
 # 2. Pull the kubeconfig off a server node (root-owned, so read it over SSH rather than scp)
-ssh jdurbin@192.168.1.13 sudo cat /etc/rancher/k3s/k3s.yaml > ~/.kube/config_rpi
+ssh jdurbin@192.168.1.30 sudo cat /etc/rancher/k3s/k3s.yaml > ~/.kube/config_rpi
 
 # 3. Point the server address at the real IP instead of 127.0.0.1
-sed -i '' 's/127.0.0.1/192.168.1.13/' ~/.kube/config_rpi
+sed -i '' 's/127.0.0.1/192.168.1.30/' ~/.kube/config_rpi
 
 # 4. Use it
 export KUBECONFIG=~/.kube/config_rpi
@@ -1297,7 +1330,7 @@ Common issues:
 ### System Pods Not Running
 
 ```bash
-ssh ansible@rpi-4b-1
+ssh ansible@rpi-5-1
 sudo kubectl describe pod <pod-name> -n kube-system
 sudo kubectl logs <pod-name> -n kube-system
 ```

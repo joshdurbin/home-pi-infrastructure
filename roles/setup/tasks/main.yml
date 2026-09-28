@@ -69,4 +69,6 @@
       - siege
       - wrk
       - pwgen
+      - sysstat
+      - fio
     state: present

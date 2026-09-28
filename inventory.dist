@@ -21,21 +21,49 @@ rpi-4b-3
 rpi-5-1
 rpi-5-2
 rpi-5-3
+# rpi-5-4 joins here once it's racked and added above to [all] with a real
+# ansible_host. Deliberately NOT [server] (see that group's own comment) -
+# [pi5] is a hardware-class group, [server] is a control-plane-membership
+# group, and after this change they're no longer the same set.
 
+# Control plane (etcd + API server) - explicitly enumerated rather than
+# aliased to [pi5], and deliberately kept that way: etcd quorum needs a
+# fixed, deliberately-chosen odd-numbered membership. rpi-5-4 (arriving in
+# a few days) must join [pi5] and [agent], never this group - a 4th etcd
+# member would be strictly worse for fault tolerance than 3 (still only
+# tolerates 1 node failure, but now needs 3 of 4 to agree instead of 2 of
+# 3), not better. Previously the pi4 nodes - moved here because etcd is
+# extremely sensitive to disk fsync latency, and the pi4 nodes' disks
+# proved too slow/inconsistent for it, causing real, confirmed API server
+# instability (intermittent 503s, TLS handshake timeouts, connection
+# resets) under normal cluster load. The pi5 nodes also carry this
+# cluster's disk-heavy workloads (storage=true, telemetry=true,
+# database=true host_vars labels - Longhorn, VictoriaMetrics/VictoriaLogs,
+# Postgres) - accepted deliberately, not overlooked: if their disks can't
+# keep up with etcd *and* those workloads together, revisit then, but
+# don't pre-split them without evidence it's actually needed.
 [server]
-rpi-4b-1
-rpi-4b-2
-rpi-4b-3
-
-[agent]
 rpi-5-1
 rpi-5-2
 rpi-5-3
 
+# Workers - previously the pi5 nodes. Compute/network-bound workloads only
+# now that the pi4 nodes' disks are known to struggle - nothing with heavy
+# disk activity should be pinned here via a node label.
+[agent]
+rpi-4b-1
+rpi-4b-2
+rpi-4b-3
+# rpi-5-4 joins here (and [pi5]) once racked, not [server] - see that
+# group's own comment.
+
 # Nodes carrying the database=true k8s label (see host_vars/rpi-5-1.yaml),
 # gating scheduling eligibility for Postgres workloads. rpi-5-1 today;
-# rpi-5-4 joins this group once it's actually racked and added above to
-# [all] with a real ansible_host - don't add it here first.
+# rpi-5-4 joins this group once it's actually racked and labeled the same
+# way - don't add it here first. Independent of [server]/[agent]
+# membership - k3s doesn't taint server/control-plane nodes against
+# regular workloads by default, and this cluster has never changed that,
+# so a node can be both [server] and database=true at once.
 [database]
 rpi-5-1
 

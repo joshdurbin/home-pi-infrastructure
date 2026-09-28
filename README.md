@@ -8,8 +8,9 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
 
 ## Hardware
 
-- Control plane: 3x Raspberry Pi 4B — `rpi-4b-1`, `rpi-4b-2`, `rpi-4b-3`
-- Workers: 3x Raspberry Pi 5 — `rpi-5-1`, `rpi-5-2`, `rpi-5-3`
+- Control plane: 3x Raspberry Pi 5 — `rpi-5-1`, `rpi-5-2`, `rpi-5-3` (moved here from the 4Bs - their
+  disks proved too slow for etcd; see `inventory.dist`'s `[server]` group comment)
+- Workers: 3x Raspberry Pi 4B — `rpi-4b-1`, `rpi-4b-2`, `rpi-4b-3`
 
 ## Setup (one time)
 
@@ -128,5 +129,6 @@ kubectl get nodes
 ## More detail
 
 [docs/REFERENCE.md](docs/REFERENCE.md) covers: project structure, the GitOps split between Ansible and
-Argo CD, per-app configuration (Longhorn, VictoriaMetrics/VictoriaLogs, Blocky, SearXNG, Tailscale
-Operator), user management, node maintenance, and troubleshooting.
+Argo CD, per-app configuration (Longhorn, VictoriaMetrics/VictoriaLogs, Blocky, SearXNG, redis-operator,
+RedisInsight, Postgres/CloudNativePG, Tailscale Operator), user management, node maintenance, and
+troubleshooting.
