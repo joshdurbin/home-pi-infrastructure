@@ -692,10 +692,16 @@ VictoriaMetrics' own UI is at `http://localhost:8428/vmui/`; the raw PromQL-comp
 |---|---|---|
 | `storage=true` | rpi-5-2, rpi-5-3 | Longhorn replica placement (physical data) |
 | `telemetry=true` | rpi-5-1, rpi-5-2 | vmsingle + VictoriaLogs server pod placement |
+| `database=true` | rpi-5-1 (rpi-5-4 once it joins the `[database]` inventory group) | Reserved for gating scheduling eligibility for Postgres workloads - no Postgres deployment exists yet, this just labels the node ahead of it |
 
 Labels are declared per-host in `host_vars/rpi-5-*.yaml` under the `k8s_labels` key, and applied to the live
 cluster by the `k8s_labels` role (which reads every host's `k8s_labels` var and patches the matching
-Kubernetes Node object — not tied to any single chart-deploying role).
+Kubernetes Node object — not tied to any single chart-deploying role). `database=true` is additionally
+tracked via a dedicated `[database]` inventory group (`inventory.dist`), separate from `[pi5]`, so future
+Postgres-specific Ansible plays can target `hosts: database` directly rather than every Pi 5 - deliberately
+*not* driven by group_vars, since this repo's `ansible.cfg` doesn't set `hash_behaviour = merge`, so a
+group_vars-level `k8s_labels` would be silently replaced outright (not merged) by any host's own
+`k8s_labels` in `host_vars/`, rather than combined with it.
 
 ## DNS (Blocky)
 

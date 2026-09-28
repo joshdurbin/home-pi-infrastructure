@@ -32,6 +32,13 @@ rpi-5-1
 rpi-5-2
 rpi-5-3
 
+# Nodes carrying the database=true k8s label (see host_vars/rpi-5-1.yaml),
+# gating scheduling eligibility for Postgres workloads. rpi-5-1 today;
+# rpi-5-4 joins this group once it's actually racked and added above to
+# [all] with a real ansible_host - don't add it here first.
+[database]
+rpi-5-1
+
 [k3s_cluster:children]
 server
 agent
