@@ -14,6 +14,14 @@
 # convention - only the two poolers, the cnpg-system operator, and
 # monitoring's vmagent may reach these pods at all.
 #
+# podSelector matches on cnpg.io/podRole: instance, not just cnpg.io/cluster
+# - confirmed live (broke Temporal's first rollout): CNPG labels the Pooler
+# pods with cnpg.io/cluster too (so it can track which Cluster a Pooler
+# belongs to), so a podSelector on cnpg.io/cluster alone also matches the
+# poolers - silently pulling them into this same Ingress+Egress lockdown
+# and defeating the "poolers stay open" design below. cnpg.io/podRole
+# (instance vs pooler) is what actually distinguishes them.
+#
 # Ports, confirmed against CloudNativePG's own networking docs:
 # - 5432 (postgres) + 8000 (instance manager) from cnpg-system: the
 #   operator needs both to manage/coordinate each instance.
@@ -50,6 +58,7 @@ spec:
   podSelector:
     matchLabels:
       cnpg.io/cluster: postgres
+      cnpg.io/podRole: instance
   policyTypes:
     - Ingress
     - Egress
