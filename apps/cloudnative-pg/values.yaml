@@ -1,0 +1,24 @@
+# Manages apps/postgres/'s single Cluster + two Poolers - a fraction of
+# the chart's own default request/limit is plenty for reconciling a
+# handful of small CRs, same reasoning as redis-operator's own sizing.
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+monitoring:
+  # podMonitorEnabled stays false (chart default) - that renders a native
+  # Prometheus Operator PodMonitor and depends on the VM operator's
+  # PodMonitor->VMPodScrape converter, which this cluster has never been
+  # observed actually converting anything. manifests/vmpodscrape.yaml is
+  # the same proven hand-written mechanism used everywhere else instead.
+  grafanaDashboard:
+    # Slots straight into the existing Grafana sidecar
+    # (apps/victoria-metrics/values.yaml's grafana.sidecar.dashboards,
+    # label grafana_dashboard=1) - no extra wiring needed on our side.
+    create: true
+    labels:
+      grafana_dashboard: "1"

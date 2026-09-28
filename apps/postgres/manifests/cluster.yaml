@@ -1,0 +1,51 @@
+# CloudNativePG's own primary/replica management replaces what would
+# otherwise need a hand-assembled Patroni+DCS setup - the operator (see
+# apps/cloudnative-pg/) handles failover and promotion itself, and
+# maintains <name>-rw/-ro/-r Services that always point at the current
+# primary/replicas, which pooler-rw.yaml/pooler-ro.yaml route through.
+#
+# instances: 1 today (only rpi-5-1 carries the database=true label - see
+# host_vars/rpi-5-1.yaml and the [database] inventory group). Bump to 2
+# once rpi-5-4 is racked and labeled - podAntiAffinity below (topologyKey:
+# kubernetes.io/hostname, required) then guarantees the second instance
+# lands on a *different* database=true node rather than doubling up on
+# rpi-5-1, satisfying "only one postgres instance per node" by
+# construction rather than by convention.
+#
+# Storage: local-path (k3s's built-in StorageClass), not Longhorn -
+# deliberate. Its volumeBindingMode: WaitForFirstConsumer means the
+# resulting PV gets node affinity baked in for whichever node the pod
+# first lands on, so a restarted pod can only ever be rescheduled back
+# onto that same node - exactly the "sticky to the node the data lives on"
+# behavior asked for, with no extra provisioner needed. Redundancy comes
+# from Postgres's own streaming replication once instances: 2 exists, not
+# from the storage layer - replicating both at the storage layer (Longhorn)
+# and the Postgres layer would be redundant and slower on these nodes'
+# local NVMe/SSD.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres
+  namespace: postgres
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.6
+
+  storage:
+    storageClass: local-path
+    size: 10Gi
+
+  affinity:
+    nodeSelector:
+      database: "true"
+    enablePodAntiAffinity: true
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1024Mi

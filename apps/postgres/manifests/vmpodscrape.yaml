@@ -1,0 +1,31 @@
+# Both confirmed against CloudNativePG's own docs/examples as needing no
+# extra enabling on the Cluster/Pooler side - metrics are always available
+# on these ports, with no Prometheus Operator CRD required. Hand-written
+# VMPodScrapes rather than CNPG's own PodMonitor-based examples, same
+# reasoning as apps/cloudnative-pg/manifests/vmpodscrape.yaml.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: postgres-cluster
+  namespace: postgres
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/cluster: postgres
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: postgres-poolers
+  namespace: postgres
+spec:
+  selector:
+    matchExpressions:
+      - key: cnpg.io/poolerName
+        operator: Exists
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics

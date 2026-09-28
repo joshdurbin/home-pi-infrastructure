@@ -1,0 +1,30 @@
+# Read-write endpoint: always routes to the current primary, via CNPG's
+# own "postgres-rw" Service - the operator keeps that Service pointed at
+# whichever pod is actually primary, including across a failover, so
+# nothing here needs to track that itself. Applications should connect
+# here (Service: postgres-pooler-rw, port 5432) for writes, and to
+# pooler-ro.yaml's endpoint for read-only queries - never directly to a
+# postgres pod (see networkpolicy.yaml, which enforces this at the
+# network layer, not just by convention).
+#
+# instances: 1 ("container size of 1 for now") - not pinned to
+# database=true nodes; PgBouncer holds no data of its own, so it can run
+# anywhere in the cluster.
+#
+# No manual config: CloudNativePG fully manages PgBouncer's config, auth
+# (a dedicated cnpg_pooler_pgbouncer role + lookup function the operator
+# creates itself), and TLS for a Pooler - confirmed directly against
+# CloudNativePG's own docs. Native Prometheus metrics on port 9127, no
+# separate exporter needed.
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: postgres-pooler-rw
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  type: rw
+  instances: 1
+  pgbouncer:
+    poolMode: session

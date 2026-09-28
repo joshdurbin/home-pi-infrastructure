@@ -71,8 +71,9 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
 
 From there, Longhorn (storage), VictoriaMetrics/VictoriaLogs/Grafana (monitoring), Blocky (DNS), SearXNG
 (search), the redis-operator (Blocky's and SearXNG's own small caching clusters), RedisInsight (a UI for
-browsing those caches), and the Tailscale Operator all come up on their own — Argo CD manages them from
-this repo's `apps/` directory. See [docs/REFERENCE.md](docs/REFERENCE.md) for what each one does.
+browsing those caches), CloudNativePG (a Postgres cluster on the `database=true` nodes, behind PgBouncer
+poolers), and the Tailscale Operator all come up on their own — Argo CD manages them from this repo's
+`apps/` directory. See [docs/REFERENCE.md](docs/REFERENCE.md) for what each one does.
 
 ## Make targets
 

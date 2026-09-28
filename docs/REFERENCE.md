@@ -21,6 +21,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [DNS (Blocky)](#dns-blocky)
 - [Search (SearXNG)](#search-searxng)
 - [Redis Clusters (Blocky + SearXNG Caching)](#redis-clusters-blocky--searxng-caching)
+- [Postgres (CloudNativePG)](#postgres-cloudnativepg)
 - [Exposing UIs via Tailscale Operator](#exposing-uis-via-tailscale-operator)
 - [Tailscale Integration (Optional)](#tailscale-integration-optional)
 - [Cluster Configuration](#cluster-configuration)
@@ -155,8 +156,8 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass
 - **Maintenance Tools**: Deploys k3s-maintenance script to all nodes
 - **Argo CD Bootstrap**: Installs Argo CD and its root Application, which then continuously syncs
   Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, the redis-operator (Blocky's and SearXNG's own
-  cache clusters), RedisInsight, and the Tailscale Operator from this repo's own `apps/` directory on GitHub — see
-  [GitOps (Argo CD)](#gitops-argo-cd).
+  cache clusters), RedisInsight, CloudNativePG (Postgres), and the Tailscale Operator from this repo's own
+  `apps/` directory on GitHub — see [GitOps (Argo CD)](#gitops-argo-cd).
 
 This is idempotent - safe to run repeatedly to ensure everything stays configured.
 
@@ -512,9 +513,9 @@ cluster-admin access — fine for a single-user homelab, but keep it as private 
 
 ## GitOps (Argo CD)
 
-Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, redis-operator, RedisInsight, and the Tailscale
-Operator are no longer installed or upgraded by Ansible. Argo CD runs in-cluster (namespace `argocd`) and
-continuously reconciles all eight from this **same** repo's `apps/` directory — edit a file there, commit, and Argo CD applies it within its
+Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, redis-operator, RedisInsight, CloudNativePG,
+Postgres, and the Tailscale Operator are no longer installed or upgraded by Ansible. Argo CD runs in-cluster
+(namespace `argocd`) and continuously reconciles all ten from this **same** repo's `apps/` directory — edit a file there, commit, and Argo CD applies it within its
 next poll cycle (or immediately via `argocd app sync` / the UI). This replaced hand-templating every
 chart's values through Jinja and running `kubectl`/`helm` manually to fix drift — Argo CD's own continuous
 reconciliation makes drift structurally impossible to miss.
@@ -555,7 +556,7 @@ Then check in:
 kubectl -n argocd get pods
 kubectl -n argocd get applications
 ```
-All eight child Applications (plus `root`) should show `Synced`/`Healthy`. Access the UI at
+All ten child Applications (plus `root`) should show `Synced`/`Healthy`. Access the UI at
 `https://argocd.<tailnet>.ts.net` once the Tailscale Operator Application has synced (see below), or via
 `kubectl -n argocd port-forward svc/argocd-server 8080:443` in the meantime — it runs with
 `server.insecure: true` (TLS is terminated by Tailscale, same as every other UI in this cluster), and
@@ -894,6 +895,87 @@ Blocky/SearXNG. Namespace: `redisinsight`.
   into the `blocky-cache`/`searxng-cache` namespaces - no port 26379, it never talks to Sentinel directly.
 
 **Access it**: `https://redisinsight.<tailnet>.ts.net` once the Tailscale Operator step below has synced.
+
+## Postgres (CloudNativePG)
+
+A single-primary Postgres cluster, managed by the [CloudNativePG](https://cloudnative-pg.io/) operator
+(`apps/cloudnative-pg/`) rather than a hand-assembled Patroni+DCS setup - the operator itself is the "control
+plane" that handles failover and primary/replica promotion, no separate component needed for that. The
+actual cluster (`apps/postgres/`) is internal-only for now (no Tailscale Ingress, no external exposure) -
+deliberately, applications are meant to reach it only through the two poolers below, never directly.
+
+- **Operator**: `apps/cloudnative-pg/`, namespace `cnpg-system`, official `cnpg/cloudnative-pg` chart.
+  Installs the `Cluster`/`Pooler`/etc. CRDs `apps/postgres/` depends on. Exports its own controller metrics
+  (port 8080) via a hand-written `VMPodScrape` - same reasoning throughout this section as
+  [Redis Clusters](#redis-clusters-blocky--searxng-caching)'s own VM*Scrapes: CNPG's native `PodMonitor`
+  toggle depends on the VM operator's unverified ServiceMonitor/PodMonitor converter, so this repo's proven
+  hand-written mechanism is used instead. Also ships CloudNativePG's own official Grafana dashboard, wired
+  straight into the existing Grafana sidecar (`grafana_dashboard: "1"` label) with no extra plumbing.
+- **The `Cluster`** (`apps/postgres/manifests/cluster.yaml`), namespace `postgres`: `instances: 1` today -
+  only `rpi-5-1` carries the `database=true` node label (see [Node Labels Reference](#node-labels-reference)
+  and the `[database]` inventory group in `inventory.dist`). Bump to `instances: 2` once `rpi-5-4` is racked
+  and labeled the same way; `affinity.podAntiAffinityType: required` (topologyKey
+  `kubernetes.io/hostname`) then guarantees the second instance lands on a *different* `database=true` node
+  rather than doubling up, satisfying "one Postgres instance per node" by construction. Image:
+  `ghcr.io/cloudnative-pg/postgresql:18.6` (current latest major, confirmed against the real registry, not
+  assumed).
+- **Storage**: `local-path` - k3s's own built-in StorageClass - not Longhorn, deliberately. Its
+  `volumeBindingMode: WaitForFirstConsumer` bakes node affinity into the resulting PV for whichever node
+  the pod first lands on, so a restarted pod can only ever reschedule back onto that same node - this is
+  what makes the data "sticky" to a node, with no extra provisioner needed. Redundancy comes from Postgres's
+  own streaming replication once `instances: 2` exists, not from the storage layer - replicating at both the
+  storage layer (Longhorn) and the Postgres layer would be redundant and slower on these nodes' local
+  NVMe/SSD.
+- **The two Poolers** (`apps/postgres/manifests/pooler-{rw,ro}.yaml`): PgBouncer, fully managed by
+  CloudNativePG's own `Pooler` CRD - config, auth (a dedicated `cnpg_pooler_pgbouncer` role + lookup
+  function the operator creates itself), and TLS are all operator-managed, confirmed directly against
+  CloudNativePG's docs, not hand-rolled. `postgres-pooler-rw` always routes to the current primary via
+  CNPG's own `postgres-rw` Service; `postgres-pooler-ro` routes to replicas via `postgres-ro` - both
+  Services are kept correct by the operator across a failover, so nothing in this repo tracks "which pod is
+  primary" itself. Until `instances: 2` gives this cluster a real replica, `postgres-pooler-ro` has no live
+  backend to route to - expected, not a bug. `instances: 1` on each pooler (not pinned to `database=true`
+  nodes - PgBouncer holds no data of its own, so it can run anywhere). Native Prometheus metrics on port
+  9127 per pod, no separate exporter needed (unlike ProxySQL, which was considered and dropped - see below).
+- **Enforcing "apps talk to the pool, never the databases directly"**: at the network layer, not just
+  convention. Two separate NetworkPolicies (`apps/postgres/manifests/networkpolicy.yaml`) - one locks the
+  actual Postgres pods down to ingress only from the two poolers, the `cnpg-system` operator, and
+  `monitoring`'s vmagent; the other is egress-only on the poolers themselves (same shape as every other
+  app's NetworkPolicy in this repo), leaving their own ingress open since their whole purpose is being
+  reachable from wherever a future application ends up living.
+- **Users/permissions**: CloudNativePG's declarative role management (`Cluster.spec.managed.roles`, not
+  currently used here - nothing beyond the default bootstrap user exists yet) covers role *attributes*
+  (login, superuser, connection limits, password via a Secret reference) declaratively in git. It does
+  **not** cover GRANT-level permissions on specific databases/schemas - that stays each future application's
+  own concern (init SQL, migrations, or a one-off admin connection), same as most Postgres operators.
+- **Why not ProxySQL**: considered first, and its native Postgres protocol support is real and reasonably
+  mature (confirmed against ProxySQL's own docs). Dropped in favor of PgBouncer via CNPG's `Pooler` CRD for
+  two concrete reasons: ProxySQL's `pgsql_servers` backend registration isn't config-file-driven the way its
+  MySQL equivalent is - it requires SQL `INSERT` statements against its admin interface at runtime, which
+  would have needed a hand-written sidecar to seed and periodically re-assert (ProxySQL was going to run
+  with no PVC, so that state doesn't survive a restart on its own); and no maintained, ready-to-run
+  Prometheus exporter image exists for it (`percona/proxysql_exporter`'s only distribution is
+  build-from-source, no published container image at all) - a real, honest gap this repo would otherwise
+  have had to either accept or take on a custom image build pipeline to close. CNPG's `Pooler` avoids both
+  problems entirely: fully operator-managed config/auth, and metrics built in with no exporter needed.
+- **No backups configured**: deliberate, for now. Durability comes only from Postgres streaming replication
+  across `database=true` nodes (once `instances: 2` exists) - no point-in-time recovery, and losing every
+  `database=true` node at once loses everything. Revisit with CloudNativePG's Barman Cloud plugin
+  (`cnpg/plugin-barman-cloud`) if/when object storage exists in this cluster.
+
+**Troubleshooting:**
+```bash
+# Cluster + pooler health
+kubectl -n postgres get cluster,pooler,pods
+
+# Which pod is currently primary
+kubectl -n postgres get cluster postgres -o jsonpath='{.status.currentPrimary}'
+
+# CNPG's own view of the cluster
+kubectl -n postgres cnpg status postgres   # requires the kubectl-cnpg plugin
+
+# Poolers actually reachable
+kubectl -n postgres get svc postgres-pooler-rw postgres-pooler-ro
+```
 
 ## Exposing UIs via Tailscale Operator
 
@@ -1268,7 +1350,7 @@ most commonly after that resource was deleted or modified out-of-band (e.g. `kub
 The `helm_drift_check` role now only runs after Argo CD's own chart install (the one Helm release Ansible
 still manages directly) and checks whether every resource in its current manifest actually exists live.
 For every other chart (Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, redis-operator,
-RedisInsight, Tailscale Operator), this
+RedisInsight, CloudNativePG, Tailscale Operator), this
 class of drift can't happen anymore in practice — Argo CD's continuous reconciliation would just re-apply
 the missing resource on its next sync — but for the Argo CD install itself, if it detects drift, the
 playbook **fails with the exact recovery command to run** (a `helm upgrade` invoked directly rather than

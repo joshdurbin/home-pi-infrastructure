@@ -1,0 +1,17 @@
+# Scrapes the CloudNativePG operator's own controller metrics (port 8080,
+# named "metrics" - confirmed via `helm template` against the real chart,
+# not assumed). Same selectAllByDefault: true auto-pickup as every other
+# VM*Scrape in this repo.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: cloudnative-pg-operator
+  namespace: cnpg-system
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cloudnative-pg
+      app.kubernetes.io/instance: cnpg
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics

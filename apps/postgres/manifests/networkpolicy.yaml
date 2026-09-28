@@ -1,0 +1,135 @@
+# Two separate policies, deliberately NOT one podSelector: {} covering the
+# whole namespace - a single broad policy would also lock down the pooler
+# pods' own ingress, which defeats the point of having them: future
+# application pods (in namespaces we don't know yet) need to be able to
+# reach the poolers freely. Only the actual Postgres instance pods get
+# locked down to "poolers + operator + monitoring only" - everything else
+# in this namespace (the poolers) follows this repo's normal pattern of an
+# egress-only restriction with ingress deliberately left open (same shape
+# as apps/blocky/manifests/networkpolicy.yaml etc.), since their whole job
+# is to be reachable from wherever a future application ends up living.
+
+# Postgres instance pods: "applications connect to the pooler pool, never
+# to the databases directly" enforced at the network layer, not just
+# convention - only the two poolers, the cnpg-system operator, and
+# monitoring's vmagent may reach these pods at all.
+#
+# Ports, confirmed against CloudNativePG's own networking docs:
+# - 5432 (postgres) + 8000 (instance manager) from cnpg-system: the
+#   operator needs both to manage/coordinate each instance.
+# - 5432 from the two poolers (cnpg.io/poolerName label) - the actual
+#   client-facing path applications use.
+# - 9187 (metrics) from monitoring's vmagent.
+# - 5432 from other postgres-cluster pods, for streaming replication once
+#   instances: 2 gives this cluster a primary and a replica.
+#
+# Egress: CoreDNS, the Kubernetes API server (CNPG's instance manager talks
+# to it directly for coordination - k3s runs it embedded in the k3s
+# process on control-plane nodes, not as a Pod, so it can't be targeted
+# with a podSelector; confirmed live via `kubectl -n default get svc
+# kubernetes` that this is a fixed ClusterIP, 10.43.0.1:443, hence the
+# ipBlock below), and other postgres-cluster pods for replication.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-cluster-network
+  namespace: postgres
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: postgres
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 8000
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: cnpg.io/poolerName
+                operator: Exists
+      ports:
+        - protocol: TCP
+          port: 5432
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9187
+    - from:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 10.43.0.1/32
+      ports:
+        - protocol: TCP
+          port: 443
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# The two Poolers - egress-only, ingress deliberately unrestricted (see
+# comment above): applications elsewhere in the cluster need to reach
+# these freely. Only bounds what the poolers themselves can reach out to:
+# CoreDNS, and the postgres Cluster's own pods (to actually proxy to
+# Postgres).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-pooler-egress
+  namespace: postgres
+spec:
+  podSelector:
+    matchExpressions:
+      - key: cnpg.io/poolerName
+        operator: Exists
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: postgres
+      ports:
+        - protocol: TCP
+          port: 5432

@@ -15,6 +15,7 @@ spec:
     - https://bjw-s-labs.github.io/helm-charts
     - https://pkgs.tailscale.com/helmcharts
     - https://ot-container-kit.github.io/helm-charts
+    - https://cloudnative-pg.github.io/charts
     - '{{ argocd_vars.gitops.repo_url }}'
   # Scoped to the namespaces these apps actually use.
   destinations:
@@ -44,6 +45,10 @@ spec:
     - namespace: searxng-cache
       server: https://kubernetes.default.svc
     - namespace: redisinsight
+      server: https://kubernetes.default.svc
+    - namespace: cnpg-system
+      server: https://kubernetes.default.svc
+    - namespace: postgres
       server: https://kubernetes.default.svc
     # victoria-metrics-k8s-stack creates a few VMServiceScrapes directly in
     # kube-system (matching upstream kube-prometheus-stack convention) to

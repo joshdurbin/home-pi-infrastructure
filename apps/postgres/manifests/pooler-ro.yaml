@@ -1,0 +1,17 @@
+# Read-only endpoint: routes to replicas only, via CNPG's own
+# "postgres-ro" Service. Until rpi-5-4 joins and instances: 2 gives this
+# cluster an actual replica (see cluster.yaml), this Service has no live
+# backends to route to - expected, self-resolving once that happens, not
+# a bug in this config.
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: postgres-pooler-ro
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  type: ro
+  instances: 1
+  pgbouncer:
+    poolMode: session
