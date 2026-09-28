@@ -65,22 +65,29 @@ server:
       limits:
         cpu: 200m
         memory: 256Mi
+  # matching and worker both bumped from an initial 100m/128Mi to match
+  # frontend/history - confirmed live: the worker pod repeatedly failed to
+  # start ("unable to bootstrap ringpop. retrying: join duration ... exceeded
+  # max 30s", then the whole fx app hit "context deadline exceeded") under
+  # the 100m limit. All four components join the same ringpop membership
+  # gossip ring on a fixed 30s deadline - on this cluster's Pi hardware,
+  # 100m wasn't enough CPU for that round trip to complete in time.
   matching:
     resources:
       requests:
-        cpu: 100m
-        memory: 128Mi
+        cpu: 200m
+        memory: 256Mi
       limits:
-        cpu: 100m
-        memory: 128Mi
+        cpu: 200m
+        memory: 256Mi
   worker:
     resources:
       requests:
-        cpu: 100m
-        memory: 128Mi
+        cpu: 200m
+        memory: 256Mi
       limits:
-        cpu: 100m
-        memory: 128Mi
+        cpu: 200m
+        memory: 256Mi
 
 web:
   enabled: true
