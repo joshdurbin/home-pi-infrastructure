@@ -71,4 +71,5 @@
       - pwgen
       - sysstat
       - fio
+      - smartmontools
     state: present
