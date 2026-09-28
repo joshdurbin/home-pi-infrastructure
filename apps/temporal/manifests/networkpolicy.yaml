@@ -2,11 +2,21 @@
 # ingress (the frontend gRPC API, the Web UI) is unaffected and left open,
 # since Temporal's frontend is itself meant to be a general access point
 # for future application workloads, the same way the two Postgres poolers
-# are. Only bounds what these pods can reach out to:
+# are. Bounds what these pods can reach out to:
 # - CoreDNS, to resolve postgres-pooler-rw's Service DNS name.
 # - The postgres namespace on 5432 - the pooler this connects through
 #   (apps/postgres/manifests/pooler-rw.yaml), never a database pod
 #   directly.
+# - Other temporal pods, unrestricted by port - confirmed live (broke every
+#   server component in a cascading crash loop): frontend/history/matching/
+#   worker gossip with each other over ringpop membership ports (6933-6939)
+#   and call each other directly over gRPC (matching client calls from
+#   frontend/history/worker, etc.), entirely within this namespace. Without
+#   this rule the only egress allowed was DNS + Postgres, so every one of
+#   those intra-cluster calls was silently dropped - surfaced as "join
+#   duration ... exceeded max 30s" / "Not enough hosts to serve the
+#   request" rather than a NetworkPolicy-shaped error, since a dropped
+#   egress packet just looks like the peer never responding.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -34,3 +44,7 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: temporal
