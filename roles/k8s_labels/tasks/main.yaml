@@ -1,9 +1,31 @@
 ---
+# `kubernetes.core.k8s` (used here, and by k8s_secrets/argocd right after
+# this role in site.yml) needs the Python `kubernetes` library on whichever
+# host actually executes it - not declared as a dependency anywhere in this
+# repo (checked - not in requirements.yaml, which is only Ansible collections,
+# and no role ever pip/apt-installs it). This worked by pure accident for a
+# long time: the old control-plane nodes (rpi-4b-*) happened to already have
+# it from outside this repo's own automation, and site.yml's `run_once` tasks
+# always executed on whichever node was first in the `server` group - which
+# was always a 4B node, until control plane moved to the Pi 5s (see
+# inventory.dist's `[server]` group comment) and this broke the moment a Pi 5
+# became first-server instead. Installed here because this is the first
+# `hosts: server` role in site.yml's execution order that needs it - `helm`
+# runs just before this but only installs the Helm binary, no Python/k8s API
+# involved - so by the time k8s_secrets/argocd run later, it's already
+# present.
+- name: Ensure the Python kubernetes library is present for kubernetes.core modules
+  ansible.builtin.apt:
+    name: python3-kubernetes
+    state: present
+
 # Applies Kubernetes node labels declared in each host's k8s_labels hostvar
-# (see host_vars/rpi-5-*.yaml). Runs once, from any host with kubeconfig
-# access, and loops over every inventory host rather than just the current
-# play's hosts, since chart-deploying plays are often scoped to `server` while
-# the nodes needing labels (rpi-5-1/2/3) are agents.
+# (see host_vars/rpi-5-*.yaml). Runs once and loops over every inventory
+# host rather than just the current play's hosts - this play is `hosts:
+# server`, which today happens to be the same set of nodes carrying these
+# labels (rpi-5-1/2/3), but looping over groups['all'] keeps this correct
+# regardless of which nodes are servers vs. which nodes carry labels, rather
+# than relying on that coincidence.
 - name: Apply node labels from host vars
   when: hostvars[item].k8s_labels is defined
   kubernetes.core.k8s:
