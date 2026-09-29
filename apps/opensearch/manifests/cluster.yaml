@@ -89,6 +89,15 @@ spec:
     # cluster_manager-eligible node regardless.
     - component: client
       replicas: 1
+      # cluster_manager added to data pool too (below) - confirmed live via
+      # OOMKilled + stuck-election investigation: this pool being the ONLY
+      # cluster_manager-eligible node meant an OOM here (see resources
+      # below) or any pod-level disruption had no other node to fail over
+      # to, and its emptyDir-cached "I need node X to bootstrap" state
+      # survives container restarts (OOM only restarts the container, not
+      # the pod), pointing at the operator's transient bootstrap pod long
+      # after it's been cleaned up. Two permanent cluster_manager-eligible
+      # nodes removes that single point of failure entirely.
       roles:
         - cluster_manager
         - ingest
@@ -103,13 +112,19 @@ spec:
       # the full explanation - not opensearch-specific, reusable label.
       nodeSelector:
         pi5: 'true'
-      jvm: '-Xmx384M -Xms384M'
+      # 384M/768Mi was too tight - confirmed live, OOMKilled (exitCode 137)
+      # repeatedly: this pool runs cluster_manager+ingest roles plus the
+      # security, index-management, rollup, and performance-analyzer
+      # plugins, carrying real off-heap overhead beyond the heap alone.
+      # Doubled rather than nudged, matching this repo's own sizing pattern
+      # elsewhere for the same class of live-confirmed OOM.
+      jvm: '-Xmx512M -Xms512M'
       resources:
         limits:
-          memory: 768Mi
+          memory: 1536Mi
         requests:
           cpu: 10m
-          memory: 768Mi
+          memory: 1536Mi
     # The only pool that actually holds shards, so the only one with a real
     # PVC. Originally left deliberately unpinned (Longhorn PVCs don't
     # require the pod to run on a storage: "true" node specifically), but
@@ -120,8 +135,14 @@ spec:
     # comment used to be about.
     - component: data
       replicas: 1
+      # cluster_manager added alongside data - see the client pool's own
+      # comment for why. Two permanent manager-eligible nodes instead of
+      # one means the cluster can always re-elect between them, rather than
+      # depending on the operator's transient bootstrap pod ever coming
+      # back once it's been cleaned up.
       roles:
         - data
+        - cluster_manager
       diskSize: '10Gi'
       persistence:
         pvc:
