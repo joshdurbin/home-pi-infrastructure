@@ -16,6 +16,21 @@ spec:
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
+      # The operator's own OpenSearchCluster CRD is huge (577KB - deeply
+      # nested PodSpec-shaped fields for every nodePool's
+      # affinity/tolerations/resources/etc, confirmed via `ls -la` on the
+      # chart's bundled CRD files). Client-side `kubectl apply` (Argo CD's
+      # default) stores the whole object in the
+      # kubectl.kubernetes.io/last-applied-configuration annotation, which
+      # blew past Kubernetes' 262144-byte annotation limit - confirmed live:
+      # `kubectl apply --dry-run=server` on that CRD failed with exactly
+      # "metadata.annotations: Too long", which cascaded into "could not
+      # discover opensearch.org/v1" for every resource depending on it (the
+      # CRD itself never actually got created). Server-Side Apply doesn't
+      # use that annotation at all - confirmed live:
+      # `kubectl apply --dry-run=server --server-side` on the same CRD
+      # succeeds.
+      - ServerSideApply=true
     automated:
       selfHeal: true
       prune: true
