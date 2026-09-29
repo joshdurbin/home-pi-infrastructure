@@ -12,3 +12,20 @@ manager:
     requests:
       cpu: 10m
       memory: 256Mi
+
+# Chart default (true) renders a ValidatingWebhookConfiguration backed by a
+# cert-manager.io Certificate/Issuer for the webhook's TLS cert - this
+# cluster has no cert-manager installed anywhere, and Argo CD's pre-sync
+# discovery check fails atomically on the unknown cert-manager.io/v1 group,
+# which blocks the *entire* Application (including the CRDs themselves,
+# still v1beta1/CRD resources that would otherwise sync fine) - confirmed
+# live: `kubectl get crd | grep opensearch` returned nothing until this was
+# set. Disabling the webhook (confirmed via the chart's own templates: this
+# also skips the ValidatingWebhookConfiguration and webhook Service, and
+# passes --enable-webhooks=false to the manager) drops admission-time
+# validation of the custom resources in manifests/ in favor of the CRD's own
+# OpenAPI schema validation (which is what apps/opensearch/README.md's
+# jsonschema check validated against) - a smaller footprint than adding
+# cert-manager as a new cluster dependency for one operator's webhook certs.
+webhook:
+  enabled: false
