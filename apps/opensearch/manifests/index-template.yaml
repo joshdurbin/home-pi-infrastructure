@@ -4,8 +4,19 @@
 # yellow. Fields confirmed against the operator's bundled CRD schema
 # (opensearch.org_opensearchindextemplates.yaml): template.settings is a
 # free-form passthrough to OpenSearch's own index template settings object.
+#
+# kind: OpensearchIndexTemplate - lowercase "s", not OpenSearchIndexTemplate.
+# This CRD's registered kind is inconsistent with OpenSearchCluster/
+# OpenSearchISMPolicy (both capital S) - confirmed live via
+# `kubectl get --raw /apis/opensearch.org/v1`, whose discovery doc literally
+# says "kind": "OpensearchIndexTemplate". The jsonschema check this repo ran
+# against apps/opensearch/manifests/*.yaml before committing only validated
+# the `spec` object's content, never the envelope's kind field - this typo
+# slipped through that and only surfaced live, as Argo CD failing to
+# resolve the kind at all ("OpenSearchIndexTemplate.opensearch.org """not
+# found", an empty-name error that's actually a kind-not-found error).
 apiVersion: opensearch.org/v1
-kind: OpenSearchIndexTemplate
+kind: OpensearchIndexTemplate
 metadata:
   name: logs
   namespace: opensearch
