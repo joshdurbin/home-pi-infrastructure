@@ -119,7 +119,7 @@ spec:
     # nodes now for that hardware reason, not the disk-quality one this
     # comment used to be about.
     - component: data
-      replicas: 0
+      replicas: 1
       roles:
         - data
       diskSize: '10Gi'
