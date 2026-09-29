@@ -13,10 +13,21 @@ Managed by the **OpenSearch Kubernetes Operator** (`opensearch-project/opensearc
 plain `opensearch`/`opensearch-dashboards` Helm charts an earlier version of this app used directly -
 switched to match how the rest of this repo handles stateful/complex apps (Longhorn, `cloudnative-pg`
 for Postgres, `redis-operator`, `victoria-metrics-operator`), all operator-managed rather than bare
-charts. `apps/opensearch/application.yaml` installs the operator itself (its own chart,
-`values-operator.yaml`, `installCRDs: true` by default - no separate CRD install step) plus Vector
-(unrelated to OpenSearch, still its own chart). Everything OpenSearch-specific is a custom resource in
-`apps/opensearch/manifests/`, reconciled by the operator:
+charts.
+
+**Two Argo CD Applications, not one** - `apps/opensearch/application.yaml` (`opensearch-operator`, sync-wave
+1) installs just the operator and its CRDs (`installCRDs: true` by default); `apps/opensearch/cluster/application.yaml`
+(`opensearch`, sync-wave 2) installs Vector plus the custom resources that use those CRDs. Confirmed live
+this split is load-bearing, not stylistic: Argo CD does a discoverability pre-check across an entire
+Application's manifests before syncing anything, which fails on `opensearch.org/v1` if a custom resource
+using it is bundled in the *same* Application as the CRD that would create it - `kubectl get crd` stayed
+empty and every sync attempt failed with `failed to discover server resources for group version
+opensearch.org/v1` until this was split. Sync-waves *within* one Application don't solve it (the
+pre-check runs before wave-based ordering starts); ordering *between* two Applications does, since the
+root app-of-apps won't even create the wave-2 Application until wave-1's is Synced+Healthy.
+
+Everything OpenSearch-specific is a custom resource in `apps/opensearch/manifests/`, reconciled by the
+operator:
 
 - **`cluster.yaml`** (`OpenSearchCluster`) - the cluster itself: two node pools (`client`:
   cluster-manager + coordinating, no PVC; `data`: the only pool with a PVC,

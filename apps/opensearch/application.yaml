@@ -1,12 +1,9 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: opensearch
+  name: opensearch-operator
   namespace: argocd
   annotations:
-    # The OpenSearchCluster CR (manifests/cluster.yaml) mounts a Longhorn
-    # PVC for its data pool, so this whole app syncs after Longhorn, same
-    # reasoning as victoria-logs's own sync-wave before it.
     argocd.argoproj.io/sync-wave: '1'
 spec:
   project: home-pi
@@ -24,10 +21,8 @@ spec:
       # kubectl.kubernetes.io/last-applied-configuration annotation, which
       # blew past Kubernetes' 262144-byte annotation limit - confirmed live:
       # `kubectl apply --dry-run=server` on that CRD failed with exactly
-      # "metadata.annotations: Too long", which cascaded into "could not
-      # discover opensearch.org/v1" for every resource depending on it (the
-      # CRD itself never actually got created). Server-Side Apply doesn't
-      # use that annotation at all - confirmed live:
+      # "metadata.annotations: Too long". Server-Side Apply doesn't use that
+      # annotation at all - confirmed live:
       # `kubectl apply --dry-run=server --server-side` on the same CRD
       # succeeds.
       - ServerSideApply=true
@@ -40,14 +35,19 @@ spec:
         duration: 5s
         factor: 2
         maxDuration: 3m
-  # Four sources: the OpenSearch Kubernetes Operator (installs its own CRDs -
-  # manifests/cluster.yaml, ism-policy.yaml, index-template.yaml are instances
-  # of those, not a separate chart - see apps/opensearch/README.md for why an
-  # operator over the plain opensearch/opensearch-dashboards charts an
-  # earlier version of this app used), vector (the log shipper - unrelated to
-  # the operator, still its own chart), plus this repo's values ref and
-  # manifests/ path. Same shape as every other multi-source Application here
-  # (e.g. apps/victoria-metrics/application.yaml).
+  # Only the operator + its CRDs - deliberately split from
+  # apps/opensearch/cluster/application.yaml (the OpenSearchCluster/
+  # OpenSearchISMPolicy/OpenSearchIndexTemplate custom resources that use
+  # those CRDs, plus Vector). Confirmed live: Argo CD does a discoverability
+  # pre-check across an entire Application's manifests before syncing
+  # anything, which fails on opensearch.org/v1 if a custom resource using
+  # it is bundled in the *same* Application as the CRD that would create
+  # it - a chicken-and-egg problem sync-waves *within* one Application don't
+  # solve, since that pre-check runs before wave-based ordering even starts.
+  # Splitting into two Applications, ordered by sync-wave *between* them
+  # (this one: wave 1, the other: wave 2), works because the root app-of-apps
+  # doesn't create the wave-2 Application at all until this one is
+  # Synced+Healthy - see apps/opensearch/cluster/application.yaml.
   sources:
     - repoURL: https://opensearch-project.github.io/opensearch-k8s-operator/
       chart: opensearch-operator
@@ -56,16 +56,6 @@ spec:
         releaseName: opensearch-operator
         valueFiles:
           - $values/apps/opensearch/values-operator.yaml
-    - repoURL: https://helm.vector.dev
-      chart: vector
-      targetRevision: 0.58.0
-      helm:
-        releaseName: vector
-        valueFiles:
-          - $values/apps/opensearch/values-vector.yaml
     - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
       targetRevision: master
       ref: values
-    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
-      targetRevision: master
-      path: apps/opensearch/manifests

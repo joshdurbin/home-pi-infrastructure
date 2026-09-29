@@ -1,0 +1,48 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: opensearch
+  namespace: argocd
+  annotations:
+    # Wave 2, strictly after apps/opensearch/application.yaml's
+    # opensearch-operator (wave 1) - see that file's own comment. The root
+    # app-of-apps won't even create this Application until opensearch-operator
+    # is Synced+Healthy, which is what actually guarantees the
+    # OpenSearchCluster/OpenSearchISMPolicy/OpenSearchIndexTemplate CRDs
+    # exist before this tries to create instances of them.
+    argocd.argoproj.io/sync-wave: '2'
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: opensearch
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  # Vector (the log shipper - unrelated to the operator, still its own
+  # chart) plus the custom resources in ../manifests/ (OpenSearchCluster,
+  # OpenSearchISMPolicy, OpenSearchIndexTemplate - instances of the CRDs
+  # apps/opensearch/application.yaml's opensearch-operator installs).
+  sources:
+    - repoURL: https://helm.vector.dev
+      chart: vector
+      targetRevision: 0.58.0
+      helm:
+        releaseName: vector
+        valueFiles:
+          - $values/apps/opensearch/values-vector.yaml
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      ref: values
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      path: apps/opensearch/manifests
