@@ -12,21 +12,16 @@ manager:
     requests:
       cpu: 10m
       memory: 256Mi
-  # Chart default (image.tag: "" -> falls back to Chart.yaml's appVersion,
-  # "3.0.0") points at a tag that doesn't exist - confirmed live, the pod
-  # crash-looped on ErrImagePull ("opensearchproject/opensearch-operator:3.0.0:
-  # not found"), and confirmed via Docker Hub's own API that no 3.0.0 tag was
-  # ever published (only 12 tags exist total: latest, 3.0.0-alpha, and 2.x
-  # releases - a real upstream packaging gap, not a typo on this repo's side).
-  # "latest" and "3.0.0-alpha" were pushed the same day, so "latest" is almost
-  # certainly the actual 3.0.0 GA build that never got a proper semver tag -
-  # used here deliberately over an older 2.x tag (which would risk a real
-  # CRD/binary mismatch against this chart version's bundled CRDs, already
-  # validated against in apps/opensearch/manifests/). A deliberate exception
-  # to this repo's normal version-pinning convention - revisit and pin once
-  # a real point-release tag appears upstream.
-  image:
-    tag: latest
+  # No image.tag override needed - chart 2.8.2's default (image.tag: "" ->
+  # Chart.yaml's appVersion, "2.8.0") is a real, confirmed-published Docker
+  # Hub tag. Chart 3.0.14 (this app's original pin) was rejected: its default
+  # tag ("3.0.0") was never actually published, and the fallback
+  # ("latest", used briefly) turned out to be an older build that predates
+  # the chart's --enable-legacy-api flag entirely - confirmed live, the pod
+  # crash-looped on "flag provided but not defined: -enable-legacy-api".
+  # 2.8.2 sidesteps this class of problem outright: its bundled CRDs have no
+  # opster.io/legacy-API split at all (confirmed - that feature doesn't
+  # exist yet at this chart version), so there's no such flag to mismatch on.
 
 # Chart default (true) renders a ValidatingWebhookConfiguration backed by a
 # cert-manager.io Certificate/Issuer for the webhook's TLS cert - this

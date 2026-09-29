@@ -51,7 +51,16 @@ spec:
   sources:
     - repoURL: https://opensearch-project.github.io/opensearch-k8s-operator/
       chart: opensearch-operator
-      targetRevision: 3.0.14
+      # 2.8.2 (appVersion 2.8.0), not the newer 3.0.14 this app originally
+      # pinned - see values-operator.yaml's own comment: 3.0.14's default
+      # image tag was never published, and its fallback ("latest") turned
+      # out to be an older build incompatible with that chart version's
+      # --enable-legacy-api flag. 2.8.2 is a real, matched, reproducible
+      # chart+image pair confirmed on Docker Hub, and predates that feature
+      # entirely. apps/opensearch/manifests/*.yaml were re-validated with
+      # jsonschema against this chart version's own bundled CRDs, not just
+      # assumed compatible.
+      targetRevision: 2.8.2
       helm:
         releaseName: opensearch-operator
         valueFiles:
