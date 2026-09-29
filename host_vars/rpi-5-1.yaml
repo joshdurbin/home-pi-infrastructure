@@ -2,3 +2,12 @@
 k8s_labels:
   telemetry: "true"
   database: "true"
+  # Pi 5's Cortex-A76 is ARMv8.2-A with crypto extensions; Pi 4B's Cortex-A72
+  # is not - confirmed live: apps/opensearch's OpenSearch/Dashboards pods
+  # (Amazon Linux base image) crash-looped with "Fatal glibc error: This
+  # version of Amazon Linux requires a newer ARM64 processor compliant with
+  # at least ARM architecture 8.2-a with Cryptographic extensions" on every
+  # pod that happened to schedule on an rpi-4b node, and ran fine on rpi-5.
+  # Not opensearch-specific - any future workload with the same base image
+  # requirement should use this label too.
+  pi5: "true"

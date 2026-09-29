@@ -19,6 +19,13 @@ spec:
     setVMMaxMapCount: true
     drainDataNodes: true
 
+  # The operator creates this bootstrap pod automatically regardless of
+  # whether this section is specified - only added here for nodeSelector
+  # (see below).
+  bootstrap:
+    nodeSelector:
+      pi5: 'true'
+
   # TLS + auth are effectively mandatory for the OpenSearch cluster itself
   # under this operator (no DISABLE_SECURITY_PLUGIN equivalent) - accepted
   # deliberately, not an oversight, despite every other UI in this cluster
@@ -31,6 +38,14 @@ spec:
     config:
       adminCredentialsSecret:
         name: opensearch-admin-credentials
+      # This Job runs a one-off container to apply the generated security
+      # config to the cluster - same Amazon-Linux-based image as the
+      # OpenSearch nodes themselves, same CPU requirement, needs pinning too
+      # (confirmed live: crashed with the same "Fatal glibc error" on an
+      # rpi-4b before this was added).
+      updateJob:
+        nodeSelector:
+          pi5: 'true'
     tls:
       http:
         generate: true
@@ -52,6 +67,13 @@ spec:
       enable: false
     opensearchCredentialsSecret:
       name: opensearch-admin-credentials
+    # Same Amazon-Linux-based image/CPU requirement as the OpenSearch nodes
+    # themselves - confirmed live: crashed with the same "Fatal glibc error"
+    # on an rpi-4b before this was added (one of two Dashboards replicas
+    # landed there and crash-looped; the other happened to land on an rpi-5
+    # and ran fine).
+    nodeSelector:
+      pi5: 'true'
     resources:
       limits:
         memory: 512Mi
@@ -73,6 +95,14 @@ spec:
         - remote_cluster_client
       persistence:
         emptyDir: {}
+      # Amazon-Linux-based image requires ARMv8.2-A + crypto extensions -
+      # Pi 4B's Cortex-A72 doesn't have them, Pi 5's Cortex-A76 does.
+      # Confirmed live: "Fatal glibc error: This version of Amazon Linux
+      # requires a newer ARM64 processor..." on every pod that landed on an
+      # rpi-4b node; fine on rpi-5. host_vars/rpi-5-*.yaml's own comment has
+      # the full explanation - not opensearch-specific, reusable label.
+      nodeSelector:
+        pi5: 'true'
       jvm: '-Xmx384M -Xms384M'
       resources:
         limits:
@@ -81,15 +111,13 @@ spec:
           cpu: 10m
           memory: 768Mi
     # The only pool that actually holds shards, so the only one with a real
-    # PVC. Deliberately unpinned - no nodeSelector - left for the k8s
-    # scheduler to place based on free capacity rather than a fixed node.
-    # Longhorn PVCs don't require the pod to run on a storage: "true" node
-    # specifically (it's networked block storage), so this can land on any
-    # node with room, including an rpi-4b - this repo's own inventory.dist
-    # flags those nodes' disks as slow/inconsistent for disk-heavy workloads
-    # generally (that finding was about etcd/Longhorn specifically, not
-    # measured for OpenSearch/Lucene) - revisit with a nodeSelector if that
-    # turns out to matter in practice.
+    # PVC. Originally left deliberately unpinned (Longhorn PVCs don't
+    # require the pod to run on a storage: "true" node specifically), but
+    # that turned out to be moot: confirmed live, this image can't run on an
+    # rpi-4b at all regardless of disk placement - see the client pool's own
+    # nodeSelector comment above for the full explanation. Pinned to pi5
+    # nodes now for that hardware reason, not the disk-quality one this
+    # comment used to be about.
     - component: data
       replicas: 1
       roles:
@@ -100,6 +128,8 @@ spec:
           storageClass: longhorn
           accessModes:
             - ReadWriteOnce
+      nodeSelector:
+        pi5: 'true'
       # Heap capped at 50% of the container memory limit, per OpenSearch's
       # own heap-sizing guidance - the other 50% is headroom for off-heap
       # Lucene buffers/segment merges, not slack to trim.
