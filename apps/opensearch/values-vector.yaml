@@ -47,6 +47,19 @@ extraVolumeMounts:
 envFrom:
   - secretRef:
       name: opensearch-admin-credentials
+# ${VAR} interpolation is disabled by default in this Vector version - a
+# security hardening change, confirmed via vector.dev's own environment
+# variables reference doc. Without this, Vector silently sends the literal
+# strings "${username}"/"${password}" as Basic Auth credentials instead of
+# their real values - confirmed live: every bulk request got a clean
+# 401 Unauthorized from OpenSearch, correctly dropped by Vector as
+# non-retriable (not a bug on either side, just interpolation never
+# happening). The identical real password from the same Secret authenticated
+# fine via direct curl, which is what isolated this to interpolation being
+# off rather than a credentials mismatch.
+env:
+  - name: VECTOR_DANGEROUSLY_ALLOW_ENV_VAR_INTERPOLATION
+    value: 'true'
 
 # Full replace, not a merge (the chart's own comment: "if used all options
 # need to be specified"). Re-diff against the chart's own values.yaml on any
