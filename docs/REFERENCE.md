@@ -17,7 +17,8 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [kubectl Access From Your Machine](#kubectl-access-from-your-machine)
 - [GitOps (Argo CD)](#gitops-argo-cd)
 - [Storage (Longhorn)](#storage-longhorn)
-- [Monitoring & Logging (VictoriaMetrics, VictoriaLogs, Grafana)](#monitoring--logging-victoriametrics-victorialogs-grafana)
+- [Monitoring (VictoriaMetrics, Grafana)](#monitoring-victoriametrics-grafana)
+- [Logging (OpenSearch)](#logging-opensearch)
 - [DNS (Blocky)](#dns-blocky)
 - [Search (SearXNG)](#search-searxng)
 - [Redis Clusters (Blocky + SearXNG Caching)](#redis-clusters-blocky--searxng-caching)
@@ -41,7 +42,7 @@ instability (intermittent 503s, TLS handshake timeouts, connection resets) under
 (`rpi-5-4`) must join `[pi5]`/`[agent]` and never `[server]` - etcd quorum needs a fixed, deliberately-sized
 odd-numbered membership, not "however many Pi 5s happen to exist."
 
-The Pi 5 nodes also carry this cluster's disk-heavy workloads (Longhorn, VictoriaMetrics/VictoriaLogs,
+The Pi 5 nodes also carry this cluster's disk-heavy workloads (Longhorn, VictoriaMetrics, OpenSearch,
 Postgres - see each `host_vars/rpi-5-*.yaml`'s labels) - accepted deliberately alongside etcd, not
 overlooked; revisit if the Pi 5 disks turn out not to keep up with both together, but that hasn't been
 observed.
@@ -52,8 +53,9 @@ against the smaller of the two node classes.)
 
 Two of the Pi 5 nodes (`rpi-5-2`, `rpi-5-3`) carry a `storage=true` Kubernetes node label and back Longhorn's
 distributed storage. Two Pi 5 nodes (`rpi-5-1`, `rpi-5-2`) carry a `telemetry=true` label and host the
-VictoriaMetrics/VictoriaLogs storage pods. See [Storage (Longhorn)](#storage-longhorn) and
-[Monitoring & Logging](#monitoring--logging-victoriametrics-victorialogs-grafana) below.
+VictoriaMetrics storage pod. OpenSearch's data node is deliberately unpinned (no node label of its own) -
+see [Logging](#logging-opensearch) below. See also [Storage (Longhorn)](#storage-longhorn) and
+[Monitoring](#monitoring-victoriametrics-grafana).
 
 Each node has:
 - 64-bit Raspberry Pi OS (Lite)
@@ -75,7 +77,7 @@ home-pi-infrastructure/
 │   │                              # anything outside it. Same repo, two independent consumers.
 │   ├── longhorn/{application.yaml, values.yaml}
 │   ├── victoria-metrics/{application.yaml, values.yaml}
-│   ├── victoria-logs/{application.yaml, values.yaml, manifests/}
+│   ├── opensearch/{application.yaml, values-*.yaml, manifests/, README.md}
 │   ├── redis-operator/{application.yaml, values.yaml}   # manages Blocky's/SearXNG's own redis clusters
 │   ├── blocky/{application.yaml, values.yaml, manifests/}          # manifests/ includes blocky-cache's
 │   │                                                                # RedisReplication/RedisSentinel CRs
@@ -168,7 +170,7 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass
 - **K3S Deployment**: Installs and configures k3s cluster (servers + agents)
 - **Maintenance Tools**: Deploys k3s-maintenance script to all nodes
 - **Argo CD Bootstrap**: Installs Argo CD and its root Application, which then continuously syncs
-  Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, the redis-operator (Blocky's and SearXNG's own
+  Longhorn, VictoriaMetrics, OpenSearch, Blocky, SearXNG, the redis-operator (Blocky's and SearXNG's own
   cache clusters), RedisInsight, CloudNativePG (Postgres), and the Tailscale Operator from this repo's own
   `apps/` directory on GitHub — see [GitOps (Argo CD)](#gitops-argo-cd).
 
@@ -547,7 +549,7 @@ cluster-admin access — fine for a single-user homelab, but keep it as private 
 
 ## GitOps (Argo CD)
 
-Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, redis-operator, RedisInsight, CloudNativePG,
+Longhorn, VictoriaMetrics, OpenSearch, Blocky, SearXNG, redis-operator, RedisInsight, CloudNativePG,
 Postgres, and the Tailscale Operator are no longer installed or upgraded by Ansible. Argo CD runs in-cluster
 (namespace `argocd`) and continuously reconciles all ten from this **same** repo's `apps/` directory — edit a file there, commit, and Argo CD applies it within its
 next poll cycle (or immediately via `argocd app sync` / the UI). This replaced hand-templating every
@@ -656,22 +658,20 @@ kubectl -n longhorn get nodes.longhorn.io
 kubectl -n longhorn get pods
 ```
 
-## Monitoring & Logging (VictoriaMetrics, VictoriaLogs, Grafana)
+## Monitoring (VictoriaMetrics, Grafana)
 
-Metrics and logs for the whole cluster, both retained for **48 hours**. Namespace: `monitoring`.
-**The chart installs and all settings now live in this repo's `apps/` directory** (see [GitOps (Argo CD)](#gitops-argo-cd))
-(`apps/victoria-metrics/`, `apps/victoria-logs/`) — Argo CD reconciles them continuously. This repo's only
+Metrics for the whole cluster, retained for **48 hours**. Namespace: `monitoring`.
+**The chart install and all settings now live in this repo's `apps/` directory** (see [GitOps (Argo CD)](#gitops-argo-cd))
+(`apps/victoria-metrics/`) — Argo CD reconciles it continuously. This repo's only
 remaining job here is seeding the Grafana admin credentials Secret via the generic `k8s_secrets` role (see
 [Secrets bridge](#gitops-argo-cd) above for why that can't live in git).
 
 - **Metrics**: `victoria-metrics-k8s-stack` Helm chart — bundles the VictoriaMetrics operator, `vmsingle`
   (metrics storage), `vmagent` (scraper, cluster-wide), `vmalert`, Alertmanager, kube-state-metrics,
   node-exporter, and **Grafana** (bundled as part of this chart — there's no separate Grafana role).
-- **Logs**: `victoria-logs-single` chart — VictoriaLogs server plus **Vector** as the log shipper (runs as
-  a DaemonSet on every node, tailing every pod's container logs — no extra config needed for full coverage).
-- The stateful pieces (`vmsingle` and the VictoriaLogs server) are pinned via nodeSelector to the
-  `telemetry=true` labeled nodes (`rpi-5-1`, `rpi-5-2`). Everything else (Grafana, vmagent, vmalert,
-  kube-state-metrics, node-exporter, Vector) is unpinned and can run anywhere.
+- The stateful piece (`vmsingle`) is pinned via nodeSelector to the `telemetry=true` labeled nodes
+  (`rpi-5-1`, `rpi-5-2`). Everything else (Grafana, vmagent, vmalert, kube-state-metrics, node-exporter) is
+  unpinned and can run anywhere.
 - **Grafana auth**: anonymous Admin access is enabled (`disable_login_form: true`) — visiting the UI drops
   you straight in with no login prompt. Reasonable for a single-user homelab already gated by kubeconfig
   access; the admin/password secret still exists underneath if you ever want to re-enable the login form.
@@ -691,28 +691,13 @@ kubectl -n monitoring port-forward svc/vmks-grafana 3000:80
 Visit `http://localhost:3000` — no login required.
 
 Pre-configured datasources (all provisioned automatically): **VictoriaMetrics** (x2 — Prometheus-compatible
-and native), **Alertmanager**, and **VictoriaLogs**.
+and native) and **Alertmanager**. See [Logging](#logging-opensearch) below for logs — no longer a Grafana
+datasource, since logs moved from VictoriaLogs to OpenSearch.
 
-### Accessing Logs
-
-Two ways to query logs, both hitting the same VictoriaLogs backend:
-
-**1. VictoriaLogs' own built-in UI (vmui)** — simplest for ad-hoc digging:
-```bash
-kubectl -n monitoring port-forward svc/vls-victoria-logs-single-server 9428:9428
-```
-Visit `http://localhost:9428/select/vmui/`.
-
-**2. Grafana Explore** — better once you want logs alongside metrics dashboards. Port-forward Grafana (above),
-then: **Explore** (compass icon) → select the **VictoriaLogs** datasource → enter a LogsQL query.
-
-**LogsQL query examples:**
-```
-*                            # everything
-{namespace="longhorn"}       # scope to a namespace
-{pod=~"vmsingle.*"}          # pods matching a pattern
-error                        # full-text search for "error" anywhere in the line
-```
+Dashboards can be imported from grafana.com via `roles/grafana_dashboards/` (`ansible-playbook site.yml -i
+inventory.dist --tags grafana`) — see that role's own README for what's included and why, and for the
+handful already provisioned automatically by the chart itself (Kubernetes cluster/node views, CoreDNS,
+etcd, Node Exporter Full, and all four VictoriaMetrics dashboards).
 
 ### Accessing Metrics Directly (optional)
 
@@ -721,12 +706,65 @@ kubectl -n monitoring port-forward svc/vmsingle-vmks-victoria-metrics-k8s-stack 
 ```
 VictoriaMetrics' own UI is at `http://localhost:8428/vmui/`; the raw PromQL-compatible API is at `/api/v1/query`.
 
+## Logging (OpenSearch)
+
+Container + host logs for the whole cluster, retained for **~48 hours** (index-boundary granularity, not
+an exact cutoff - see below). Namespace: `opensearch`. The **OpenSearch Kubernetes Operator** reconciles
+a set of custom resources in `apps/opensearch/manifests/` into the actual running cluster - Argo CD
+installs the operator and applies those resources continuously. See `apps/opensearch/README.md` for the
+full rationale (why an operator over the plain chart an earlier version of this app used, why OpenSearch
+over Elasticsearch/Kibana naming, why TLS + auth are mandatory here unlike everywhere else in this
+cluster, why Vector rather than a new log shipper); this section covers day-to-day access.
+
+Replaced `apps/victoria-logs/` (VictoriaLogs + the same Vector shipper) — same retention target, same
+shipper, different backend.
+
+**Prerequisite**: `opensearch_admin_password` must be set in Vault (`ansible-vault edit
+group_vars/all/main.yaml`) before this deploys successfully - see [Secrets & Variables](#secrets--variables).
+
+- **Topology**: an `OpenSearchCluster` custom resource (`apps/opensearch/manifests/cluster.yaml`) with two
+  node pools (`client`: cluster-manager + coordinating, no PVC; `data`: the only pool with a PVC,
+  `storageClassName: longhorn`), plus its own `dashboards` section (not a separate chart under the
+  operator). Single replica per pool - evaluation-scale, not HA. The data pool is left unpinned
+  (scheduler's choice of node) - see `cluster.yaml`'s own comment on the tradeoff that implies.
+- **Log shipping**: the same Vector DaemonSet from the old VictoriaLogs setup, writing to daily
+  `logs-*`/`logs-host-*` indices via OpenSearch's bulk API, now authenticating with TLS + basic auth
+  (`apps/opensearch/values-vector.yaml`).
+- **Retention**: an `OpenSearchISMPolicy` custom resource (`apps/opensearch/manifests/ism-policy.yaml`)
+  deletes `logs-*` indices once `min_index_age: 2d`; an `OpenSearchIndexTemplate`
+  (`apps/opensearch/manifests/index-template.yaml`) sets `number_of_replicas: 0` for those same indices
+  (required, not an optimization - there's only one data node).
+- **Auth**: unlike everywhere else in this cluster (Grafana's anonymous Admin, Argo CD via tailnet),
+  **mandatory** here - the operator has no equivalent of a fully-disabled security plugin. TLS is
+  operator-generated (self-signed), and Vector/Dashboards authenticate with the same
+  `opensearch-admin-credentials` Secret. Dashboards' own TLS to the *browser* is still disabled
+  (`dashboards.tls.enable: false` in `cluster.yaml`) - Tailscale remains the access boundary for that leg.
+
+### Accessing OpenSearch Dashboards
+
+Via Tailscale (see [Accessing things](../README.md#accessing-things) in the main README):
+`https://opensearch.<tailnet>.ts.net`. Or port-forward:
+```bash
+kubectl -n opensearch port-forward svc/opensearch-dashboards 5601:5601
+```
+Visit `http://localhost:5601` - unlike Grafana, this does need a login: the `opensearch_admin_password`
+you set in Vault, username `admin`. Create an index pattern (`logs-*`) on first visit to start browsing.
+
+### Querying OpenSearch directly (optional)
+
+```bash
+kubectl -n opensearch port-forward svc/opensearch 9200:9200
+```
+```bash
+curl -k -u admin:<opensearch_admin_password> "https://localhost:9200/logs-*/_search?q=error"
+```
+
 ### Node Labels Reference
 
 | Label | Nodes | Used by |
 |---|---|---|
 | `storage=true` | rpi-5-2, rpi-5-3 | Longhorn replica placement (physical data) |
-| `telemetry=true` | rpi-5-1, rpi-5-2 | vmsingle + VictoriaLogs server pod placement |
+| `telemetry=true` | rpi-5-1, rpi-5-2 | vmsingle pod placement |
 | `database=true` | rpi-5-1 (rpi-5-4 once it joins the `[database]` inventory group) | Reserved for gating scheduling eligibility for Postgres workloads - no Postgres deployment exists yet, this just labels the node ahead of it |
 
 Labels are declared per-host in `host_vars/rpi-5-*.yaml` under the `k8s_labels` key, and applied to the live
@@ -1359,7 +1397,10 @@ Update `inventory.dist` if your network differs.
   `tailscale_node_oauth_client_secret` (used by `roles/tailscale` to join nodes to the tailnet -
   deliberately a separate OAuth client from the operator's), `searxng_secret_key`, `temporal_db_password`
   (used by both `apps/postgres/manifests/temporal-database.yaml` and `apps/temporal/` - see
-  [Temporal](#temporal)). The first pair never appear in `apps/` — see
+  [Temporal](#temporal)), `opensearch_admin_password` (used by `apps/opensearch/` - unlike Grafana's
+  admin login, this one is a real, actively-used credential, since the OpenSearch Kubernetes Operator
+  makes auth mandatory on the cluster itself; min 8 chars, upper, lower, digit, special char - see
+  [Logging](#logging-opensearch)). The first pair never appear in `apps/` — see
   [GitOps (Argo CD)](#gitops-argo-cd)'s "Secrets bridge"; the node-join pair are consumed directly by
   `roles/tailscale` and never touch `apps/` either.
 - **Unencrypted**: All other group_vars and host_vars
@@ -1440,7 +1481,7 @@ most commonly after that resource was deleted or modified out-of-band (e.g. `kub
 
 The `helm_drift_check` role now only runs after Argo CD's own chart install (the one Helm release Ansible
 still manages directly) and checks whether every resource in its current manifest actually exists live.
-For every other chart (Longhorn, VictoriaMetrics, VictoriaLogs, Blocky, SearXNG, redis-operator,
+For every other chart (Longhorn, VictoriaMetrics, OpenSearch, Blocky, SearXNG, redis-operator,
 RedisInsight, CloudNativePG, Tailscale Operator), this
 class of drift can't happen anymore in practice — Argo CD's continuous reconciliation would just re-apply
 the missing resource on its next sync — but for the Argo CD install itself, if it detects drift, the

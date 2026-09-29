@@ -1,0 +1,36 @@
+---
+# Reachable only over the tailnet - apps/tailscale-operator/manifests/ingresses.yaml
+# is Grafana's only exposed route (no in-cluster port-forward assumed here).
+# tailnet_domain lives in group_vars/all/main.yaml.
+grafana_url: "https://grafana.{{ tailnet_domain }}"
+
+# grafana.com dashboard IDs, limited to tech this cluster actually scrapes
+# today (confirmed live: apps/*/manifests/vm*scrape.yaml + what
+# apps/victoria-metrics's vmagent picks up via selectAllByDefault: true).
+#
+# Deliberately excludes VictoriaMetrics's own vmagent/vmalert/vmsingle/operator
+# dashboards - confirmed live via GET /api/search that apps/victoria-metrics's
+# defaultDashboards already provisions all four (tagged vm-k8s-stack), not just
+# the two (victoriametrics-operator, victoriametrics-vmalert) explicitly
+# toggled in apps/victoria-metrics/values.yaml - the chart's own remaining
+# defaults were already enabled. Re-adding their grafana.com IDs here would
+# just 400 ("Cannot save provisioned dashboard") since Grafana refuses to let
+# the API touch a ConfigMap-provisioned dashboard - tasks/import_dashboard.yml
+# treats that specific error as a skip, not a failure, so this is a safety
+# net for future entries, not a reason to rely on it for these four.
+#
+# Also deliberately excludes Argo CD and the Tailscale operator - dashboards
+# exist for both, but neither has a VM*Scrape wired up yet, so they'd import
+# clean and then show no data. Add those IDs here once that scrape config
+# exists.
+grafana_community_dashboards:
+  - id: 22705
+    name: 'Longhorn'
+  - id: 20417
+    name: 'CloudNativePG'
+  - id: 20528
+    name: 'Temporal Server Metrics'
+  - id: 19157
+    name: 'Redis (Kubernetes mode)'
+  - id: 13768
+    name: 'Blocky'

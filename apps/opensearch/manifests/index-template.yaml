@@ -1,0 +1,21 @@
+# number_of_replicas: 0 is required, not a size optimization - the data pool
+# (cluster.yaml) runs a single data node (replicas: 1), so any replica shard
+# could never be allocated a home, leaving every logs-* index permanently
+# yellow. Fields confirmed against the operator's bundled CRD schema
+# (opensearch.org_opensearchindextemplates.yaml): template.settings is a
+# free-form passthrough to OpenSearch's own index template settings object.
+apiVersion: opensearch.org/v1
+kind: OpenSearchIndexTemplate
+metadata:
+  name: logs
+  namespace: opensearch
+spec:
+  opensearchCluster:
+    name: opensearch
+  name: logs
+  indexPatterns:
+    - logs-*
+  template:
+    settings:
+      number_of_shards: 1
+      number_of_replicas: 0

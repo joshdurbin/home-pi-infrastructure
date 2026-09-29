@@ -57,6 +57,7 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
    tailscale_oauth_client_id: "<operator client from step 4>"
    tailscale_oauth_client_secret: "<operator client from step 4>"
    searxng_secret_key: "<output of: openssl rand -hex 32>"
+   opensearch_admin_password: "<strong password - min 8 chars, upper, lower, digit, special char>"
    ```
 
 6. Deploy everything:
@@ -70,12 +71,13 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
    ```
    All nodes should show `Ready`, all Argo CD Applications `Synced`/`Healthy`.
 
-From there, Longhorn (storage), VictoriaMetrics/VictoriaLogs/Grafana (monitoring), Blocky (DNS), SearXNG
-(search), the redis-operator (Blocky's and SearXNG's own small caching clusters), RedisInsight (a UI for
-browsing those caches), CloudNativePG (a Postgres cluster on the `database=true` nodes, behind PgBouncer
-poolers), Temporal (a workflow orchestration platform, backed by that same Postgres cluster), and the
-Tailscale Operator all come up on their own — Argo CD manages them from this repo's `apps/` directory. See
-[docs/REFERENCE.md](docs/REFERENCE.md) for what each one does.
+From there, Longhorn (storage), VictoriaMetrics/Grafana (metrics), OpenSearch/OpenSearch
+Dashboards (logs), Blocky (DNS), SearXNG (search), the redis-operator (Blocky's and SearXNG's own small
+caching clusters), RedisInsight (a UI for browsing those caches), CloudNativePG (a Postgres cluster on
+the `database=true` nodes, behind PgBouncer poolers), Temporal (a workflow orchestration platform,
+backed by that same Postgres cluster), and the Tailscale Operator all come up on their own — Argo CD
+manages them from this repo's `apps/` directory. See [docs/REFERENCE.md](docs/REFERENCE.md) for what
+each one does.
 
 ## Make targets
 
@@ -109,6 +111,7 @@ Once Tailscale is set up and synced:
 | Grafana | `https://grafana.<tailnet>.ts.net` |
 | Alertmanager | `https://alertmanager.<tailnet>.ts.net` |
 | VictoriaMetrics | `https://victoriametrics.<tailnet>.ts.net` |
+| OpenSearch Dashboards | `https://opensearch.<tailnet>.ts.net` |
 | Longhorn | `https://longhorn.<tailnet>.ts.net` |
 | SearXNG | `https://search.<tailnet>.ts.net` |
 | Blocky metrics | `https://blocky.<tailnet>.ts.net` |
@@ -131,6 +134,6 @@ kubectl get nodes
 ## More detail
 
 [docs/REFERENCE.md](docs/REFERENCE.md) covers: project structure, the GitOps split between Ansible and
-Argo CD, per-app configuration (Longhorn, VictoriaMetrics/VictoriaLogs, Blocky, SearXNG, redis-operator,
+Argo CD, per-app configuration (Longhorn, VictoriaMetrics, OpenSearch, Blocky, SearXNG, redis-operator,
 RedisInsight, Postgres/CloudNativePG, Temporal, Tailscale Operator), user management, node maintenance, and
 troubleshooting.

@@ -1,0 +1,40 @@
+# Replaces the hand-rolled curl Job an earlier version of this app used -
+# the operator provides this natively as a CRD instead. min_index_age
+# matches VictoriaLogs' old retentionPeriod: 48h at daily-index granularity
+# (see apps/opensearch/README.md for the boundary-imprecision tradeoff of
+# daily indices vs. an exact 48h cutoff). Fields confirmed against the
+# operator's bundled CRD schema (opensearch.org_opensearchismpolicies.yaml) -
+# camelCase (stateName, indexPatterns, minIndexAge), not the raw OpenSearch
+# ISM API's own snake_case (state_name, index_patterns, min_index_age) an
+# earlier curl-based version of this file used.
+apiVersion: opensearch.org/v1
+kind: OpenSearchISMPolicy
+metadata:
+  name: logs-retention
+  namespace: opensearch
+spec:
+  opensearchCluster:
+    name: opensearch
+  policyId: logs-retention
+  description: 'Delete logs-* indices after 2 days, matching VictoriaLogs retentionPeriod: 48h'
+  defaultState: hot
+  states:
+    - name: hot
+      actions: []
+      transitions:
+        - stateName: delete
+          conditions:
+            minIndexAge: '2d'
+    - name: delete
+      actions:
+        - delete: {}
+      transitions: []
+  ismTemplate:
+    indexPatterns:
+      - logs-*
+    priority: 100
+  # Vector starts writing to logs-* indices immediately on its own (no
+  # dependency on this policy existing first) - this only controls whether
+  # indices created before this policy synced also get picked up
+  # retroactively, rather than only new ones going forward.
+  applyToExistingIndices: true

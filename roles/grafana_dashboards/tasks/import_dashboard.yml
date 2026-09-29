@@ -1,0 +1,73 @@
+---
+# Community dashboard JSON ships with ${DS_XXX} placeholders instead of a
+# real datasource - the UI's Import wizard resolves these through a
+# dropdown, but there's no such wizard here, so this substitutes every
+# placeholder for this Grafana's default datasource UID before posting.
+# Confirmed live end-to-end against the Longhorn dashboard (id 22705): its
+# sole ${DS_PROMETHEUS} input, referenced 54 times across its panels,
+# resolved to VictoriaMetrics's Prometheus-compatible datasource and
+# imported clean.
+
+- name: 'Download {{ dashboard.name }} (id {{ dashboard.id }}) from grafana.com'
+  ansible.builtin.uri:
+    url: 'https://grafana.com/api/dashboards/{{ dashboard.id }}/revisions/latest/download'
+    return_content: true
+  register: grafana_dashboard_download
+  tags:
+    - grafana
+    - dashboards
+
+# id must be null (not the grafana.com listing's own id) for /api/dashboards/db
+# to treat this as a create-or-update by uid rather than reject it outright.
+# __inputs/__requires/__elements are grafana.com metadata Grafana's own
+# dashboard schema doesn't expect on write.
+- name: 'Substitute datasource placeholders in {{ dashboard.name }}'
+  ansible.builtin.set_fact:
+    grafana_dashboard_model: >-
+      {{
+        (grafana_dashboard_download.content
+          | regex_replace('\$\{DS_[A-Za-z0-9_-]+\}', grafana_default_datasource_uid)
+          | from_json)
+        | combine({'id': None})
+        | dict2items
+        | rejectattr('key', 'in', ['__inputs', '__requires', '__elements'])
+        | items2dict
+      }}
+  tags:
+    - grafana
+    - dashboards
+
+# status_code allows both 200 (saved) and 400 through so failed_when below
+# can tell a real error apart from "this dashboard's uid is already owned by
+# apps/victoria-metrics's own file/ConfigMap-based provisioning" (Grafana
+# rejects API writes to those with "Cannot save provisioned dashboard") -
+# hit live for VictoriaMetrics's own vmagent/vmsingle dashboards, see the
+# comment on grafana_community_dashboards in defaults/main.yml.
+- name: 'Import {{ dashboard.name }} into Grafana'
+  ansible.builtin.uri:
+    url: '{{ grafana_url }}/api/dashboards/db'
+    method: POST
+    body_format: json
+    status_code:
+      - 200
+      - 400
+    body:
+      dashboard: '{{ grafana_dashboard_model }}'
+      overwrite: true
+      folderId: 0
+      message: 'Imported by ansible (roles/grafana_dashboards)'
+  register: grafana_dashboard_import
+  failed_when: >-
+    grafana_dashboard_import.status == 400 and
+    'provisioned' not in (grafana_dashboard_import.json.message | default(''))
+  tags:
+    - grafana
+    - dashboards
+
+- name: "Note when {{ dashboard.name }} was skipped (already chart-provisioned)"
+  ansible.builtin.debug:
+    msg: "{{ dashboard.name }} (id {{ dashboard.id }}) is already provisioned by apps/victoria-metrics's own dashboard sidecar - skipped, not imported as a separate copy."
+  when: grafana_dashboard_import.status == 400
+  tags:
+    - grafana
+    - dashboards

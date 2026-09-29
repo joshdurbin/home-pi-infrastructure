@@ -1,0 +1,14 @@
+# The operator itself - reconciles the OpenSearchCluster/OpenSearchISMPolicy/
+# OpenSearchIndexTemplate custom resources in apps/opensearch/manifests/ into
+# an actual running cluster. installCRDs: true (chart default, left
+# unchanged) means these CRDs need no separate install step. Mirrors this
+# repo's other operator installs (victoria-metrics-operator, redis-operator,
+# cloudnative-pg) rather than the plain chart apps/opensearch/ started as -
+# see apps/opensearch/README.md for why.
+manager:
+  resources:
+    limits:
+      memory: 256Mi
+    requests:
+      cpu: 10m
+      memory: 256Mi

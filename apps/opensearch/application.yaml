@@ -1,0 +1,56 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: opensearch
+  namespace: argocd
+  annotations:
+    # The OpenSearchCluster CR (manifests/cluster.yaml) mounts a Longhorn
+    # PVC for its data pool, so this whole app syncs after Longhorn, same
+    # reasoning as victoria-logs's own sync-wave before it.
+    argocd.argoproj.io/sync-wave: '1'
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: opensearch
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  # Four sources: the OpenSearch Kubernetes Operator (installs its own CRDs -
+  # manifests/cluster.yaml, ism-policy.yaml, index-template.yaml are instances
+  # of those, not a separate chart - see apps/opensearch/README.md for why an
+  # operator over the plain opensearch/opensearch-dashboards charts an
+  # earlier version of this app used), vector (the log shipper - unrelated to
+  # the operator, still its own chart), plus this repo's values ref and
+  # manifests/ path. Same shape as every other multi-source Application here
+  # (e.g. apps/victoria-metrics/application.yaml).
+  sources:
+    - repoURL: https://opensearch-project.github.io/opensearch-k8s-operator/
+      chart: opensearch-operator
+      targetRevision: 3.0.14
+      helm:
+        releaseName: opensearch-operator
+        valueFiles:
+          - $values/apps/opensearch/values-operator.yaml
+    - repoURL: https://helm.vector.dev
+      chart: vector
+      targetRevision: 0.58.0
+      helm:
+        releaseName: vector
+        valueFiles:
+          - $values/apps/opensearch/values-vector.yaml
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      ref: values
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      path: apps/opensearch/manifests

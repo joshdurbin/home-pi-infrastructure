@@ -1,6 +1,10 @@
 timezone: America/Los_Angeles
 keyboard_layout: us
 locale: en_US.UTF-8
+# This tailnet's MagicDNS suffix (run `tailscale status` on any connected
+# device to confirm) - used by roles/grafana_dashboards to reach Grafana
+# over its Tailscale Operator ingress.
+tailnet_domain: tailb42321.ts.net
 k3s_join_token: !vault |
   $ANSIBLE_VAULT;1.1;AES256
   32636232626464313865336537353861633738643139323164303532633335333531316539396661

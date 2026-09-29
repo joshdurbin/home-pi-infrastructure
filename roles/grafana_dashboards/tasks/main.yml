@@ -1,0 +1,46 @@
+---
+# Imports community dashboards from grafana.com into apps/victoria-metrics's
+# Grafana over its Tailscale Operator ingress (apps/tailscale-operator/manifests/ingresses.yaml).
+#
+# Uses the documented POST /api/dashboards/db endpoint, not the undocumented
+# POST /api/dashboards/import the UI's own Import wizard uses (see
+# https://github.com/grafana/grafana/issues/7029 - Grafana has never
+# published a schema for it). Confirmed live against this cluster's actual
+# Grafana 13.1.1: /api/dashboards/db still works fully - Grafana 13 only
+# logs a deprecation warning pointing at the newer
+# /apis/dashboard.grafana.app/v1 API, which requires a service account
+# Bearer token, a needless dependency here since /api/dashboards/db needs
+# none.
+#
+# No credentials needed at all: apps/victoria-metrics/values.yaml gives
+# anonymous requests org_role: Admin (auth.anonymous.enabled: true) -
+# confirmed live, GET /api/datasources and POST /api/dashboards/db both
+# succeed unauthenticated.
+
+- name: Look up this Grafana's datasources
+  ansible.builtin.uri:
+    url: '{{ grafana_url }}/api/datasources'
+    return_content: true
+  register: grafana_datasources
+  tags:
+    - grafana
+    - dashboards
+
+- name: Determine the default datasource's UID
+  ansible.builtin.set_fact:
+    grafana_default_datasource_uid: >-
+      {{ (grafana_datasources.json | selectattr('isDefault', 'equalto', true) | map(attribute='uid') | first)
+         | default(grafana_datasources.json[0].uid) }}
+  tags:
+    - grafana
+    - dashboards
+
+- name: Import each community dashboard
+  ansible.builtin.include_tasks: import_dashboard.yml
+  loop: '{{ grafana_community_dashboards }}'
+  loop_control:
+    loop_var: dashboard
+    label: '{{ dashboard.name }}'
+  tags:
+    - grafana
+    - dashboards

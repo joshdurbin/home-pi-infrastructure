@@ -1,0 +1,128 @@
+# Sources this cluster's log shipping directly from vector's own chart
+# (https://helm.vector.dev) rather than victoria-logs-single's bundled
+# `vector` subchart dependency - same Vector, same config shape, just no
+# longer piggybacking on a chart that's been deleted. Everything below is
+# that old VictoriaLogs-targeting config carried over, with the sinks
+# retargeted at OpenSearch (endpoint, index naming, TLS + auth) and the
+# VictoriaLogs-proprietary request headers dropped - see each sink's own
+# comment.
+
+# Default is "Aggregator" (StatefulSet) - "Agent" (DaemonSet) is required to
+# get one Vector pod per node tailing that node's own /var/log (the chart's
+# own default hostPath mounts for the Agent role).
+role: Agent
+
+resources:
+  limits:
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 128Mi
+
+# Confirmed live previously: the chart's default image (distroless) has no
+# shell and no journalctl binary, and Vector's journald source works by
+# spawning journalctl as a subprocess, so it's a hard requirement.
+# image.base: debian switches the tag to the systemd-carrying debian variant.
+image:
+  base: debian
+
+# Confirmed live previously on both a control-plane (4B) and an agent (5)
+# node that these nodes run journald in volatile mode: /var/log/journal
+# exists but is empty, the real actively-written journal lives under
+# /run/log/journal.
+extraVolumes:
+  - name: run-log-journal
+    hostPath:
+      path: /run/log/journal
+extraVolumeMounts:
+  - name: run-log-journal
+    mountPath: /run/log/journal
+    readOnly: true
+
+# Exposes the opensearch-admin-credentials Secret's username/password keys as
+# same-named env vars (group_vars/all/cluster_secrets.yaml seeds this Secret;
+# manifests/cluster.yaml's security.config.adminCredentialsSecret references
+# the same one) - customConfig below reads them via Vector's native ${VAR}
+# environment variable interpolation, not committed inline.
+envFrom:
+  - secretRef:
+      name: opensearch-admin-credentials
+
+# Full replace, not a merge (the chart's own comment: "if used all options
+# need to be specified"). Re-diff against the chart's own values.yaml on any
+# future chart bump.
+customConfig:
+  data_dir: /vector-data-dir
+  api:
+    enabled: false
+    address: 0.0.0.0:8686
+  sources:
+    k8s:
+      type: kubernetes_logs
+    internal_metrics:
+      type: internal_metrics
+    journal:
+      type: journald
+      journal_directory: /run/log/journal
+  transforms:
+    parser:
+      type: remap
+      inputs: [k8s]
+      source: |
+        .log = parse_json(.message) ?? .message
+        del(.message)
+  sinks:
+    exporter:
+      type: prometheus_exporter
+      address: 0.0.0.0:9090
+      inputs: [internal_metrics]
+    # https://opensearch:9200 - "opensearch" is manifests/cluster.yaml's
+    # general.serviceName, not "opensearch-client" (that was the plain
+    # chart's own service naming, from before this app switched to the
+    # operator). api_version: v8 avoids the deprecated bulk-action `_type`
+    # field older API versions send, which OpenSearch 2.x+ rejects outright
+    # (https://github.com/vectordotdev/vector/issues/23342) - not a
+    # VictoriaLogs-specific setting, still needed here. tls.verify_certificate:
+    # false trusts the operator's self-signed cert (security.tls.http.generate:
+    # true in cluster.yaml) - nothing here talks to a real CA-issued cert.
+    # auth reads the same admin credentials Dashboards uses (envFrom above).
+    opensearch:
+      type: elasticsearch
+      inputs: [parser]
+      endpoints: ['https://opensearch:9200']
+      mode: bulk
+      api_version: v8
+      compression: gzip
+      healthcheck:
+        enabled: false
+      tls:
+        verify_certificate: false
+      auth:
+        strategy: basic
+        user: '${username}'
+        password: '${password}'
+      bulk:
+        index: 'logs-%Y.%m.%d'
+    # Same retargeting as the sink above - separate sink for the same reason
+    # as before: journald events don't carry any kubernetes.* fields, so a
+    # shared index naming scheme would still be fine, but keeping journal
+    # entries in their own daily index (logs-host-*, also covered by
+    # manifests/ism-policy.yaml's logs-* ismTemplate pattern) keeps them
+    # easy to filter/browse separately in Dashboards.
+    opensearch_host:
+      type: elasticsearch
+      inputs: [journal]
+      endpoints: ['https://opensearch:9200']
+      mode: bulk
+      api_version: v8
+      compression: gzip
+      healthcheck:
+        enabled: false
+      tls:
+        verify_certificate: false
+      auth:
+        strategy: basic
+        user: '${username}'
+        password: '${password}'
+      bulk:
+        index: 'logs-host-%Y.%m.%d'

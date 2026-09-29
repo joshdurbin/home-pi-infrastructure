@@ -49,7 +49,8 @@ grafana:
       enabled: true
       org_role: Admin
   plugins:
-    - victoriametrics-logs-datasource
+    # victoriametrics-logs-datasource removed with apps/victoria-logs/ (see
+    # apps/opensearch/) - was only ever needed for that datasource.
     - victoriametrics-metrics-datasource
   persistence:
     accessModes:

@@ -1,0 +1,112 @@
+# apiVersion opensearch.org/v1, not the older opensearch.opster.io/v1 many
+# examples online still use - confirmed via the operator's own chart
+# (opensearch-operator/values.yaml's legacyAPI.enabled comment): "org" is the
+# current, non-deprecated group; "opster.io" is kept only for backwards
+# compatibility. Every field below confirmed against the chart's own bundled
+# CRD schema (opensearch.org_opensearchclusters.yaml), not guessed.
+apiVersion: opensearch.org/v1
+kind: OpenSearchCluster
+metadata:
+  name: opensearch
+  namespace: opensearch
+spec:
+  general:
+    serviceName: opensearch
+    version: '3.8.0'
+    # Default (confirmed via schema: default: true) - the operator sets
+    # vm.max_map_count itself, no equivalent of the plain chart's
+    # sysctlInit/host-level ansible task needed.
+    setVMMaxMapCount: true
+    drainDataNodes: true
+
+  # TLS + auth are effectively mandatory for the OpenSearch cluster itself
+  # under this operator (no DISABLE_SECURITY_PLUGIN equivalent) - accepted
+  # deliberately, not an oversight, despite every other UI in this cluster
+  # running with no in-app auth. operator-generated self-signed certs
+  # (generate: true) rather than supplying our own CA - nothing external
+  # ever talks to opensearch:9200 (general.serviceName below) directly except
+  # Vector and Dashboards, both inside the cluster, and both already need to
+  # trust a self-signed cert either way.
+  security:
+    config:
+      adminCredentialsSecret:
+        name: opensearch-admin-credentials
+    tls:
+      http:
+        generate: true
+      transport:
+        generate: true
+
+  dashboards:
+    enable: true
+    version: '3.8.0'
+    replicas: 1
+    # Dashboards' own TLS is independently toggleable from the cluster's
+    # (confirmed via schema: dashboards.tls.enable is a separate field from
+    # security.tls.http.enabled) - kept off since Tailscale is what
+    # terminates TLS for browser access here, same as every other UI in this
+    # cluster (Grafana, Argo CD). Dashboards still authenticates to the
+    # (TLS+auth-secured) OpenSearch backend behind it via the same
+    # credentials Secret.
+    tls:
+      enable: false
+    opensearchCredentialsSecret:
+      name: opensearch-admin-credentials
+    resources:
+      limits:
+        memory: 512Mi
+      requests:
+        cpu: 10m
+        memory: 512Mi
+
+  nodePools:
+    # Coordinating + cluster-manager pool - collapses what would normally be
+    # two separate pools into one, same reasoning as the plain-chart version
+    # this replaced: a homelab-scale, single-replica evaluation has no HA to
+    # gain from splitting them, and the cluster still needs at least one
+    # cluster_manager-eligible node regardless.
+    - component: client
+      replicas: 1
+      roles:
+        - cluster_manager
+        - ingest
+        - remote_cluster_client
+      persistence:
+        emptyDir: {}
+      jvm: '-Xmx384M -Xms384M'
+      resources:
+        limits:
+          memory: 768Mi
+        requests:
+          cpu: 10m
+          memory: 768Mi
+    # The only pool that actually holds shards, so the only one with a real
+    # PVC. Deliberately unpinned - no nodeSelector - left for the k8s
+    # scheduler to place based on free capacity rather than a fixed node.
+    # Longhorn PVCs don't require the pod to run on a storage: "true" node
+    # specifically (it's networked block storage), so this can land on any
+    # node with room, including an rpi-4b - this repo's own inventory.dist
+    # flags those nodes' disks as slow/inconsistent for disk-heavy workloads
+    # generally (that finding was about etcd/Longhorn specifically, not
+    # measured for OpenSearch/Lucene) - revisit with a nodeSelector if that
+    # turns out to matter in practice.
+    - component: data
+      replicas: 1
+      roles:
+        - data
+      diskSize: '10Gi'
+      persistence:
+        pvc:
+          storageClass: longhorn
+          accessModes:
+            - ReadWriteOnce
+      # Heap capped at 50% of the container memory limit, per OpenSearch's
+      # own heap-sizing guidance - the other 50% is headroom for off-heap
+      # Lucene buffers/segment merges, not slack to trim.
+      jvm: '-Xmx768M -Xms768M'
+      resources:
+        limits:
+          memory: 1536Mi
+        requests:
+          cpu: 10m
+          memory: 1536Mi
