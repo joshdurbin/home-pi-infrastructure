@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: pgadmin
+  namespace: argocd
+  annotations:
+    # Has its own PVC (Longhorn, wave 0) and connects to the postgres
+    # Cluster's poolers (wave 2) - same tier as every other end-user-facing
+    # app with a PVC.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: pgadmin
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  sources:
+    - repoURL: https://bjw-s-labs.github.io/helm-charts
+      chart: app-template
+      targetRevision: 5.2.1
+      helm:
+        releaseName: pgadmin
+        valueFiles:
+          - $values/apps/pgadmin/values.yaml
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      ref: values
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      path: apps/pgadmin/manifests

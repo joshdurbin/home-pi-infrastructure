@@ -1342,6 +1342,27 @@ openwebui_db_password: "<paste another generated value>"
 
 **Access it**: `https://chat.<tailnet>.ts.net` once the Tailscale Operator step below has synced.
 
+## pgAdmin
+
+A web SQL client for the cluster's Postgres (`apps/pgadmin/`, namespace `pgadmin`) - schema browser, Query
+Tool, explain plans. Runs the official `dpage/pgadmin4` image via the same `bjw-s-labs/app-template` chart
+as RedisInsight.
+
+- **Login to Postgres**: a dedicated read-only role, `pgadmin` (`apps/postgres/manifests/pgadmin-role.yaml`,
+  member of `pg_read_all_data`), connecting through `postgres-pooler-ro`. It can read every database but
+  can't change anything. Password is the `pgadmin_db_password` Vault variable, seeded into the `postgres`
+  namespace by `k8s_secrets`. On first connect pgAdmin asks for it once - tick "Save password".
+  For writes, use `kubectl -n postgres exec -it postgres-1 -c postgres -- psql -U postgres`.
+- **pgAdmin's own login**: none (desktop mode, `PGADMIN_CONFIG_SERVER_MODE=False`) - the tailnet is the
+  access control, same stance as Grafana's anonymous access.
+- **Storage**: 512Mi Longhorn PVC at `/var/lib/pgadmin` (saved passwords, query history, preferences).
+- **Egress NetworkPolicy**: DNS plus port 5432 to the `postgres` namespace.
+
+**One-time**: add `pgadmin_db_password` (e.g. `openssl rand -hex 32`) to `group_vars/all/main.yaml` via
+`ansible-vault edit`, then re-run the `k8s_secrets` role before the first sync.
+
+**Access it**: `https://pgadmin.<tailnet>.ts.net`.
+
 ## Exposing UIs via Tailscale Operator
 
 Reaches Grafana, Alertmanager, the VictoriaMetrics UI, the Longhorn UI, Blocky's `/metrics`, SearXNG, the Argo CD
@@ -1429,6 +1450,7 @@ hostname shown there):
 | Temporal Web UI | `https://temporal.<tailnet>.ts.net` |
 | Argo CD | `https://argocd.<tailnet>.ts.net` |
 | Open WebUI | `https://chat.<tailnet>.ts.net` |
+| pgAdmin | `https://pgadmin.<tailnet>.ts.net` |
 
 Confirmed working from a phone with the Tailscale app active. If you test from a **Mac terminal or
 Safari** and it doesn't resolve, see the Troubleshooting note below before assuming the deployment is

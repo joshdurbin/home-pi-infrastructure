@@ -62,6 +62,8 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
    opensearch_admin_password: "<strong password - min 8 chars, upper, lower, digit, special char>"
    openwebui_secret_key: "<output of: openssl rand -hex 32>"
    openwebui_db_password: "<output of: openssl rand -hex 32>"
+   grafana_db_password: "<output of: openssl rand -hex 32>"
+   pgadmin_db_password: "<output of: openssl rand -hex 32>"
    ```
 
 6. Deploy everything:
@@ -125,6 +127,7 @@ Once Tailscale is set up and synced:
 | RedisInsight | `https://redisinsight.<tailnet>.ts.net` |
 | Temporal Web UI | `https://temporal.<tailnet>.ts.net` |
 | Open WebUI | `https://chat.<tailnet>.ts.net` |
+| pgAdmin | `https://pgadmin.<tailnet>.ts.net` |
 
 (Replace `<tailnet>` with your tailnet's `.ts.net` domain — run `tailscale status` on any connected device
 to find it.)

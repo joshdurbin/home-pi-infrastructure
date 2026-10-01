@@ -1,0 +1,31 @@
+# Egress-only (Tailscale reaching the web UI is ingress, unaffected): DNS
+# plus Postgres (both poolers, port 5432) in the postgres namespace - the
+# poolers' own ingress is open by design (apps/postgres/manifests/
+# networkpolicy.yaml), so only this pod's egress side needs a rule.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pgadmin-egress
+  namespace: pgadmin
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
