@@ -43,6 +43,16 @@ grafana:
     userKey: admin-user
     passwordKey: admin-password
   grafana.ini:
+    # State (users, preferences, annotations, provisioned-dashboard
+    # bookkeeping) lives in the cluster's HA Postgres via
+    # postgres-pooler-rw (apps/postgres/manifests/grafana-database.yaml),
+    # not a local grafana.db - which is why persistence below is off.
+    # Password comes in as GF_DATABASE_PASSWORD (envValueFrom below).
+    database:
+      type: postgres
+      host: postgres-pooler-rw.postgres.svc.cluster.local:5432
+      name: grafana
+      user: grafana
     auth:
       disable_login_form: true
     auth.anonymous:
@@ -55,26 +65,19 @@ grafana:
     # datasource needs this plugin installed to render at all.
     - victoriametrics-logs-datasource
     - victoriametrics-metrics-datasource
+  envValueFrom:
+    GF_DATABASE_PASSWORD:
+      secretKeyRef:
+        name: grafana-db-credentials
+        key: password
+  # No PVC: the only stateful thing Grafana had was grafana.db, now in
+  # Postgres. Dashboards and datasources are provisioned from ConfigMaps by
+  # the sidecars, and plugins are re-installed into an ephemeral dir at
+  # startup. With no RWO volume to fight over, the default RollingUpdate
+  # strategy works again (the old Recreate workaround existed only for that
+  # PVC deadlock).
   persistence:
-    accessModes:
-      - ReadWriteOnce
-    enabled: true
-    size: 2Gi
-    storageClassName: longhorn
-  # Confirmed live deadlock: default RollingUpdate tries to bring up a new
-  # pod before killing the old one, but with a single ReadWriteOnce PVC and
-  # replicas: 1, the new pod (often scheduled to a different node) can never
-  # attach the volume - it's still mounted by the old pod, which RollingUpdate
-  # won't kill until the new one is Ready. Deadlocks every rollout
-  # (ProgressDeadlineExceeded) until someone manually deletes the old pod.
-  # Recreate kills the old pod first, releasing the PVC before the new one
-  # is even scheduled.
-  deploymentStrategy:
-    type: Recreate
-  # Back to 1 - the stale vmks-grafana PVC (crash-looping under Grafana
-  # 13.1.1 with "Datasource provisioning error: data source not found",
-  # see git log) has been deleted. A fresh PVC + fresh grafana.db gets
-  # created on this sync, with no legacy UID history to conflict with.
+    enabled: false
   replicas: 1
   # 256Mi was right-sized for Grafana 12.4.2. Confirmed live (OOMKilled,
   # exitCode 137) that Grafana 13.1.1 (bundled by this chart version) is a

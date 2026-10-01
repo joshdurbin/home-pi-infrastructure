@@ -1,0 +1,37 @@
+# Grafana's own Postgres user and database (apps/victoria-metrics/ - Grafana
+# is the victoria-metrics-k8s-stack subchart), created declaratively via
+# CloudNativePG's DatabaseRole/Database CRDs - same pattern as
+# open-webui-database.yaml and temporal-database.yaml beside this file.
+# Grafana connects through postgres-pooler-rw (session pool mode, so its
+# migration advisory locks work), not a direct instance connection.
+#
+# The password Secret (grafana-db-credentials) is seeded into both the
+# postgres and monitoring namespaces by the k8s_secrets Ansible role
+# (group_vars/all/cluster_secrets.yaml) from the Vault-encrypted
+# grafana_db_password - Secrets are namespace-scoped, and both CNPG and
+# Grafana's pod need it.
+apiVersion: postgresql.cnpg.io/v1
+kind: DatabaseRole
+metadata:
+  name: grafana
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  name: grafana
+  ensure: present
+  login: true
+  passwordSecret:
+    name: grafana-db-credentials
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: grafana
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  name: grafana
+  owner: grafana
+  ensure: present
