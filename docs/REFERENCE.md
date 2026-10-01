@@ -1390,6 +1390,13 @@ registry, allows the namespaces) -> push. **Use it**: sign in to `/ui` with the 
 create a virtual key, then point clients (e.g. Open WebUI's OpenAI connection) at
 `http://litellm.litellm.svc.cluster.local:4000/v1` or `https://litellm.<tailnet>.ts.net/v1`.
 
+**Open WebUI** uses LiteLLM as its only LLM backend (`OPENAI_API_BASE_URL` / `OPENAI_API_KEY` in
+`apps/open-webui/values.yaml`, in-cluster URL, plus an egress rule). Its key is a *virtual key*, not the master
+key: generate a value (`sk-` + `openssl rand -hex 24`), store it in Vault as `openwebui_litellm_key`, and create
+a key with that exact value in the LiteLLM UI (Virtual Keys -> Create, "Key" field, alias `open-webui`, models
+`claude-sonnet`/`claude-opus`/`claude-haiku`). Then `make deploy-secrets` and restart Open WebUI. Those env vars
+only seed Open WebUI's connection on first start; afterwards edit it in Admin Settings -> Connections.
+
 **Access it**: `https://litellm.<tailnet>.ts.net/ui`.
 
 ## Exposing UIs via Tailscale Operator

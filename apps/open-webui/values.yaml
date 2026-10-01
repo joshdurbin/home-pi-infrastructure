@@ -1,9 +1,11 @@
-# App only - no LLM backend wired up here deliberately. Open WebUI talks
-# to whatever OpenAI-compatible endpoint (or Ollama instance) you add
-# through its own Settings UI once it's running; which provider to use is
-# a choice for whoever's actually using this, not something to bake into
-# git. The two subchart toggles below that WOULD auto-install a backend
-# are explicitly turned off so this doesn't silently stand one up.
+# LLM backend: the in-cluster LiteLLM proxy (apps/litellm/), via its
+# OpenAI-compatible API - see OPENAI_API_BASE_URL / OPENAI_API_KEY in
+# extraEnvVars below. Provider choice and API keys live in LiteLLM, not
+# here; Open WebUI only holds a LiteLLM virtual key. (Both are Open WebUI
+# "persistent config" values: they seed the connection on first start, after
+# which the Admin Settings UI wins - change them there if they ever differ.)
+# The two subchart toggles below that WOULD auto-install a backend are
+# explicitly turned off so this doesn't silently stand one up.
 
 image:
   repository: ghcr.io/open-webui/open-webui
@@ -72,6 +74,16 @@ extraEnvVars:
       secretKeyRef:
         name: open-webui-database-url
         key: url
+  # LiteLLM, in-cluster (not via Tailscale). The key is a LiteLLM virtual
+  # key (restricted to the claude-* aliases), not the master key - seeded by
+  # k8s_secrets from the Vault variable openwebui_litellm_key.
+  - name: OPENAI_API_BASE_URL
+    value: http://litellm.litellm.svc.cluster.local:4000/v1
+  - name: OPENAI_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: open-webui-litellm-key
+        key: api-key
 
 resources:
   requests:

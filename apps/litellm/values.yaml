@@ -49,6 +49,12 @@ redis:
   enabled: false
 
 envVars:
+  # Tailscale terminates TLS and talks plain HTTP to the pod, sending
+  # X-Forwarded-Proto: https - but uvicorn only trusts that header from
+  # localhost by default, so redirects (/ui -> /ui/) were built as http://
+  # and broke in the browser. The proxy's source IP is a pod IP, so trust
+  # any source; the Service is only reachable in-cluster or via Tailscale.
+  FORWARDED_ALLOW_IPS: "*"
   # No telemetry/updates phoning home.
   LITELLM_TELEMETRY: "False"
   DISABLE_ADMIN_UI: "False"
