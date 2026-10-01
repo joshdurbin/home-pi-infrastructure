@@ -1,18 +1,19 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: pgadmin
+  name: whodb
   namespace: argocd
   annotations:
     # Has its own PVC (Longhorn, wave 0) and connects to the postgres
-    # Cluster's poolers (wave 2) - same tier as every other end-user-facing
-    # app with a PVC.
+    # Cluster's poolers (wave 2), the opensearch cluster and the two redis
+    # cache clusters - same tier as every other end-user-facing app with a
+    # PVC.
     argocd.argoproj.io/sync-wave: "2"
 spec:
   project: home-pi
   destination:
     server: https://kubernetes.default.svc
-    namespace: pgadmin
+    namespace: whodb
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
@@ -30,12 +31,12 @@ spec:
       chart: app-template
       targetRevision: 5.2.1
       helm:
-        releaseName: pgadmin
+        releaseName: whodb
         valueFiles:
-          - $values/apps/pgadmin/values.yaml
+          - $values/apps/whodb/values.yaml
     - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
       targetRevision: master
       ref: values
     - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
       targetRevision: master
-      path: apps/pgadmin/manifests
+      path: apps/whodb/manifests

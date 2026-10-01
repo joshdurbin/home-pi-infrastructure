@@ -1,0 +1,50 @@
+# Egress-only (Tailscale reaching the web UI is ingress, unaffected): DNS
+# plus the three things WhoDB is pre-connected to -
+# - Postgres poolers (port 5432, postgres namespace; the poolers' own
+#   ingress is open by design, see apps/postgres/manifests/networkpolicy.yaml)
+# - OpenSearch (port 9200, opensearch namespace)
+# - the blocky-cache / searxng-cache Redis clusters (port 6379; no Sentinel,
+#   WhoDB only talks to each cluster's "-master" Service)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: whodb-egress
+  namespace: whodb
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: opensearch
+      ports:
+        - protocol: TCP
+          port: 9200
+    - to:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [blocky-cache, searxng-cache]
+      ports:
+        - protocol: TCP
+          port: 6379

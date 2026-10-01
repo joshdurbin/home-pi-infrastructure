@@ -4,7 +4,7 @@ metadata:
   name: homepage
   namespace: argocd
   annotations:
-    # Same tier as every other end-user-facing app (searxng, redisinsight):
+    # Same tier as every other end-user-facing app (searxng, whodb):
     # after Longhorn (wave 0) and redis-operator/CRDs (wave 1), no PVC or
     # CRD dependency of its own. Its own Ingress (apps/tailscale-operator/
     # manifests/ingresses.yaml) is the only cross-app reference, and that's

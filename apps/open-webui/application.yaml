@@ -5,7 +5,7 @@ metadata:
   namespace: argocd
   annotations:
     # Has its own PVC (Longhorn, wave 0) - same tier as every other
-    # end-user-facing app with a PVC (redisinsight, searxng-cache).
+    # end-user-facing app with a PVC (whodb, searxng-cache).
     argocd.argoproj.io/sync-wave: "2"
 spec:
   project: home-pi

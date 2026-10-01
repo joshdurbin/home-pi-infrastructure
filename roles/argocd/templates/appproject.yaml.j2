@@ -50,7 +50,7 @@ spec:
       server: https://kubernetes.default.svc
     - namespace: searxng-cache
       server: https://kubernetes.default.svc
-    - namespace: redisinsight
+    - namespace: whodb
       server: https://kubernetes.default.svc
     - namespace: cnpg-system
       server: https://kubernetes.default.svc
@@ -67,8 +67,6 @@ spec:
     - namespace: trivy-system
       server: https://kubernetes.default.svc
     - namespace: open-webui
-      server: https://kubernetes.default.svc
-    - namespace: pgadmin
       server: https://kubernetes.default.svc
     # victoria-metrics-k8s-stack creates a few VMServiceScrapes directly in
     # kube-system (matching upstream kube-prometheus-stack convention) to

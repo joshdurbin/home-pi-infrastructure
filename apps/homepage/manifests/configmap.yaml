@@ -80,10 +80,6 @@ data:
             href: https://search.{{HOMEPAGE_VAR_TAILNET_DOMAIN}}
             description: Metasearch engine
             icon: mdi-magnify
-        - RedisInsight:
-            href: https://redisinsight.{{HOMEPAGE_VAR_TAILNET_DOMAIN}}
-            description: Redis cache browser
-            icon: mdi-database-eye-outline
         - Temporal:
             href: https://temporal.{{HOMEPAGE_VAR_TAILNET_DOMAIN}}
             description: Workflow orchestration
@@ -92,7 +88,7 @@ data:
             href: https://chat.{{HOMEPAGE_VAR_TAILNET_DOMAIN}}
             description: LLM chat interface
             icon: mdi-chat-processing-outline
-        - pgAdmin:
-            href: https://pgadmin.{{HOMEPAGE_VAR_TAILNET_DOMAIN}}
-            description: Postgres SQL client (read-only)
+        - WhoDB:
+            href: https://whodb.{{HOMEPAGE_VAR_TAILNET_DOMAIN}}
+            description: Postgres, OpenSearch and Redis browser (read-only)
             icon: mdi-database-search-outline

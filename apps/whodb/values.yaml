@@ -1,0 +1,63 @@
+# WhoDB - one web UI for the cluster's Postgres, OpenSearch and Redis
+# instances (replaces pgAdmin + RedisInsight). No Helm chart worth
+# depending on, so the generic `bjw-s-labs/app-template` chart (same as
+# Blocky/SearXNG) running the official `clidey/whodb` image directly.
+#
+# Connections are pre-registered as login profiles via WHODB_<TYPE> env vars
+# (JSON array of {alias, host, user, password, database, port, advanced},
+# confirmed against core/src/envconfig + core/src/types in clidey/whodb).
+# The Postgres and OpenSearch ones carry passwords, so they live in the
+# `whodb-env` Secret seeded by the k8s_secrets Ansible role
+# (group_vars/all/cluster_secrets.yaml); Redis has no auth here, so its
+# profiles are plain env below.
+#
+# Redis is NOT used by WhoDB itself - its only persistent state is an
+# encrypted session store in /data (below). There's no cache backend setting.
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: clidey/whodb
+          tag: 0.134.0
+        env:
+          # Each Redis RedisReplication's operator-maintained "-master"
+          # Service always points at the current master (see
+          # docs/REFERENCE.md, redis-operator).
+          WHODB_REDIS: >-
+            [
+            {"alias":"blocky-cache","host":"blocky-cache-master.blocky-cache.svc.cluster.local","port":"6379"},
+            {"alias":"searxng-cache","host":"searxng-cache-master.searxng-cache.svc.cluster.local","port":"6379"}
+            ]
+          # Tailscale terminates TLS in front of this - Secure cookies.
+          WHODB_SECURE: "true"
+          WHODB_DISABLE_UPDATE_CHECK: "true"
+          WHODB_DATA_DIR: /data
+        envFrom:
+          - secretRef:
+              name: whodb-env
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 384Mi
+
+service:
+  main:
+    controller: main
+    ports:
+      http:
+        port: 8080
+
+persistence:
+  # Encrypted session store + its generated key (session.key). Small.
+  data:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 256Mi
+    storageClass: longhorn
+    globalMounts:
+      - path: /data

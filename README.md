@@ -79,7 +79,7 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
 
 From there, Longhorn (storage), VictoriaMetrics/Grafana (metrics), OpenSearch/OpenSearch
 Dashboards + VictoriaLogs (logs, dual-shipped to both), Blocky (DNS), SearXNG (search), the redis-operator
-(Blocky's and SearXNG's own small caching clusters), RedisInsight (a UI for browsing those caches),
+(Blocky's and SearXNG's own small caching clusters), WhoDB (a UI for browsing Postgres, OpenSearch and those caches),
 CloudNativePG (a Postgres cluster on the `database=true` nodes, behind PgBouncer poolers), Temporal (a
 workflow orchestration platform, backed by that same Postgres cluster), Homepage (a dashboard linking out
 to every other UI below), Open WebUI (a chat UI for LLMs - no backend wired up, add one via its own
@@ -124,10 +124,9 @@ Once Tailscale is set up and synced:
 | Longhorn | `https://longhorn.<tailnet>.ts.net` |
 | SearXNG | `https://search.<tailnet>.ts.net` |
 | Blocky metrics | `https://blocky.<tailnet>.ts.net` |
-| RedisInsight | `https://redisinsight.<tailnet>.ts.net` |
 | Temporal Web UI | `https://temporal.<tailnet>.ts.net` |
 | Open WebUI | `https://chat.<tailnet>.ts.net` |
-| pgAdmin | `https://pgadmin.<tailnet>.ts.net` |
+| WhoDB | `https://whodb.<tailnet>.ts.net` |
 
 (Replace `<tailnet>` with your tailnet's `.ts.net` domain — run `tailscale status` on any connected device
 to find it.)
@@ -146,5 +145,5 @@ kubectl get nodes
 
 [docs/REFERENCE.md](docs/REFERENCE.md) covers: project structure, the GitOps split between Ansible and
 Argo CD, per-app configuration (Longhorn, VictoriaMetrics, VictoriaLogs, OpenSearch, Blocky, SearXNG,
-redis-operator, RedisInsight, Postgres/CloudNativePG, Temporal, Homepage, Open WebUI, descheduler, Trivy
+redis-operator, WhoDB, Postgres/CloudNativePG, Temporal, Homepage, Open WebUI, descheduler, Trivy
 Operator, Tailscale Operator), user management, node maintenance, and troubleshooting.

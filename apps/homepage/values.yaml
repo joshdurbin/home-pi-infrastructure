@@ -1,7 +1,7 @@
 # No official Helm chart exists for Homepage (gethomepage/homepage ships
 # only Docker Compose / plain `docker run` instructions, confirmed against
 # its own repo) - same generic `bjw-s-labs/app-template` chart already used
-# for Blocky/SearXNG/RedisInsight instead, running the official
+# for Blocky/SearXNG/WhoDB instead, running the official
 # ghcr.io/gethomepage/homepage image directly.
 controllers:
   main:

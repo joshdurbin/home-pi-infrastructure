@@ -166,28 +166,6 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: redisinsight
-  namespace: redisinsight
-  annotations:
-    tailscale.com/proxy-group: ingress-proxies
-spec:
-  ingressClassName: tailscale
-  tls:
-    - hosts: [redisinsight]
-  rules:
-    - http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: redisinsight
-                port:
-                  number: 5540
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
   name: temporal
   namespace: temporal
   annotations:
@@ -240,7 +218,7 @@ spec:
 # (https://home.<tailnet>.ts.net). Service name "homepage" confirmed by the
 # app-template chart convention already used by every other single-service
 # app here (controller/service key "main" -> Service named after the
-# release, see searxng/redisinsight above).
+# release, see searxng/whodb above).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -294,14 +272,14 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: pgadmin
-  namespace: pgadmin
+  name: whodb
+  namespace: whodb
   annotations:
     tailscale.com/proxy-group: ingress-proxies
 spec:
   ingressClassName: tailscale
   tls:
-    - hosts: [pgadmin]
+    - hosts: [whodb]
   rules:
     - http:
         paths:
@@ -309,6 +287,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: pgadmin
+                name: whodb
                 port:
-                  number: 80
+                  number: 8080

@@ -179,7 +179,7 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass
 - **Maintenance Tools**: Deploys k3s-maintenance script to all nodes
 - **Argo CD Bootstrap**: Installs Argo CD and its root Application, which then continuously syncs
   Longhorn, VictoriaMetrics, OpenSearch, Blocky, SearXNG, the redis-operator (Blocky's and SearXNG's own
-  cache clusters), RedisInsight, CloudNativePG (Postgres), and the Tailscale Operator from this repo's own
+  cache clusters), WhoDB, CloudNativePG (Postgres), and the Tailscale Operator from this repo's own
   `apps/` directory on GitHub — see [GitOps (Argo CD)](#gitops-argo-cd).
 
 This is idempotent - safe to run repeatedly to ensure everything stays configured.
@@ -557,7 +557,7 @@ cluster-admin access — fine for a single-user homelab, but keep it as private 
 
 ## GitOps (Argo CD)
 
-Longhorn, VictoriaMetrics, VictoriaLogs, OpenSearch, Blocky, SearXNG, redis-operator, RedisInsight,
+Longhorn, VictoriaMetrics, VictoriaLogs, OpenSearch, Blocky, SearXNG, redis-operator, WhoDB,
 CloudNativePG, Postgres, Temporal, Homepage, Open WebUI, the descheduler, Trivy Operator, and the
 Tailscale Operator are no longer installed or upgraded by Ansible. Argo CD runs in-cluster (namespace
 `argocd`) and continuously reconciles every child `Application` under this **same** repo's `apps/`
@@ -1030,28 +1030,7 @@ kubectl -n blocky-cache get svc
 kubectl -n blocky logs deployment/blocky | grep -i redis
 ```
 
-### Browsing the data (RedisInsight)
-
-A single [RedisInsight](https://redis.io/insight/) instance for browsing/querying both clusters above -
-**not** a redis-operator feature, a separate app (`apps/redisinsight/`). No official Helm chart exists for
-it (Redis Ltd never published one, and the handful of community charts found have 1-8 GitHub stars each) -
-runs the official `redis/redisinsight` image directly via the same `bjw-s-labs/app-template` chart used for
-Blocky/SearXNG. Namespace: `redisinsight`.
-
-- **Pre-configured connections**: both `blocky-cache` and `searxng-cache` are pre-wired in via
-  `RI_PRE_SETUP_DATABASES_PATH` (`apps/redisinsight/manifests/pre-setup-databases-configmap.yaml`) - the
-  officially supported non-interactive setup mechanism, confirmed directly against RedisInsight's own
-  source. That mechanism has no Sentinel-specific fields at all, so both entries point at each cluster's
-  own operator-maintained `-master` Service (`blocky-cache-master`/`searxng-cache-master`) rather than
-  Sentinel directly or a specific pod - failover-aware for the same reason SearXNG's own connection is (see
-  above).
-- **Storage**: a small (256Mi) Longhorn PVC at `/data` - RedisInsight's own local settings store (saved
-  connections, Workbench history). Neither redis cluster has a password, so there's no actual secret
-  material for its at-rest encryption to protect here.
-- **Egress NetworkPolicy** (`apps/redisinsight/manifests/networkpolicy.yaml`): only CoreDNS plus port 6379
-  into the `blocky-cache`/`searxng-cache` namespaces - no port 26379, it never talks to Sentinel directly.
-
-**Access it**: `https://redisinsight.<tailnet>.ts.net` once the Tailscale Operator step below has synced.
+Browse both caches in [WhoDB](#whodb) (pre-connected to each cluster's `-master` Service).
 
 ## Postgres (CloudNativePG)
 
@@ -1192,7 +1171,7 @@ kubectl -n postgres get databaserole,database
 ## Home Dashboard (Homepage)
 
 [Homepage](https://gethomepage.dev/) (`gethomepage/homepage`), a landing page linking out to every other UI in
-this repo, deployed via the same `bjw-s-labs/app-template` chart as Blocky/SearXNG/RedisInsight - Homepage
+this repo, deployed via the same `bjw-s-labs/app-template` chart as Blocky/SearXNG/WhoDB - Homepage
 ships no official Helm chart of its own, only Docker instructions.
 
 - **Config**: `apps/homepage/manifests/configmap.yaml` - `settings.yaml`, `bookmarks.yaml`, `widgets.yaml`
@@ -1302,7 +1281,7 @@ choice made through Open WebUI's own Settings UI once it's running (it adds Open
 directly, no redeploy needed) - not something this repo should decide on your behalf.
 
 - **Chart**: the official `open-webui/open-webui` chart (`helm.openwebui.com`) - unlike Homepage/SearXNG/
-  RedisInsight, this project does publish and maintain its own chart, so no `bjw-s-labs/app-template`
+  WhoDB, this project does publish and maintain its own chart, so no `bjw-s-labs/app-template`
   fallback was needed. Its `image.tag` is pinned explicitly (`v0.11.4`, the actual latest tagged GitHub
   release) rather than trusting the chart's own default, which resolves to its `appVersion` - literally
   `dev`, since this chart has no separate stable release line.
@@ -1342,26 +1321,38 @@ openwebui_db_password: "<paste another generated value>"
 
 **Access it**: `https://chat.<tailnet>.ts.net` once the Tailscale Operator step below has synced.
 
-## pgAdmin
+## WhoDB
 
-A web SQL client for the cluster's Postgres (`apps/pgadmin/`, namespace `pgadmin`) - schema browser, Query
-Tool, explain plans. Runs the official `dpage/pgadmin4` image via the same `bjw-s-labs/app-template` chart
-as RedisInsight.
+A single web UI (`apps/whodb/`, namespace `whodb`) for the cluster's Postgres, OpenSearch and Redis -
+replaces the former pgAdmin and RedisInsight apps. Runs the official `clidey/whodb` image via the
+`bjw-s-labs/app-template` chart (no Helm chart worth depending on).
 
-- **Login to Postgres**: a dedicated read-only role, `pgadmin` (`apps/postgres/manifests/pgadmin-role.yaml`,
-  member of `pg_read_all_data`), connecting through `postgres-pooler-ro`. It can read every database but
-  can't change anything. Password is the `pgadmin_db_password` Vault variable, seeded into the `postgres`
-  namespace by `k8s_secrets`. On first connect pgAdmin asks for it once - tick "Save password".
-  For writes, use `kubectl -n postgres exec -it postgres-1 -c postgres -- psql -U postgres`.
-- **pgAdmin's own login**: none (desktop mode, `PGADMIN_CONFIG_SERVER_MODE=False`) - the tailnet is the
-  access control, same stance as Grafana's anonymous access.
-- **Storage**: 512Mi Longhorn PVC at `/var/lib/pgadmin` (saved passwords, query history, preferences).
-- **Egress NetworkPolicy**: DNS plus port 5432 to the `postgres` namespace.
+- **Pre-registered connections**: WhoDB login profiles, set via `WHODB_<TYPE>` env vars (JSON arrays; format
+  confirmed against `core/src/envconfig` in clidey/whodb).
+  - **Postgres** (`WHODB_POSTGRES`): one profile per database (`postgres`, `grafana`, `open_webui`,
+    `temporal`, `temporal_visibility`) via `postgres-pooler-ro`, as the read-only `whodb` role
+    (`apps/postgres/manifests/whodb-role.yaml`, member of `pg_read_all_data`). For writes use
+    `kubectl -n postgres exec -it postgres-1 -c postgres -- psql -U postgres`.
+  - **OpenSearch** (`WHODB_OPENSEARCH`): `opensearch.opensearch:9200` as `admin` (the cluster requires TLS +
+    auth), `SSL Mode: insecure` since the operator's cert is self-signed. This is the admin login, so
+    WhoDB can write to OpenSearch.
+  - **Redis** (`WHODB_REDIS`, plain env in `values.yaml` - no auth): `blocky-cache` and `searxng-cache`, via
+    each cluster's operator-maintained `-master` Service (failover-aware).
+  - Postgres and OpenSearch profiles carry passwords, so they're in the `whodb-env` Secret, built from
+    `whodb_postgres_profiles` / `whodb_opensearch_profiles` in `group_vars/all/cluster_secrets.yaml` and
+    seeded by `k8s_secrets`. The Postgres password is the existing Vault variable `pgadmin_db_password`
+    (name kept from the pgAdmin days).
+- **WhoDB's own login**: none beyond picking a profile - the tailnet is the access control.
+- **Redis caching**: WhoDB does not use Redis itself. Its only state is an encrypted session store
+  (`/data`, 256Mi Longhorn PVC); there is no cache-backend setting.
+- **Egress NetworkPolicy**: DNS, 5432 to `postgres`, 9200 to `opensearch`, 6379 to `blocky-cache` /
+  `searxng-cache`.
 
-**One-time**: add `pgadmin_db_password` (e.g. `openssl rand -hex 32`) to `group_vars/all/main.yaml` via
-`ansible-vault edit`, then re-run the `k8s_secrets` role before the first sync.
+**Access it**: `https://whodb.<tailnet>.ts.net`.
 
-**Access it**: `https://pgadmin.<tailnet>.ts.net`.
+**Migration note**: the old `pgadmin` DatabaseRole is replaced by `whodb`; the stale `pgadmin` Postgres role
+may linger - drop it with `DROP ROLE pgadmin;` as `postgres`. The old `pgadmin-db-credentials` Secret in the
+`postgres` namespace can be deleted too.
 
 ## Exposing UIs via Tailscale Operator
 
@@ -1446,11 +1437,10 @@ hostname shown there):
 | Longhorn | `https://longhorn.<tailnet>.ts.net` |
 | Blocky (`/metrics`) | `https://blocky.<tailnet>.ts.net` |
 | SearXNG | `https://search.<tailnet>.ts.net` |
-| RedisInsight | `https://redisinsight.<tailnet>.ts.net` |
 | Temporal Web UI | `https://temporal.<tailnet>.ts.net` |
 | Argo CD | `https://argocd.<tailnet>.ts.net` |
 | Open WebUI | `https://chat.<tailnet>.ts.net` |
-| pgAdmin | `https://pgadmin.<tailnet>.ts.net` |
+| WhoDB | `https://whodb.<tailnet>.ts.net` |
 
 Confirmed working from a phone with the Tailscale app active. If you test from a **Mac terminal or
 Safari** and it doesn't resolve, see the Troubleshooting note below before assuming the deployment is
@@ -1760,7 +1750,7 @@ most commonly after that resource was deleted or modified out-of-band (e.g. `kub
 The `helm_drift_check` role now only runs after Argo CD's own chart install (the one Helm release Ansible
 still manages directly) and checks whether every resource in its current manifest actually exists live.
 For every other chart (Longhorn, VictoriaMetrics, OpenSearch, Blocky, SearXNG, redis-operator,
-RedisInsight, CloudNativePG, Tailscale Operator), this
+WhoDB, CloudNativePG, Tailscale Operator), this
 class of drift can't happen anymore in practice — Argo CD's continuous reconciliation would just re-apply
 the missing resource on its next sync — but for the Argo CD install itself, if it detects drift, the
 playbook **fails with the exact recovery command to run** (a `helm upgrade` invoked directly rather than

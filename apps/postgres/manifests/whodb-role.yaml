@@ -1,0 +1,24 @@
+# Read-only login for WhoDB (apps/whodb/) - it can read every database on
+# the cluster (pg_read_all_data) but not write or change anything, so a
+# stray query in the web UI can't damage an app's data. WhoDB connects
+# through postgres-pooler-ro. Use the `postgres` superuser via kubectl exec
+# for anything that needs write access.
+#
+# Password Secret (whodb-db-credentials) is seeded by the k8s_secrets
+# Ansible role; the same password is also embedded in WhoDB's own
+# `whodb-env` Secret (WHODB_POSTGRES profiles).
+apiVersion: postgresql.cnpg.io/v1
+kind: DatabaseRole
+metadata:
+  name: whodb
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  name: whodb
+  ensure: present
+  login: true
+  inRoles:
+    - pg_read_all_data
+  passwordSecret:
+    name: whodb-db-credentials
