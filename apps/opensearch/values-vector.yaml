@@ -168,17 +168,28 @@ customConfig:
     vlogs:
       type: elasticsearch
       inputs: [parser]
-      endpoints: ['http://vls-victoria-logs-single-server.monitoring.svc.cluster.local:9428']
+      # Confirmed live, broken: VictoriaLogs rejected every request with
+      # "unsupported path requested: \"/_bulk\"" (Vector's elasticsearch
+      # sink always appends /_bulk to whatever endpoint URL it's given) -
+      # the real path is /insert/elasticsearch/_bulk, confirmed against
+      # VictoriaLogs' own Vector-setup docs, not the bare root this
+      # previously carried over unverified. The VL-Time-Field/VL-Stream-
+      # Fields/VL-Msg-Field request headers below that path were wrong too
+      # (same source) - those three are `query` params (_time_field/
+      # _stream_fields/_msg_field), not headers; only AccountID/ProjectID
+      # (multi-tenancy) really are headers.
+      endpoints: ['http://vls-victoria-logs-single-server.monitoring.svc.cluster.local:9428/insert/elasticsearch/']
       mode: bulk
       api_version: v8
       compression: gzip
       healthcheck:
         enabled: false
+      query:
+        _time_field: timestamp
+        _stream_fields: stream,kubernetes.pod_name,kubernetes.container_name,kubernetes.pod_namespace
+        _msg_field: log
       request:
         headers:
-          VL-Time-Field: timestamp
-          VL-Stream-Fields: stream,kubernetes.pod_name,kubernetes.container_name,kubernetes.pod_namespace
-          VL-Msg-Field: message,msg,_msg,log.msg,log.message,log
           AccountID: '0'
           ProjectID: '0'
     # Same reasoning as opensearch_host above - journald events carry none
@@ -187,16 +198,22 @@ customConfig:
     vlogs_host:
       type: elasticsearch
       inputs: [journal]
-      endpoints: ['http://vls-victoria-logs-single-server.monitoring.svc.cluster.local:9428']
+      # Same two fixes as the vlogs sink above - real bulk path, and
+      # _time_field/_stream_fields/_msg_field as query params not headers.
+      # journald events keep their own .message field (no parser transform
+      # renames it the way k8s container logs' .log does), confirmed
+      # against a live sample doc already indexed in OpenSearch.
+      endpoints: ['http://vls-victoria-logs-single-server.monitoring.svc.cluster.local:9428/insert/elasticsearch/']
       mode: bulk
       api_version: v8
       compression: gzip
       healthcheck:
         enabled: false
+      query:
+        _time_field: timestamp
+        _stream_fields: host,_SYSTEMD_UNIT,PRIORITY
+        _msg_field: message
       request:
         headers:
-          VL-Time-Field: timestamp
-          VL-Stream-Fields: host,_SYSTEMD_UNIT,PRIORITY
-          VL-Msg-Field: message,MESSAGE
           AccountID: '0'
           ProjectID: '0'
