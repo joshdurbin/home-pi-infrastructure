@@ -108,6 +108,17 @@ spec:
                 port:
                   number: 4000
 ---
+# Backend port is 80 ("http"), not 443 ("https") - both route to the same
+# argocd-server container port (8080, plain HTTP, since server.insecure:
+# true below terminates TLS at Tailscale same as every other UI here), but
+# confirmed live that pointing this at port 443 breaks it: the Tailscale
+# operator infers "speak TLS to this backend" from the Service port being
+# named "https" (kubectl -n argocd get svc argocd-server -o yaml confirms
+# both ports 80/443 target the identical port 8080), so hitting the real
+# plain-HTTP listener with a TLS handshake got "connection reset by peer"
+# in the ingress-proxies pod logs and a 502 to the browser. Port 80 is
+# named "http" on the same Service and reaches the exact same backend -
+# this is a protocol-detection fix only, not a behavior change.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -128,7 +139,7 @@ spec:
               service:
                 name: argocd-server
                 port:
-                  number: 443
+                  number: 80
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
