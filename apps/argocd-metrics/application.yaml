@@ -1,0 +1,44 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-metrics
+  namespace: argocd
+  annotations:
+    # No chart source - a single VMServiceScrape is a complete manifest on
+    # its own, same shape as apps/postgres/ (no Helm chart there either).
+    # Separate little Application rather than folding this into
+    # roles/argocd/'s own Ansible-templated resources (appproject.yaml.j2,
+    # values.j2, etc.) deliberately: Argo CD's own *installation* has to be
+    # Ansible-driven (it can't GitOps-bootstrap itself), but this object has
+    # no such circular dependency - it only needs the argocd namespace
+    # (exists from the start) and the VictoriaMetrics operator's
+    # VMServiceScrape CRD (installed by apps/victoria-metrics/, wave 1).
+    # Applying it via a one-shot Ansible task during the Argo CD role would
+    # hit that CRD before it exists on a truly fresh bootstrap (Argo CD
+    # itself isn't even running yet at that point, so apps/victoria-metrics/
+    # hasn't synced) - a real failure class already documented on
+    # apps/blocky/application.yaml's own sync-wave comment for the exact
+    # same CRD. Argo CD's own retry/backoff (below) handles that race
+    # gracefully; a plain `kubernetes.core.k8s` Ansible task would not.
+    # Wave 2, same tier and same reasoning as Blocky's VMServiceScrape -
+    # strictly after victoria-metrics (wave 1).
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  sources:
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      path: apps/argocd-metrics/manifests

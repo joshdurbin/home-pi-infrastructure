@@ -58,7 +58,9 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
    tailscale_oauth_client_id: "<operator client from step 4>"
    tailscale_oauth_client_secret: "<operator client from step 4>"
    searxng_secret_key: "<output of: openssl rand -hex 32>"
+   searxng_metrics_password: "<output of: openssl rand -hex 32>"
    opensearch_admin_password: "<strong password - min 8 chars, upper, lower, digit, special char>"
+   openwebui_secret_key: "<output of: openssl rand -hex 32>"
    ```
 
 6. Deploy everything:
@@ -73,14 +75,14 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
    All nodes should show `Ready`, all Argo CD Applications `Synced`/`Healthy`.
 
 From there, Longhorn (storage), VictoriaMetrics/Grafana (metrics), OpenSearch/OpenSearch
-Dashboards (logs), Blocky (DNS), SearXNG (search), the redis-operator (Blocky's and SearXNG's own small
-caching clusters), RedisInsight (a UI for browsing those caches), CloudNativePG (a Postgres cluster on
-the `database=true` nodes, behind PgBouncer poolers), Temporal (a workflow orchestration platform,
-backed by that same Postgres cluster), Homepage (a dashboard linking out to every other UI below), the
-descheduler (periodically rebalances pods across nodes), Trivy Operator (continuous vulnerability
-scanning), and the Tailscale Operator all come up on their own — Argo CD
-manages them from this repo's `apps/` directory. See [docs/REFERENCE.md](docs/REFERENCE.md) for what
-each one does.
+Dashboards + VictoriaLogs (logs, dual-shipped to both), Blocky (DNS), SearXNG (search), the redis-operator
+(Blocky's and SearXNG's own small caching clusters), RedisInsight (a UI for browsing those caches),
+CloudNativePG (a Postgres cluster on the `database=true` nodes, behind PgBouncer poolers), Temporal (a
+workflow orchestration platform, backed by that same Postgres cluster), Homepage (a dashboard linking out
+to every other UI below), Open WebUI (a chat UI for LLMs - no backend wired up, add one via its own
+Settings UI), the descheduler (periodically rebalances pods across nodes), Trivy Operator (continuous
+vulnerability scanning), and the Tailscale Operator all come up on their own — Argo CD manages them from
+this repo's `apps/` directory. See [docs/REFERENCE.md](docs/REFERENCE.md) for what each one does.
 
 ## Make targets
 
@@ -121,6 +123,7 @@ Once Tailscale is set up and synced:
 | Blocky metrics | `https://blocky.<tailnet>.ts.net` |
 | RedisInsight | `https://redisinsight.<tailnet>.ts.net` |
 | Temporal Web UI | `https://temporal.<tailnet>.ts.net` |
+| Open WebUI | `https://chat.<tailnet>.ts.net` |
 
 (Replace `<tailnet>` with your tailnet's `.ts.net` domain — run `tailscale status` on any connected device
 to find it.)
@@ -138,6 +141,6 @@ kubectl get nodes
 ## More detail
 
 [docs/REFERENCE.md](docs/REFERENCE.md) covers: project structure, the GitOps split between Ansible and
-Argo CD, per-app configuration (Longhorn, VictoriaMetrics, OpenSearch, Blocky, SearXNG, redis-operator,
-RedisInsight, Postgres/CloudNativePG, Temporal, Homepage, descheduler, Trivy Operator, Tailscale
-Operator), user management, node maintenance, and troubleshooting.
+Argo CD, per-app configuration (Longhorn, VictoriaMetrics, VictoriaLogs, OpenSearch, Blocky, SearXNG,
+redis-operator, RedisInsight, Postgres/CloudNativePG, Temporal, Homepage, Open WebUI, descheduler, Trivy
+Operator, Tailscale Operator), user management, node maintenance, and troubleshooting.

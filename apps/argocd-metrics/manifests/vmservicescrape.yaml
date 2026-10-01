@@ -1,0 +1,26 @@
+# Wires Argo CD's own native Prometheus metrics into vmagent.
+# controller.metrics.enabled / server.metrics.enabled /
+# repoServer.metrics.enabled / applicationSet.metrics.enabled
+# (roles/argocd/templates/values.j2 - Argo CD's own install is Ansible-
+# driven, not GitOps, so that toggle lives there, not in apps/) each create
+# their own dedicated Service - argocd-application-controller-metrics,
+# argocd-server-metrics, argocd-repo-server-metrics,
+# argocd-applicationset-controller-metrics - confirmed via a real
+# `helm template` render against chart argo-cd 10.9.2: all four carry the
+# label app.kubernetes.io/part-of: argocd and all four name their metrics
+# port "http-metrics", so one selector + one named port covers all four.
+# app.kubernetes.io/part-of: argocd also matches Argo CD's other, non-metrics
+# Services (argocd-server, argocd-repo-server, argocd-redis, etc.) - safe
+# regardless, since none of those have a port literally named "http-metrics"
+# for this scrape to find.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: argocd
+  endpoints:
+    - port: http-metrics

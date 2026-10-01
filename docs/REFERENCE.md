@@ -19,6 +19,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [Storage (Longhorn)](#storage-longhorn)
 - [Monitoring (VictoriaMetrics, Grafana)](#monitoring-victoriametrics-grafana)
 - [Logging (OpenSearch)](#logging-opensearch)
+- [Logs, Also in VictoriaLogs](#logs-also-in-victorialogs)
 - [DNS (Blocky)](#dns-blocky)
 - [Search (SearXNG)](#search-searxng)
 - [Redis Clusters (Blocky + SearXNG Caching)](#redis-clusters-blocky--searxng-caching)
@@ -27,6 +28,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [Home Dashboard (Homepage)](#home-dashboard-homepage)
 - [Node Rebalancing (descheduler)](#node-rebalancing-descheduler)
 - [Vulnerability Scanning (Trivy Operator)](#vulnerability-scanning-trivy-operator)
+- [Open WebUI](#open-webui)
 - [Exposing UIs via Tailscale Operator](#exposing-uis-via-tailscale-operator)
 - [Tailscale Integration (Optional)](#tailscale-integration-optional)
 - [Cluster Configuration](#cluster-configuration)
@@ -555,10 +557,14 @@ cluster-admin access — fine for a single-user homelab, but keep it as private 
 
 ## GitOps (Argo CD)
 
-Longhorn, VictoriaMetrics, OpenSearch, Blocky, SearXNG, redis-operator, RedisInsight, CloudNativePG,
-Postgres, Temporal, Homepage, the descheduler, Trivy Operator, and the Tailscale Operator are no longer
-installed or upgraded by Ansible. Argo CD runs in-cluster
-(namespace `argocd`) and continuously reconciles all fourteen from this **same** repo's `apps/` directory — edit a file there, commit, and Argo CD applies it within its
+Longhorn, VictoriaMetrics, VictoriaLogs, OpenSearch, Blocky, SearXNG, redis-operator, RedisInsight,
+CloudNativePG, Postgres, Temporal, Homepage, Open WebUI, the descheduler, Trivy Operator, and the
+Tailscale Operator are no longer installed or upgraded by Ansible. Argo CD runs in-cluster (namespace
+`argocd`) and continuously reconciles every child `Application` under this **same** repo's `apps/`
+directory (one directory can hold more than one `Application` - some apps are deliberately split across
+a few, ordered by `sync-wave`, to avoid CRD-ordering races - so this is deliberately not quoted as a
+single number that would just go stale again at the next addition) — edit a file there, commit, and Argo
+CD applies it within its
 next poll cycle (or immediately via `argocd app sync` / the UI). This replaced hand-templating every
 chart's values through Jinja and running `kubectl`/`helm` manually to fix drift — Argo CD's own continuous
 reconciliation makes drift structurally impossible to miss.
@@ -599,14 +605,27 @@ Then check in:
 kubectl -n argocd get pods
 kubectl -n argocd get applications
 ```
-All ten child Applications (plus `root`) should show `Synced`/`Healthy`. Access the UI at
+Every child Application (plus `root`) should show `Synced`/`Healthy` (see the GitOps section above for
+why this repo stopped quoting an exact count here). Access the UI at
 `https://argocd.<tailnet>.ts.net` once the Tailscale Operator Application has synced (see below), or via
 `kubectl -n argocd port-forward svc/argocd-server 8080:443` in the meantime — it runs with
 `server.insecure: true` (TLS is terminated by Tailscale, same as every other UI in this cluster), and
 `dex`/`notifications` are disabled (no SSO, unused in a single-user homelab).
 
+**Argo CD's own metrics**: `controller.metrics.enabled`/`server.metrics.enabled`/
+`repoServer.metrics.enabled`/`applicationSet.metrics.enabled` (`roles/argocd/templates/values.j2` - Argo
+CD's own install is Ansible-driven, not GitOps, so its chart values live here rather than in `apps/`)
+each create a dedicated metrics Service, all four sharing the label `app.kubernetes.io/part-of: argocd`
+and a port named `http-metrics` - confirmed via a real `helm template` render, not assumed. Scraped by
+`apps/argocd-metrics/` (its own tiny Application, not another Ansible-templated resource) - it needs
+victoria-metrics' `VMServiceScrape` CRD (wave 1), which doesn't exist yet at the point Ansible bootstraps
+Argo CD on a fresh install, so it has to be GitOps-managed (Argo CD's own retry/backoff handles that race
+gracefully; a one-shot Ansible task wouldn't). Dashboard: grafana.com ID 14584, the official upstream
+"ArgoCD" dashboard.
+
 **Secrets bridge**: `apps/` must never contain real credentials, but a few of these apps need some (Grafana
-admin password, Tailscale OAuth client, SearXNG's `secret_key` — Blocky needs none at all, see below).
+admin password, Tailscale OAuth client, SearXNG's `secret_key` and metrics password, OpenSearch's admin
+password, Open WebUI's session-signing key — Blocky needs none at all, see below).
 Those stay exactly where they already were — Ansible Vault, in `group_vars/all/main.yaml` — and a single
 role, **`k8s_secrets`**, applies the resulting `Secret`/`ConfigMap` objects directly to the cluster,
 decoupled from git
@@ -667,7 +686,7 @@ kubectl -n longhorn get pods
 
 ## Monitoring (VictoriaMetrics, Grafana)
 
-Metrics for the whole cluster, retained for **48 hours**. Namespace: `monitoring`.
+Metrics for the whole cluster, retained for **7 days**. Namespace: `monitoring`.
 **The chart install and all settings now live in this repo's `apps/` directory** (see [GitOps (Argo CD)](#gitops-argo-cd))
 (`apps/victoria-metrics/`) — Argo CD reconciles it continuously. This repo's only
 remaining job here is seeding the Grafana admin credentials Secret via the generic `k8s_secrets` role (see
@@ -715,7 +734,7 @@ VictoriaMetrics' own UI is at `http://localhost:8428/vmui/`; the raw PromQL-comp
 
 ## Logging (OpenSearch)
 
-Container + host logs for the whole cluster, retained for **~48 hours** (index-boundary granularity, not
+Container + host logs for the whole cluster, retained for **~7 days** (index-boundary granularity, not
 an exact cutoff - see below). Namespace: `opensearch`. The **OpenSearch Kubernetes Operator** reconciles
 a set of custom resources in `apps/opensearch/manifests/` into the actual running cluster - Argo CD
 installs the operator and applies those resources continuously. See `apps/opensearch/README.md` for the
@@ -723,8 +742,10 @@ full rationale (why an operator over the plain chart an earlier version of this 
 over Elasticsearch/Kibana naming, why TLS + auth are mandatory here unlike everywhere else in this
 cluster, why Vector rather than a new log shipper); this section covers day-to-day access.
 
-Replaced `apps/victoria-logs/` (VictoriaLogs + the same Vector shipper) — same retention target, same
-shipper, different backend.
+Dual-shipped to `apps/victoria-logs/` too (VictoriaLogs, re-added alongside OpenSearch rather than
+replacing it again - see [Logs, Also in VictoriaLogs](#logs-also-in-victorialogs) below) - the same
+Vector DaemonSet writes every log line to both backends, same retention target on both, so either can be
+used to cross-check the other.
 
 **Prerequisite**: `opensearch_admin_password` must be set in Vault (`ansible-vault edit
 group_vars/all/main.yaml`) before this deploys successfully - see [Secrets & Variables](#secrets--variables).
@@ -738,7 +759,7 @@ group_vars/all/main.yaml`) before this deploys successfully - see [Secrets & Var
   `logs-*`/`logs-host-*` indices via OpenSearch's bulk API, now authenticating with TLS + basic auth
   (`apps/opensearch/values-vector.yaml`).
 - **Retention**: an `OpenSearchISMPolicy` custom resource (`apps/opensearch/manifests/ism-policy.yaml`)
-  deletes `logs-*` indices once `min_index_age: 2d`; an `OpenSearchIndexTemplate`
+  deletes `logs-*` indices once `min_index_age: 7d`; an `OpenSearchIndexTemplate`
   (`apps/opensearch/manifests/index-template.yaml`) sets `number_of_replicas: 0` for those same indices
   (required, not an optimization - there's only one data node).
 - **Auth**: unlike everywhere else in this cluster (Grafana's anonymous Admin, Argo CD via tailnet),
@@ -746,6 +767,14 @@ group_vars/all/main.yaml`) before this deploys successfully - see [Secrets & Var
   operator-generated (self-signed), and Vector/Dashboards authenticate with the same
   `opensearch-admin-credentials` Secret. Dashboards' own TLS to the *browser* is still disabled
   (`dashboards.tls.enable: false` in `cluster.yaml`) - Tailscale remains the access boundary for that leg.
+- **Prometheus metrics**: the official `opensearch-project/opensearch-prometheus-exporter` plugin,
+  installed declaratively via `cluster.yaml`'s `general.pluginsList` (version-matched exactly to this
+  cluster's OpenSearch, 3.8.0.0 - updating that list triggers a rolling restart to install it). Exposes
+  `/_prometheus/metrics` on the same port 9200 - the security plugin wraps that endpoint too, so
+  `apps/opensearch/manifests/vmservicescrape.yaml` authenticates with the same
+  `opensearch-admin-credentials` Secret, over HTTPS with `insecureSkipVerify` (self-signed cert, same as
+  Vector). Dashboard: grafana.com ID 20827, built from the plugin's own mixin (the plugin was migrated
+  to the `opensearch-project` org from an earlier Aiven-maintained fork - same metric naming lineage).
 
 ### Accessing OpenSearch Dashboards
 
@@ -782,6 +811,43 @@ Postgres-specific Ansible plays can target `hosts: database` directly rather tha
 *not* driven by group_vars, since this repo's `ansible.cfg` doesn't set `hash_behaviour = merge`, so a
 group_vars-level `k8s_labels` would be silently replaced outright (not merged) by any host's own
 `k8s_labels` in `host_vars/`, rather than combined with it.
+
+## Logs, Also in VictoriaLogs
+
+The same log stream OpenSearch receives is dual-shipped to VictoriaLogs too (`apps/victoria-logs/`,
+chart `victoria-logs-single`, namespace `monitoring`) - re-added alongside OpenSearch rather than
+replacing it again (this repo ran VictoriaLogs alone before OpenSearch existed, then OpenSearch alone
+after - see git history on this directory). Not a migration path or a redundant backup: both are live,
+both get every log line, and either can be used to cross-check the other.
+
+- **Shipping**: the one Vector DaemonSet (`apps/opensearch/values-vector.yaml` - still that file, not a
+  new one, since Vector is one shared chart release, not one per backend) gained two more sinks (`vlogs`,
+  `vlogs_host`) alongside the existing `opensearch`/`opensearch_host` ones, same inputs, same data.
+  VictoriaLogs has no native Vector sink in this cluster's pinned `vector:0.58.0-debian` (checked
+  upstream's own `src/sinks` tree at that tag - no `victorialogs` directory exists), so these use the
+  `elasticsearch` sink type pointed at VictoriaLogs' own Elastic-bulk-compatible endpoint plus its
+  `VL-Time-Field`/`VL-Stream-Fields`/`VL-Msg-Field`/`AccountID`/`ProjectID` headers (its own documented
+  integration method for exactly this case) - recovered verbatim from this repo's prior VictoriaLogs
+  incarnation, not re-derived. No TLS, no auth, unlike the OpenSearch sinks - VictoriaLogs has no
+  security-plugin equivalent and this chart runs with none by default.
+- **Retention**: `7d`, matching OpenSearch's own `min_index_age` (see [Logging
+  (OpenSearch)](#logging-opensearch) above) so both backends hold a comparable, honestly-equal window of
+  the same dual-shipped data.
+- **Placement**: pinned to the `telemetry=true` nodes (`nodeSelector`), same convention `vmsingle`
+  already uses for stateful monitoring/logging storage in this cluster.
+- **Grafana datasource**: `victoriametrics-logs-datasource` (`apps/victoria-metrics/values.yaml`'s
+  `grafana.plugins`) was explicitly removed when this app was removed the first time - restored now,
+  alongside a `grafana-datasource-configmap.yaml` using the same sidecar-provisioning mechanism
+  (`grafana_datasource: "1"` label) already used for the metrics datasource.
+- **Unconfirmed**: the server's `512Mi` memory limit is carried over from this app's prior incarnation,
+  not re-verified against today's actual (dual-shipped) log volume - worth a `kubectl top pod`/OOMKilled
+  check after deploy, same as every other live-confirmed resize in this repo (e.g. `vmsingle`'s own).
+
+**Troubleshooting:**
+```bash
+kubectl -n monitoring get pods -l app.kubernetes.io/name=victoria-logs-single
+kubectl -n monitoring logs -l app.kubernetes.io/name=victoria-logs-single
+```
 
 ## DNS (Blocky)
 
@@ -863,23 +929,28 @@ is a web UI, not a port every LAN client needs to hit directly (same pattern as 
   `roles/k8s_secrets/templates/searxng-config.yaml.j2`, pointing at `searxng-cache` — see
   [Redis Clusters](#redis-clusters-blocky--searxng-caching) below for the real caveat: SearXNG's client
   can't discover a new master after a failover, unlike Blocky's.
-- **Metrics**: SearXNG itself still has no native Prometheus endpoint (unlike Blocky) — not attempted here
-  since nothing in this repo should claim scraping wiring that doesn't actually exist (see the
-  adguard-exporter note in [DNS (Blocky)](#dns-blocky) for exactly the mistake this is avoiding repeating).
-  Its redis cache's own metrics *are* scraped, though — see below.
+- **Metrics**: SearXNG does have a native OpenMetrics endpoint after all (confirmed directly against its
+  source, `searx/settings.yml`/`searx/webapp.py` - an earlier version of this doc claimed otherwise and
+  was wrong). `general.enable_metrics`/`general.open_metrics` (set via the same seeded `settings.yml`,
+  `searxng_metrics_password`) expose `/metrics`, guarded by HTTP Basic Auth where **only the password is
+  ever checked** - the username is never validated, so the `searxng-metrics-basic-auth` Secret's
+  username is a fixed placeholder, not a real credential. No community Grafana dashboard exists for this
+  (checked) - the metrics are scraped and queryable, just not pre-visualized. Its redis cache's own
+  metrics *are* scraped too, and do have a dashboard — see below.
 - **Egress NetworkPolicy** (`apps/searxng/manifests/networkpolicy.yaml`): port 443 stays broad by
   necessity — search engines have far too many arbitrary/rotating IPs to allowlist, unlike Blocky/AdGuard's
   fixed Cloudflare DoT IPs. Port 53 to CoreDNS resolves each engine's hostname.
 
-**One-time**: create the secret key in Vault before first deploy — a fresh random value is fine, there's
-nothing to remember about it:
+**One-time**: create the secret key and metrics password in Vault before first deploy — fresh random
+values are fine, there's nothing to remember about either:
 ```bash
 openssl rand -hex 32
 ansible-vault edit group_vars/all/main.yaml
 ```
 Add:
 ```yaml
-searxng_secret_key: "<paste the generated value>"
+searxng_secret_key: "<paste a generated value>"
+searxng_metrics_password: "<paste another generated value>"
 ```
 
 **Seed/update the config:**
@@ -901,7 +972,14 @@ Ansible except SearXNG's `valkey.url` setting (part of its seeded `settings.yml`
 - **Operator**: [OT-Container-Kit redis-operator](https://github.com/OT-CONTAINER-KIT/redis-operator)
   (`apps/redis-operator/`), namespace `redis-operator`, watches every namespace for its `RedisReplication`
   and `RedisSentinel` CRDs. Chosen over a Bitnami-style Helm chart specifically to avoid depending on
-  Bitnami's chart/image catalog, which has been moving free rolling updates behind a paid tier.
+  Bitnami's chart/image catalog, which has been moving free rolling updates behind a paid tier. Its own
+  controller metrics (distinct from the redis_exporter sidecars below, which scrape the Redis clusters
+  it manages, not the operator itself) are scraped via `apps/redis-operator-metrics/` - split into its
+  own Application (same `VMServiceScrape`-needs-victoria-metrics'-CRD race Blocky's own sync-wave comment
+  describes) rather than folded into `apps/redis-operator/` itself, since that app has to stay at wave 1
+  for Blocky's/SearXNG's own redis clusters below to depend on. No dedicated Grafana dashboard exists for
+  the controller's own metrics (checked) - the "Redis (Kubernetes mode)" dashboard below covers the
+  managed clusters, not this.
 - **Topology per cluster**: a `RedisReplication` (`clusterSize: 2` — one master, one replica, each with its
   own 512Mi Longhorn PVC) plus a separate `RedisSentinel` (`clusterSize: 3`, quorum 2-of-3 — a real
   majority, which 2 sentinels can't provide) monitoring it. Namespaces: `blocky-cache`, `searxng-cache` —
@@ -1192,6 +1270,19 @@ image, publishing results as CRDs rather than needing a UI of its own.
   `mirror.gcr.io`, not a fixed IP set worth allowlisting.
 - **CRDs**: bundled in the chart (same large-annotation issue as Longhorn's/CNPG's own), hence
   `ServerSideApply=true` on the Application.
+- **Sync-wave 2, not 1**: `apps/trivy-operator/manifests/vmservicescrape.yaml` needs victoria-metrics'
+  own CRD (wave 1) to exist first - same race class Blocky's own sync-wave comment describes; nothing
+  else depends on trivy-operator's own CRDs at any particular wave, so bumping this app's wave (unlike
+  redis-operator's, see [Redis Clusters](#redis-clusters-blocky--searxng-caching) above) was the simpler
+  fix, no split-app needed.
+- **Prometheus metrics**: `metricsFindingsEnabled` (chart default `true`) plus `metricsVulnIdEnabled`/
+  `metricsExposedSecretInfo`/`metricsConfigAuditInfo`/`metricsRbacAssessmentInfo` (chart default `false`,
+  turned on here - each adds real cardinality per upstream's own warning, revisit if vmsingle's memory
+  ever gets tight again). Dashboard: grafana.com ID 22010, which explicitly requires
+  `metricsVulnIdEnabled: true` - confirmed this cluster's config satisfies that.
+- **Resources**: the controller's own `resources.limits.memory` is `512Mi`, not the original `256Mi` -
+  confirmed live, OOMKilled (`exitCode: 137`) repeatedly on first deploy. Reconciling against every pod
+  already running in this ~150-pod cluster on first start is a bigger initial spike than steady-state.
 
 **Troubleshooting:**
 ```bash
@@ -1201,6 +1292,46 @@ kubectl get vulnerabilityreports,configauditreports,exposedsecretreports -A
 # A specific image's findings
 kubectl get vulnerabilityreport -n <namespace> -l trivy-operator.resource.name=<deployment-name> -o yaml
 ```
+
+## Open WebUI
+
+A self-hosted chat UI for LLMs ([open-webui/open-webui](https://github.com/open-webui/open-webui),
+`apps/open-webui/`, namespace `open-webui`). Deliberately deployed with **no LLM backend configured** -
+no Ollama, no OpenAI/Anthropic API key, nothing baked into git. Which provider to use is a runtime
+choice made through Open WebUI's own Settings UI once it's running (it adds OpenAI-compatible endpoints
+directly, no redeploy needed) - not something this repo should decide on your behalf.
+
+- **Chart**: the official `open-webui/open-webui` chart (`helm.openwebui.com`) - unlike Homepage/SearXNG/
+  RedisInsight, this project does publish and maintain its own chart, so no `bjw-s-labs/app-template`
+  fallback was needed. Its `image.tag` is pinned explicitly (`v0.11.4`, the actual latest tagged GitHub
+  release) rather than trusting the chart's own default, which resolves to its `appVersion` - literally
+  `dev`, since this chart has no separate stable release line.
+- **Bundled subcharts off**: `ollama.enabled`/`pipelines.enabled` both default `true` in this chart (they
+  auto-install a local Ollama and a plugin middleware) - turned off here to match the no-backend scope
+  above. `websocket.manager` left as the in-memory default (`redis.enabled: false`) - only needed for
+  multi-replica websocket fan-out, and this is a single replica.
+- **Persistence**: a 2Gi Longhorn PVC for the SQLite DB (chats/users/settings) - unlike Homepage
+  (stateless) or SearXNG (deliberately no PVC), this app genuinely has state to keep across restarts.
+- **`WEBUI_SECRET_KEY`**: signs session cookies - not an LLM-backend credential, same category as
+  Homepage's own `HOMEPAGE_ALLOWED_HOSTS` was (required for the app to run at all, not a provider API
+  key). Wired via `extraEnvVars` + a pre-created Secret, seeded by the `k8s_secrets` bridge with a new
+  `openwebui_secret_key` Vault variable - see [Secrets & Variables](#secrets--variables).
+- **Egress NetworkPolicy**: DNS-only for now - couldn't fully confirm or rule out a startup update-check
+  call in the time available, so this stays conservative rather than guessing a broad `443` rule it
+  might not need. Whichever LLM backend gets configured later (an external API, or an in-cluster Ollama)
+  will need its own egress rule added at that point regardless.
+
+**One-time**: create the session-signing key in Vault before first deploy:
+```bash
+openssl rand -hex 32
+ansible-vault edit group_vars/all/main.yaml
+```
+Add:
+```yaml
+openwebui_secret_key: "<paste the generated value>"
+```
+
+**Access it**: `https://chat.<tailnet>.ts.net` once the Tailscale Operator step below has synced.
 
 ## Exposing UIs via Tailscale Operator
 
@@ -1288,6 +1419,7 @@ hostname shown there):
 | RedisInsight | `https://redisinsight.<tailnet>.ts.net` |
 | Temporal Web UI | `https://temporal.<tailnet>.ts.net` |
 | Argo CD | `https://argocd.<tailnet>.ts.net` |
+| Open WebUI | `https://chat.<tailnet>.ts.net` |
 
 Confirmed working from a phone with the Tailscale app active. If you test from a **Mac terminal or
 Safari** and it doesn't resolve, see the Troubleshooting note below before assuming the deployment is
@@ -1303,6 +1435,13 @@ broken — there's a known, unrelated local-resolver quirk that can affect just 
   [Secrets bridge](#gitops-argo-cd).
 - To add another service later, add an `Ingress` to `apps/tailscale-operator/manifests/ingresses.yaml`
   and commit — no Ansible run needed, Argo CD picks it up on its own.
+- **Proxy connectivity metrics**: `manifests/proxyclass.yaml` (a `ProxyClass` with `spec.metrics.enable:
+  true`, referenced by `manifests/proxygroup.yaml`'s `spec.proxyClass`) makes the `ingress-proxies` pods
+  serve Tailscale connectivity metrics (bytes in/out, peer status - the `tailscaled` daemon's own stats,
+  **not** operator-reconciliation metrics - this chart has no toggle for the latter at all, confirmed via
+  `helm template`) at a `ingress-proxies-metrics` Service, scraped by `manifests/vmservicescrape.yaml`. No
+  compatible Grafana dashboard exists - the one candidate found (24177) polls the Tailscale *admin API*,
+  a different data source entirely, and would just show empty panels.
 - To make a specific one of these public (Funnel, not tailnet-only), add the annotation
   `tailscale.com/funnel: "true"` to that service's Ingress — deliberately not done here by default.
 
@@ -1497,14 +1636,18 @@ Update `inventory.dist` if your network differs.
 - **Encrypted with Vault**: `group_vars/all/main.yaml` — `k3s_join_token`, `tailscale_oauth_client_id`,
   `tailscale_oauth_client_secret` (used by `apps/tailscale-operator/`), `tailscale_node_oauth_client_id`,
   `tailscale_node_oauth_client_secret` (used by `roles/tailscale` to join nodes to the tailnet -
-  deliberately a separate OAuth client from the operator's), `searxng_secret_key`, `temporal_db_password`
-  (used by both `apps/postgres/manifests/temporal-database.yaml` and `apps/temporal/` - see
-  [Temporal](#temporal)), `opensearch_admin_password` (used by `apps/opensearch/` - unlike Grafana's
-  admin login, this one is a real, actively-used credential, since the OpenSearch Kubernetes Operator
-  makes auth mandatory on the cluster itself; min 8 chars, upper, lower, digit, special char - see
-  [Logging](#logging-opensearch)). The first pair never appear in `apps/` — see
-  [GitOps (Argo CD)](#gitops-argo-cd)'s "Secrets bridge"; the node-join pair are consumed directly by
-  `roles/tailscale` and never touch `apps/` either.
+  deliberately a separate OAuth client from the operator's), `searxng_secret_key`,
+  `searxng_metrics_password` (SearXNG's own `open_metrics` Basic Auth password - see [Search
+  (SearXNG)](#search-searxng) - only the password is ever checked, there's no real "username" behind
+  it), `temporal_db_password` (used by both `apps/postgres/manifests/temporal-database.yaml` and
+  `apps/temporal/` - see [Temporal](#temporal)), `opensearch_admin_password` (used by `apps/opensearch/`
+  - unlike Grafana's admin login, this one is a real, actively-used credential, since the OpenSearch
+  Kubernetes Operator makes auth mandatory on the cluster itself; min 8 chars, upper, lower, digit,
+  special char - see [Logging](#logging-opensearch)), `openwebui_secret_key` (signs Open WebUI's session
+  cookies, `WEBUI_SECRET_KEY` - not an LLM-provider credential; no API key for any backend lives in this
+  repo at all, that's configured through Open WebUI's own Settings UI after it's running). The first
+  pair never appear in `apps/` — see [GitOps (Argo CD)](#gitops-argo-cd)'s "Secrets bridge"; the
+  node-join pair are consumed directly by `roles/tailscale` and never touch `apps/` either.
 - **Unencrypted**: All other group_vars and host_vars
 
 To rotate secrets:

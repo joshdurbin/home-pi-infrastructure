@@ -1,0 +1,47 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: open-webui
+  namespace: argocd
+  annotations:
+    # Has its own PVC (Longhorn, wave 0) - same tier as every other
+    # end-user-facing app with a PVC (redisinsight, searxng-cache).
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: open-webui
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  sources:
+    # Official chart (helm.openwebui.com) - unlike Homepage/SearXNG/
+    # RedisInsight, open-webui does publish and maintain its own chart
+    # (github.com/open-webui/helm-charts), so no app-template fallback
+    # needed here. Its own versioning is continuous/dev-tagged per commit
+    # (no separate "stable" release line) - targetRevision pinned to the
+    # latest published chart version as of this writing, re-pin deliberately
+    # on future bumps rather than tracking a floating tag.
+    - repoURL: https://helm.openwebui.com/
+      chart: open-webui
+      targetRevision: 16.6.1-dev.380.1
+      helm:
+        releaseName: open-webui
+        valueFiles:
+          - $values/apps/open-webui/values.yaml
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      ref: values
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      path: apps/open-webui/manifests

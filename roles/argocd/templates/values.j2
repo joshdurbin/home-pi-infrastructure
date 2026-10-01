@@ -5,3 +5,17 @@ notifications:
 configs:
   params:
     server.insecure: true
+# Each of these deploys a dedicated metrics Service (all default false) -
+# see vmservicescrape.yaml.j2 beside this file for what scrapes them.
+controller:
+  metrics:
+    enabled: true
+server:
+  metrics:
+    enabled: true
+repoServer:
+  metrics:
+    enabled: true
+applicationSet:
+  metrics:
+    enabled: true

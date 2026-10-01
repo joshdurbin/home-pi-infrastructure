@@ -1,0 +1,66 @@
+# App only - no LLM backend wired up here deliberately. Open WebUI talks
+# to whatever OpenAI-compatible endpoint (or Ollama instance) you add
+# through its own Settings UI once it's running; which provider to use is
+# a choice for whoever's actually using this, not something to bake into
+# git. The two subchart toggles below that WOULD auto-install a backend
+# are explicitly turned off so this doesn't silently stand one up.
+
+image:
+  repository: ghcr.io/open-webui/open-webui
+  # Chart's own image.tag default is "" -> falls back to this chart
+  # version's appVersion, which is literally "dev" (confirmed via `helm
+  # show values` against the chart's own Chart.yaml - this chart has no
+  # separate "stable" release line, every published version tracks main).
+  # Pinned explicitly to the actual latest tagged GitHub release instead.
+  tag: v0.11.4
+
+# Bundled Ollama install - chart default is enabled: true. Off deliberately
+# per this app's scope: no LLM backend configured here, see top comment.
+ollama:
+  enabled: false
+
+# Bundled Pipelines subchart (extends Open WebUI with middleware/plugins) -
+# chart default is enabled: true. Off - nothing here needs it yet, and it's
+# easy to turn on later without touching anything else.
+pipelines:
+  enabled: false
+
+# Websocket manager default is "redis" (bundles its own Redis deployment,
+# chart default websocket.redis.enabled: true) - only actually needed for
+# multi-replica websocket fan-out. This is a single-replica deployment, so
+# the built-in in-memory manager (manager: "") covers it with one fewer pod
+# to run on this fleet.
+websocket:
+  manager: ''
+  redis:
+    enabled: false
+
+persistence:
+  enabled: true
+  storageClass: longhorn
+  # Chats/users/settings/SQLite DB - small for a single/few-user homelab
+  # instance, not model weights (no local Ollama here, see top comment).
+  size: 2Gi
+
+# WEBUI_SECRET_KEY signs session cookies - not an LLM-backend credential,
+# same category as Homepage's own HOMEPAGE_ALLOWED_HOSTS was: required for
+# the app to run at all, not a provider API key. No dedicated values.yaml
+# field exists for it in this chart, so it's wired the same way the
+# chart's own commented-out example shows for OPENAI_API_KEY - via
+# extraEnvVars + a pre-created Secret, seeded by the generic k8s_secrets
+# bridge (group_vars/all/cluster_secrets.yaml) with a new
+# openwebui_secret_key Vault variable, never committed here.
+extraEnvVars:
+  - name: WEBUI_SECRET_KEY
+    valueFrom:
+      secretKeyRef:
+        name: open-webui-secret-key
+        key: secret-key
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 1024Mi

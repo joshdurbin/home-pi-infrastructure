@@ -49,8 +49,11 @@ grafana:
       enabled: true
       org_role: Admin
   plugins:
-    # victoriametrics-logs-datasource removed with apps/victoria-logs/ (see
-    # apps/opensearch/) - was only ever needed for that datasource.
+    # victoriametrics-logs-datasource re-added - apps/victoria-logs/ is back
+    # (dual-shipped alongside OpenSearch, see apps/opensearch/values-vector.yaml),
+    # and apps/victoria-logs/manifests/grafana-datasource-configmap.yaml's
+    # datasource needs this plugin installed to render at all.
+    - victoriametrics-logs-datasource
     - victoriametrics-metrics-datasource
   persistence:
     accessModes:
@@ -158,7 +161,12 @@ vmsingle:
       requests:
         cpu: 10m
         memory: 2048Mi
-    retentionPeriod: 48h
+    # 48h -> 7d: confirmed live headroom before bumping (`kubectl exec
+    # deploy/vmsingle-... -- df -h`) - only ~1GB used of the 10Gi PVC after
+    # a full 48h retention window, and the storage=true nodes have ~227GB
+    # free each (`kubectl -n longhorn get nodes.longhorn.io`), so 7d (~3.5x
+    # the data) fits with ample room to spare - no PVC resize needed.
+    retentionPeriod: 7d
     storage:
       accessModes:
         - ReadWriteOnce

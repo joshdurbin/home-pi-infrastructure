@@ -5,3 +5,9 @@ metadata:
 spec:
   type: ingress
   replicas: 2
+  # See proxyclass.yaml beside this file - enables Tailscale connectivity
+  # metrics on these proxy pods. Confirmed against the ProxyGroup CRD's own
+  # schema (spec.proxyClass: "name of the ProxyClass custom resource that
+  # contains configuration options that should be applied to the resources
+  # created for this ProxyGroup").
+  proxyClass: metrics-enabled

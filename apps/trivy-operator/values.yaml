@@ -21,17 +21,44 @@ operator:
   # full pass across every image already running.
   scanJobsConcurrentLimit: 2
 
+  # Prometheus metrics. metricsFindingsEnabled is already the chart's own
+  # default (true) - listed explicitly for visibility, not a change. The
+  # other four are chart-default false, each with its own upstream warning
+  # ("cardinality is significantly increased with this feature enabled") -
+  # confirmed via `helm show values aquasecurity/trivy-operator --version
+  # 0.36.0`. Turned on anyway for a reasonably complete picture (findings +
+  # which CVEs + exposed secrets + config audit + RBAC over-permissiveness),
+  # but deliberately NOT metricsImageInfo/metricsInfraAssessmentInfo/
+  # metricsClusterComplianceInfo - those add further cardinality for
+  # information this cluster doesn't otherwise act on. Worth revisiting
+  # (metricsVulnIdEnabled especially, one series per CVE ID per image) if
+  # vmsingle's own memory ever becomes tight again the way it did before
+  # (see apps/victoria-metrics/values.yaml's own OOM comment).
+  metricsFindingsEnabled: true
+  metricsVulnIdEnabled: true
+  metricsExposedSecretInfo: true
+  metricsConfigAuditInfo: true
+  metricsRbacAssessmentInfo: true
+
 # The operator's own controller pod - continuously watches Pods/Jobs
 # cluster-wide and reconciles report CRs, so it gets a bit more than the
 # smallest operators here (redis-operator/cloudnative-pg's 50m/128Mi), but
 # still a fraction of what a real deployment would give it.
+#
+# limits.memory was 256Mi originally - confirmed live, OOMKilled (exitCode
+# 137, kubectl -n trivy-system get pod -o jsonpath='{...lastState}') within
+# seconds of starting, crash-looping repeatedly. Reconciling against every
+# pod already running in this ~150-pod, 7-node cluster on first start is a
+# bigger initial memory spike than the idle steady-state footprint this was
+# originally sized for. Doubled rather than nudged, same reasoning this
+# repo uses elsewhere for a live-confirmed OOM (e.g. vmsingle's own).
 resources:
   requests:
     cpu: 50m
     memory: 128Mi
   limits:
     cpu: 200m
-    memory: 256Mi
+    memory: 512Mi
 
 # Per scan-Job resources (one Job per distinct image scanned, up to
 # scanJobsConcurrentLimit at once) - left at the chart's own defaults.

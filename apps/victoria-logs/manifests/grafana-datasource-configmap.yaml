@@ -1,0 +1,29 @@
+# Grafana's sidecar-based datasource provisioning (grafana_datasource: "1"
+# label - same mechanism as every dashboard ConfigMap's grafana_dashboard: "1"
+# label elsewhere in this repo), not a chart-native datasource block -
+# victoria-logs-single's own chart has no such block, same reason
+# apps/victoria-metrics/ provisions its own datasources this way already.
+# url targets the exact Service name/port confirmed via `helm template vls
+# victoriametrics/victoria-logs-single --version 0.13.9` (releaseName "vls"
+# + the chart's fixed "-victoria-logs-single-server" suffix, port 9428) -
+# same Service apps/opensearch/values-vector.yaml's vlogs/vlogs_host sinks
+# write to, so this is reading back exactly what Vector writes there.
+# isDefault: false - OpenSearch Dashboards remains the primary log UI
+# (see docs), this is a secondary LogsQL-queryable view inside Grafana
+# alongside the metrics dashboards already there.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: victorialogs-grafana-ds
+  namespace: monitoring
+  labels:
+    grafana_datasource: "1"
+data:
+  victorialogs-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: VictoriaLogs
+        type: victoriametrics-logs-datasource
+        access: proxy
+        url: http://vls-victoria-logs-single-server:9428
+        isDefault: false

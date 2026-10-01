@@ -262,3 +262,31 @@ spec:
                 name: homepage
                 port:
                   number: 3000
+---
+# Hostname "chat" rather than "open-webui" - reads naturally as a URL
+# (https://chat.<tailnet>.ts.net), same reasoning as Homepage's own "home"
+# over "homepage". Service name/port confirmed via a local `helm template`
+# render of apps/open-webui's actual chart+values (not assumed): release
+# name "open-webui" produces a Service literally named "open-webui",
+# port 80 named "http".
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: chat
+  namespace: open-webui
+  annotations:
+    tailscale.com/proxy-group: ingress-proxies
+spec:
+  ingressClassName: tailscale
+  tls:
+    - hosts: [chat]
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: open-webui
+                port:
+                  number: 80

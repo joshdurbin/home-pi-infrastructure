@@ -88,3 +88,7 @@ data:
             href: https://temporal.{{HOMEPAGE_VAR_TAILNET_DOMAIN}}
             description: Workflow orchestration
             icon: mdi-sync-circle
+        - Open WebUI:
+            href: https://chat.{{HOMEPAGE_VAR_TAILNET_DOMAIN}}
+            description: LLM chat interface
+            icon: mdi-chat-processing-outline

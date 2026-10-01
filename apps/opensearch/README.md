@@ -67,12 +67,12 @@ the security plugin's own auth comes with it (an `admin`/`password` credential p
   CA here, and nothing outside the cluster ever talks to `https://opensearch:9200` directly) and
   authenticates with basic auth over that TLS connection.
 
-## Retention: 48h, matching VictoriaLogs
+## Retention: 7d, matching VictoriaLogs
 
-VictoriaLogs' `retentionPeriod: 48h` is enforced by `manifests/ism-policy.yaml`'s `min_index_age: 2d`
+VictoriaLogs' `retentionPeriod: 7d` is enforced by `manifests/ism-policy.yaml`'s `min_index_age: 7d`
 transition to a `delete` state, at daily-index granularity (`logs-%Y.%m.%d` / `logs-host-%Y.%m.%d` -
-`values-vector.yaml`'s `bulk.index`). Worth knowing: this is index-boundary granularity, not an exact 48h
-cutoff like VictoriaLogs had - data can live up to ~72h in the worst case at daily boundaries.
+`values-vector.yaml`'s `bulk.index`). Worth knowing: this is index-boundary granularity, not an exact 7d
+cutoff like VictoriaLogs enforces - data can live up to ~8d in the worst case at daily boundaries.
 
 ## Log shipping
 

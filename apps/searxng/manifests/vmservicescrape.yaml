@@ -1,0 +1,38 @@
+# Wires SearXNG's own OpenMetrics endpoint into vmagent - confirmed
+# directly against SearXNG's source that this exists at all (searx/
+# settings.yml's general.open_metrics, searx/webapp.py's auth check), not
+# assumed from docs; see roles/k8s_secrets/templates/searxng-config.yaml.j2
+# for how it's enabled. Service labels/port confirmed live (`kubectl -n
+# searxng get svc searxng -o yaml`) - same app-template chart convention
+# as Blocky's own apps/blocky/manifests/vmservicescrape.yaml, matched on
+# the Service's own app.kubernetes.io/service label.
+#
+# scheme: http, not https - SearXNG serves plain HTTP same as every other
+# app-template-based app here; Tailscale (not SearXNG itself) is what
+# terminates TLS for browser access.
+#
+# basicAuth: only the password is ever checked (see the config template's
+# own comment) - credentials come from the searxng-metrics-basic-auth
+# Secret seeded by group_vars/all/cluster_secrets.yaml's k8s_secrets bridge,
+# the same searxng_metrics_password value baked into settings.yml itself,
+# so these can never drift out of sync with each other.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: searxng
+  namespace: searxng
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/service: searxng
+  endpoints:
+    - port: http
+      path: /metrics
+      scheme: http
+      basicAuth:
+        username:
+          name: searxng-metrics-basic-auth
+          key: username
+        password:
+          name: searxng-metrics-basic-auth
+          key: password

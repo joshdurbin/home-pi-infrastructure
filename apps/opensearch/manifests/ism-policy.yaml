@@ -1,8 +1,12 @@
 # Replaces the hand-rolled curl Job an earlier version of this app used -
 # the operator provides this natively as a CRD instead. min_index_age
-# matches VictoriaLogs' old retentionPeriod: 48h at daily-index granularity
+# matches VictoriaLogs' retentionPeriod: 7d at daily-index granularity
 # (see apps/opensearch/README.md for the boundary-imprecision tradeoff of
-# daily indices vs. an exact 48h cutoff). Fields confirmed against the
+# daily indices vs. an exact 7d cutoff). Bumped from the original 2d after
+# confirming live headroom: the data pool's PVC was only 3% used (246M of
+# 10Gi) after a 46h window, and the storage=true nodes have ~227GB free
+# each - 7d (~3.5x the data) fits easily, no resize needed. Fields
+# confirmed against the
 # operator's bundled CRD schema (opensearch.org_opensearchismpolicies.yaml) -
 # camelCase (stateName, indexPatterns, minIndexAge), not the raw OpenSearch
 # ISM API's own snake_case (state_name, index_patterns, min_index_age) an
@@ -16,7 +20,7 @@ spec:
   opensearchCluster:
     name: opensearch
   policyId: logs-retention
-  description: 'Delete logs-* indices after 2 days, matching VictoriaLogs retentionPeriod: 48h'
+  description: 'Delete logs-* indices after 7 days, matching VictoriaLogs retentionPeriod: 7d'
   defaultState: hot
   states:
     - name: hot
@@ -24,7 +28,7 @@ spec:
       transitions:
         - stateName: delete
           conditions:
-            minIndexAge: '2d'
+            minIndexAge: '7d'
     - name: delete
       actions:
         - delete: {}

@@ -18,6 +18,22 @@ spec:
     # sysctlInit/host-level ansible task needed.
     setVMMaxMapCount: true
     drainDataNodes: true
+    # Official opensearch-project/opensearch-prometheus-exporter plugin
+    # (migrated into the OpenSearch org from Aiven - its own README credits
+    # "the contributors from the Aiven organization for their work on this
+    # project prior to its migration"), pinned to release 3.8.0.0 to exactly
+    # match general.version above - OpenSearch plugin releases are
+    # version-locked to a specific OpenSearch release. Confirmed against the
+    # operator's own user guide: this is the correct field
+    # (spec.general.pluginsList, not spec.bootstrap.pluginsList, which only
+    # covers the transient bootstrap pod, not the real client/data node
+    # pools). Items here are passed straight to `bin/opensearch-plugin
+    # install`, and changing this list triggers a rolling restart of every
+    # OpenSearch node to install it - expected on first apply, not a bug.
+    # Exposes /_prometheus/metrics on the existing 9200 port (no separate
+    # port) - see manifests/vmservicescrape.yaml for how that's scraped.
+    pluginsList:
+      - https://github.com/opensearch-project/opensearch-prometheus-exporter/releases/download/3.8.0.0/prometheus-exporter-3.8.0.0.zip
 
   # The operator creates this bootstrap pod automatically regardless of
   # whether this section is specified - only added here for nodeSelector

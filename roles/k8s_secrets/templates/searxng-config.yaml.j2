@@ -13,6 +13,20 @@ server:
   secret_key: "{{ searxng_secret_key }}"
   image_proxy: true
 
+general:
+  # Confirmed directly against SearXNG's own source (searx/settings.yml,
+  # searx/webapp.py - not assumed from docs): open_metrics exposes an
+  # OpenMetrics-format /metrics endpoint, gated by HTTP Basic Auth where
+  # only the *password* is ever checked
+  # (`sxng_request.authorization.password != password`) - the username is
+  # accepted as literally anything. apps/searxng/manifests/vmservicescrape.yaml's
+  # basicAuth therefore points at a Secret with an arbitrary placeholder
+  # username and this same password value, seeded by the same
+  # searxng-config bridge entry this file already comes from (see
+  # group_vars/all/cluster_secrets.yaml).
+  enable_metrics: true
+  open_metrics: "{{ searxng_metrics_password }}"
+
 ui:
   static_use_hash: true
 

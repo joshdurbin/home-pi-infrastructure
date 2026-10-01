@@ -1,11 +1,23 @@
 # Sources this cluster's log shipping directly from vector's own chart
 # (https://helm.vector.dev) rather than victoria-logs-single's bundled
 # `vector` subchart dependency - same Vector, same config shape, just no
-# longer piggybacking on a chart that's been deleted. Everything below is
-# that old VictoriaLogs-targeting config carried over, with the sinks
-# retargeted at OpenSearch (endpoint, index naming, TLS + auth) and the
-# VictoriaLogs-proprietary request headers dropped - see each sink's own
-# comment.
+# longer tied to that chart's own release cycle.
+#
+# Dual-shipped to both OpenSearch (primary, the one with Dashboards/auth/
+# retention policy - see manifests/) and VictoriaLogs (apps/victoria-logs/,
+# re-added alongside OpenSearch rather than replacing it again) - four
+# sinks below, two backends x {container, host} sources, identical data to
+# both. The two vlogs_* sinks are the exact config this cluster ran before
+# OpenSearch replaced VictoriaLogs outright (see git log on
+# apps/victoria-logs/ for that prior version) - the elasticsearch sink type
+# pointed at VictoriaLogs' own Elastic-bulk-compatible endpoint plus its
+# VL-*/AccountID/ProjectID headers, not a native `victorialogs` sink type -
+# confirmed live (`kubectl -n opensearch get pods ... -o jsonpath=
+# '{...image}'`) this cluster's pinned vector:0.58.0-debian doesn't ship
+# one (checked vectordotdev/vector's own src/sinks tree at that tag - no
+# victorialogs/victoria_logs directory exists), and the elasticsearch-sink
+# approach is VictoriaLogs' own documented integration method for exactly
+# this case.
 
 # Default is "Aggregator" (StatefulSet) - "Agent" (DaemonSet) is required to
 # get one Vector pod per node tailing that node's own /var/log (the chart's
@@ -139,3 +151,52 @@ customConfig:
         password: '${password}'
       bulk:
         index: 'logs-host-%Y.%m.%d'
+    # VictoriaLogs (apps/victoria-logs/) - no TLS, no auth, unlike the
+    # opensearch sinks above: VictoriaLogs itself has no security plugin
+    # equivalent and this chart's defaults run it with no auth at all,
+    # same reasoning as every other app in this cluster that doesn't
+    # mandate it. Service name confirmed via `helm template vls
+    # victoriametrics/victoria-logs-single --version 0.13.9` (releaseName
+    # "vls" + the chart's own fixed "-victoria-logs-single-server" suffix),
+    # same naming this repo's old apps/victoria-logs/ already used before
+    # it was removed. VL-Time-Field/VL-Stream-Fields/VL-Msg-Field and the
+    # AccountID/ProjectID pair are VictoriaLogs' own documented
+    # elasticsearch-bulk-ingestion headers (its multitenancy fields,
+    # "0"/"0" being the default/only tenant a single-tenant deploy like
+    # this needs) - carried over verbatim from this cluster's prior
+    # VictoriaLogs config, not re-derived.
+    vlogs:
+      type: elasticsearch
+      inputs: [parser]
+      endpoints: ['http://vls-victoria-logs-single-server.monitoring.svc.cluster.local:9428']
+      mode: bulk
+      api_version: v8
+      compression: gzip
+      healthcheck:
+        enabled: false
+      request:
+        headers:
+          VL-Time-Field: timestamp
+          VL-Stream-Fields: stream,kubernetes.pod_name,kubernetes.container_name,kubernetes.pod_namespace
+          VL-Msg-Field: message,msg,_msg,log.msg,log.message,log
+          AccountID: '0'
+          ProjectID: '0'
+    # Same reasoning as opensearch_host above - journald events carry none
+    # of the kubernetes.* fields vlogs's VL-Stream-Fields expects, so this
+    # needs its own stream-field set, not a shared sink.
+    vlogs_host:
+      type: elasticsearch
+      inputs: [journal]
+      endpoints: ['http://vls-victoria-logs-single-server.monitoring.svc.cluster.local:9428']
+      mode: bulk
+      api_version: v8
+      compression: gzip
+      healthcheck:
+        enabled: false
+      request:
+        headers:
+          VL-Time-Field: timestamp
+          VL-Stream-Fields: host,_SYSTEMD_UNIT,PRIORITY
+          VL-Msg-Field: message,MESSAGE
+          AccountID: '0'
+          ProjectID: '0'

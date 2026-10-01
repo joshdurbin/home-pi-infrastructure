@@ -1,0 +1,24 @@
+# Scrapes the operator's own controller metrics - confirmed live the
+# chart already creates a headless Service named "trivy-operator" with a
+# port literally named "metrics" (port 80), selector
+# app.kubernetes.io/{name,instance}: trivy-operator - no values.yaml
+# change needed to get the Service itself, only the metricsPort/metrics*
+# flags in values.yaml (see that file's own comment) to get real data on
+# it. /metrics path is controller-runtime's standard convention (every
+# other kubebuilder-style operator in this repo, e.g. cloudnative-pg's own
+# VMPodScrape, uses the same path) - not independently confirmed via a
+# live scrape here since the pod was mid-OOM-crash-loop at the time this
+# was written (see values.yaml's resources.limits.memory comment).
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: trivy-operator
+  namespace: trivy-system
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trivy-operator
+      app.kubernetes.io/instance: trivy-operator
+  endpoints:
+    - port: metrics
+      path: /metrics

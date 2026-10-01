@@ -19,10 +19,18 @@ grafana_url: "https://grafana.{{ tailnet_domain }}"
 # treats that specific error as a skip, not a failure, so this is a safety
 # net for future entries, not a reason to rely on it for these four.
 #
-# Also deliberately excludes Argo CD and the Tailscale operator - dashboards
-# exist for both, but neither has a VM*Scrape wired up yet, so they'd import
-# clean and then show no data. Add those IDs here once that scrape config
-# exists.
+# Argo CD and OpenSearch added once their own VM*Scrapes existed
+# (apps/argocd-metrics/, apps/opensearch/manifests/vmservicescrape.yaml).
+# Tailscale deliberately still excluded - the only dashboard found
+# (24177, "Tailscale / Overview") is built from tailscale-mixin, which
+# polls the Tailscale *admin API* (devices/users/auth keys), a completely
+# different data source from the tailscaled proxy /metrics this cluster's
+# ProxyClass now exposes - confirmed via its own source repo, not assumed.
+# Importing it would just show empty/broken panels. redis-operator's own
+# controller metrics (apps/redis-operator-metrics/) have no dedicated
+# dashboard either - the one OT-Container-Kit project doc references is
+# for the *managed Redis clusters* (already covered by the "Redis
+# (Kubernetes mode)" entry below), not the operator controller pod.
 grafana_community_dashboards:
   - id: 22705
     name: 'Longhorn'
@@ -34,3 +42,9 @@ grafana_community_dashboards:
     name: 'Redis (Kubernetes mode)'
   - id: 13768
     name: 'Blocky'
+  - id: 14584
+    name: 'ArgoCD'
+  - id: 20827
+    name: 'OpenSearch Prometheus Exporter'
+  - id: 22010
+    name: 'Trivy Operator - Image CVE Data'

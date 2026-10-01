@@ -1,0 +1,22 @@
+# The operator's own controller metrics (distinct from the redis_exporter
+# VMPodScrapes in blocky-cache/searxng-cache, which scrape the Redis
+# clusters this operator manages, not the operator itself). VMPodScrape,
+# not VMServiceScrape - confirmed live: no Service exists for this pod at
+# all (`kubectl -n redis-operator get svc` returns nothing), even though
+# metrics.enabled: true is already this chart's own default and the
+# container exposes a port literally named "metrics" (8080) - confirmed
+# via `helm template ot-helm/redis-operator`. Pod label `name:
+# redis-operator` confirmed live via `kubectl -n redis-operator get pods
+# --show-labels`.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: redis-operator
+  namespace: redis-operator
+spec:
+  selector:
+    matchLabels:
+      name: redis-operator
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics

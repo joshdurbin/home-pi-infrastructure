@@ -1,0 +1,18 @@
+# Confirmed against the operator's own bundled ProxyClass CRD
+# (kubectl get crd proxyclasses.tailscale.com): spec.metrics.enable: true
+# makes each proxy pod this is attached to serve Tailscale connectivity
+# metrics (bytes in/out, peer state - tailscaled's own stats, not
+# application-level HTTP metrics) at <pod-ip>:9002/metrics, and creates a
+# Service named <proxy-statefulset>-metrics in this namespace. This is NOT
+# operator-controller-reconciliation metrics - the chart's operator
+# Deployment itself has no metrics port/toggle at all (confirmed via a real
+# `helm template` render: no ports, no metrics-related env vars on it) -
+# this is the closest real, supported thing to "Tailscale metrics" this
+# chart offers.
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyClass
+metadata:
+  name: metrics-enabled
+spec:
+  metrics:
+    enable: true

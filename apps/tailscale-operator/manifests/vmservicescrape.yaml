@@ -1,0 +1,29 @@
+# Scrapes the ingress-proxies-metrics Service that proxyclass.yaml's
+# spec.metrics.enable: true creates (<proxy-statefulset>-metrics, per the
+# ProxyClass CRD's own field description - this ProxyGroup's StatefulSet is
+# named ingress-proxies).
+#
+# selector is NOT yet directly confirmed against that Service (it doesn't
+# exist yet - this app hasn't synced the proxyClass change). It's based on
+# a label convention confirmed live on this same ProxyGroup's other
+# resources instead: `kubectl -n tailscale get statefulset ingress-proxies
+# -o jsonpath='{.metadata.labels}'` and the same on its Pods both show
+# tailscale.com/managed=true + tailscale.com/parent-resource=ingress-proxies
+# + tailscale.com/parent-resource-type=proxygroup - the operator's own
+# general labeling convention for "every resource belonging to this
+# ProxyGroup". Worth a live check after this syncs
+# (`kubectl -n tailscale get svc ingress-proxies-metrics -o yaml`), same
+# honesty standard as apps/opensearch/manifests/ingresses.yaml's own
+# "not yet confirmed live" comment.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: ingress-proxies
+  namespace: tailscale
+spec:
+  selector:
+    matchLabels:
+      tailscale.com/parent-resource: ingress-proxies
+  endpoints:
+    - port: metrics
+      path: /metrics

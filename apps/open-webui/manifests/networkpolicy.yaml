@@ -1,0 +1,30 @@
+# Egress-only (Tailscale reaching the web UI is ingress, unaffected).
+# DNS-only egress for now - checked the app's own source for a startup
+# update-check/telemetry call and found none in the one module most likely
+# to have it, but couldn't fully rule it out in the time available, so
+# this stays conservative rather than guessing a broad 443 rule it might
+# not need. No LLM backend is configured yet (see values.yaml's top
+# comment) - whichever provider gets added later (an external OpenAI-
+# compatible API, or an in-cluster Ollama) will need its own egress rule
+# added here at that point regardless, so there's nothing to add
+# preemptively.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: open-webui-egress
+  namespace: open-webui
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

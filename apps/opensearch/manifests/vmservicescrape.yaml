@@ -1,0 +1,44 @@
+# Scrapes the opensearch-prometheus-exporter plugin installed via
+# cluster.yaml's general.pluginsList - /_prometheus/metrics on the same
+# port (9200) and Service the client apps already use, not a separate
+# metrics port. selector matches the "opensearch" Service's one real
+# label (confirmed live: `kubectl -n opensearch get svc opensearch -o yaml`
+# -> metadata.labels is exactly `opensearch.org/opensearch-cluster:
+# opensearch`, set by the operator itself, not user-configurable from
+# cluster.yaml). port: http is that Service's own port name (9200,
+# appProtocol https - confirmed live from the same describe).
+#
+# scheme: https + tlsConfig.insecureSkipVerify: true: same reasoning as
+# values-vector.yaml's tls.verify_certificate: false - this cluster's TLS
+# is operator-generated/self-signed (cluster.yaml's security.tls), nothing
+# external ever talks to this Service directly.
+#
+# basicAuth: this cluster's security plugin wraps every REST endpoint,
+# including ones plugins add - confirmed no anonymous-access/auth-exemption
+# config exists anywhere in cluster.yaml, so /_prometheus/metrics needs
+# the same credentials Vector/Dashboards already authenticate with. Reuses
+# the existing opensearch-admin-credentials Secret (seeded by
+# group_vars/all/cluster_secrets.yaml) rather than a new one - same Secret,
+# same username/password keys, already live in this namespace.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: opensearch
+  namespace: opensearch
+spec:
+  selector:
+    matchLabels:
+      opensearch.org/opensearch-cluster: opensearch
+  endpoints:
+    - port: http
+      path: /_prometheus/metrics
+      scheme: https
+      tlsConfig:
+        insecureSkipVerify: true
+      basicAuth:
+        username:
+          name: opensearch-admin-credentials
+          key: username
+        password:
+          name: opensearch-admin-credentials
+          key: password

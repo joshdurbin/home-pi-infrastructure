@@ -1,0 +1,40 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: redis-operator-metrics
+  namespace: argocd
+  annotations:
+    # Split out from apps/redis-operator/ deliberately, same pattern as
+    # apps/argocd-metrics/ and apps/opensearch/'s own operator+cluster
+    # split: this app's one manifest (a VMPodScrape) needs
+    # victoria-metrics' CRD (wave 1) to already exist, but
+    # apps/redis-operator/ itself has to *stay* at wave 1 - Blocky's and
+    # SearXNG's own redis clusters (apps/blocky/manifests/,
+    # apps/searxng/manifests/, both wave 2) depend on redis-operator's
+    # CRDs existing by their wave, and same-wave Applications have no
+    # ordering guarantee between each other. Folding this VMPodScrape into
+    # apps/redis-operator/ itself would race victoria-metrics for its CRD
+    # at the same wave 1 - the exact class of failure documented on
+    # apps/blocky/application.yaml's own sync-wave comment. Wave 2 here
+    # keeps redis-operator's own CRD-dependent consumers correctly ordered
+    # while still getting this past victoria-metrics safely.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: redis-operator
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  sources:
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      path: apps/redis-operator-metrics/manifests

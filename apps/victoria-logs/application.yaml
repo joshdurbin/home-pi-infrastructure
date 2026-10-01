@@ -1,0 +1,56 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: victoria-logs
+  namespace: argocd
+  annotations:
+    # Uses a Longhorn-backed PVC (the server StatefulSet), so syncs after
+    # Longhorn (wave 0) - same wave as every other non-CRD stateful app
+    # here (e.g. redis-operator, cloudnative-pg). No CRD of its own and
+    # nothing else in apps/ depends on it existing first, so unlike
+    # apps/opensearch/'s two-Application split, this needs no dependency
+    # ordering against Vector (apps/opensearch/cluster/, wave 2) - Vector's
+    # new vlogs/vlogs_host sinks (apps/opensearch/values-vector.yaml) just
+    # retry until this Service exists, same tolerance every bulk sink here
+    # already has toward its backend not being ready yet.
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    # Reuses the existing monitoring namespace (already permitted in
+    # roles/argocd/templates/appproject.yaml.j2's destinations - this is
+    # the same namespace apps/victoria-metrics/ deploys into) rather than
+    # a dedicated one - this is this cluster's second VictoriaMetrics-family
+    # chart release living alongside vmsingle/vmagent/grafana/etc, not an
+    # independent app with its own isolation story.
+    namespace: monitoring
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  sources:
+    - repoURL: https://victoriametrics.github.io/helm-charts
+      chart: victoria-logs-single
+      # Latest as of this writing (confirmed via the chart repo's own
+      # index.yaml) - same version this cluster ran before VictoriaLogs
+      # was removed in favor of OpenSearch, so no drift to re-verify here.
+      targetRevision: 0.13.9
+      helm:
+        releaseName: vls
+        valueFiles:
+          - $values/apps/victoria-logs/values.yaml
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      ref: values
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      path: apps/victoria-logs/manifests
