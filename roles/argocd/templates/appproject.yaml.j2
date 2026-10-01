@@ -20,6 +20,7 @@ spec:
     - https://opensearch-project.github.io/opensearch-k8s-operator/
     - https://helm.vector.dev
     - https://kubernetes-sigs.github.io/descheduler/
+    - https://aquasecurity.github.io/helm-charts/
     - '{{ argocd_vars.gitops.repo_url }}'
   # Scoped to the namespaces these apps actually use.
   destinations:
@@ -61,6 +62,8 @@ spec:
     - namespace: homepage
       server: https://kubernetes.default.svc
     - namespace: descheduler
+      server: https://kubernetes.default.svc
+    - namespace: trivy-system
       server: https://kubernetes.default.svc
     # victoria-metrics-k8s-stack creates a few VMServiceScrapes directly in
     # kube-system (matching upstream kube-prometheus-stack convention) to

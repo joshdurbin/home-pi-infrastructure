@@ -26,6 +26,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [Temporal](#temporal)
 - [Home Dashboard (Homepage)](#home-dashboard-homepage)
 - [Node Rebalancing (descheduler)](#node-rebalancing-descheduler)
+- [Vulnerability Scanning (Trivy Operator)](#vulnerability-scanning-trivy-operator)
 - [Exposing UIs via Tailscale Operator](#exposing-uis-via-tailscale-operator)
 - [Tailscale Integration (Optional)](#tailscale-integration-optional)
 - [Cluster Configuration](#cluster-configuration)
@@ -555,9 +556,9 @@ cluster-admin access — fine for a single-user homelab, but keep it as private 
 ## GitOps (Argo CD)
 
 Longhorn, VictoriaMetrics, OpenSearch, Blocky, SearXNG, redis-operator, RedisInsight, CloudNativePG,
-Postgres, Temporal, Homepage, the descheduler, and the Tailscale Operator are no longer installed or
-upgraded by Ansible. Argo CD runs in-cluster
-(namespace `argocd`) and continuously reconciles all thirteen from this **same** repo's `apps/` directory — edit a file there, commit, and Argo CD applies it within its
+Postgres, Temporal, Homepage, the descheduler, Trivy Operator, and the Tailscale Operator are no longer
+installed or upgraded by Ansible. Argo CD runs in-cluster
+(namespace `argocd`) and continuously reconciles all fourteen from this **same** repo's `apps/` directory — edit a file there, commit, and Argo CD applies it within its
 next poll cycle (or immediately via `argocd app sync` / the UI). This replaced hand-templating every
 chart's values through Jinja and running `kubectl`/`helm` manually to fix drift — Argo CD's own continuous
 reconciliation makes drift structurally impossible to miss.
@@ -1171,6 +1172,34 @@ kubectl -n descheduler logs job/<latest-job-name>
 
 # Current pod distribution per node
 kubectl get pods -A -o custom-columns='NODE:.spec.nodeName' --no-headers | sort | uniq -c | sort -rn
+```
+
+## Vulnerability Scanning (Trivy Operator)
+
+Continuous vulnerability/misconfiguration scanning for every workload already running in the cluster
+([aquasecurity/trivy-operator](https://github.com/aquasecurity/trivy-operator), `apps/trivy-operator/`,
+namespace `trivy-system`). Watches Pods cluster-wide and runs a Trivy scan Job against each distinct
+image, publishing results as CRDs rather than needing a UI of its own.
+
+- **What it scans**: vulnerabilities (`VulnerabilityReport`), misconfigurations (`ConfigAuditReport`),
+  exposed secrets (`ExposedSecretReport`), and RBAC over-permissiveness (`RbacAssessmentReport`) - all
+  three scanner toggles left on.
+- **Concurrency**: `scanJobsConcurrentLimit: 2`, down from the chart's default of 10 - each concurrent
+  scan Job gets its own CPU/memory footprint, and 10 at once on a mix of 4GB/8GB Pi boards would compete
+  hard with every other workload here. Costs a slower first full pass across every image already running.
+- **No NetworkPolicy**: same reasoning as `cnpg-system`/`redis-operator`, the two other pure-operator
+  namespaces in this repo - scan Jobs pull each image's own registry plus the vulnerability DB from
+  `mirror.gcr.io`, not a fixed IP set worth allowlisting.
+- **CRDs**: bundled in the chart (same large-annotation issue as Longhorn's/CNPG's own), hence
+  `ServerSideApply=true` on the Application.
+
+**Troubleshooting:**
+```bash
+# Reports across the whole cluster
+kubectl get vulnerabilityreports,configauditreports,exposedsecretreports -A
+
+# A specific image's findings
+kubectl get vulnerabilityreport -n <namespace> -l trivy-operator.resource.name=<deployment-name> -o yaml
 ```
 
 ## Exposing UIs via Tailscale Operator

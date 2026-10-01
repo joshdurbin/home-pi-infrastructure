@@ -1,0 +1,48 @@
+# Continuous vulnerability/misconfiguration scanning for every workload
+# already running in the cluster (aquasecurity/trivy-operator) - watches
+# Pods cluster-wide and runs a Trivy scan Job against each distinct image,
+# publishing results as VulnerabilityReport/ConfigAuditReport/
+# ExposedSecretReport/RbacAssessmentReport CRs you can `kubectl get` or
+# browse. No NetworkPolicy here, same reasoning as cnpg-system/
+# redis-operator (the two other pure-operator namespaces in this repo):
+# scan Jobs need to pull each image's own registry plus the vulnerability
+# DB from mirror.gcr.io, which (like SearXNG's search engines or Blocky's
+# blocklist CDN) isn't a fixed IP set worth trying to allowlist.
+
+operator:
+  vulnerabilityScannerEnabled: true
+  configAuditScannerEnabled: true
+  exposedSecretScannerEnabled: true
+  # Default is 10 - way more than this fleet should run at once. Each
+  # concurrent scan Job gets its own resource footprint (trivy.resources
+  # below), and 10 at once on a mix of 4GB/8GB Pi boards would compete
+  # hard with every other workload here. 2 keeps scanning from ever being
+  # the thing that pressures the cluster, at the cost of a slower first
+  # full pass across every image already running.
+  scanJobsConcurrentLimit: 2
+
+# The operator's own controller pod - continuously watches Pods/Jobs
+# cluster-wide and reconciles report CRs, so it gets a bit more than the
+# smallest operators here (redis-operator/cloudnative-pg's 50m/128Mi), but
+# still a fraction of what a real deployment would give it.
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+# Per scan-Job resources (one Job per distinct image scanned, up to
+# scanJobsConcurrentLimit at once) - left at the chart's own defaults.
+# Trivy needs real memory to load the vulnerability DB regardless of how
+# small the image being scanned is, so these aren't worth shrinking the
+# way the operator's own idle-most-of-the-time controller pod's are.
+trivy:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 100Mi
+    limits:
+      cpu: 500m
+      memory: 500Mi

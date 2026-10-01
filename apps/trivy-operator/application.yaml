@@ -1,0 +1,43 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: trivy-operator
+  namespace: argocd
+  annotations:
+    # Installs its own CRDs (VulnerabilityReport, ConfigAuditReport,
+    # ExposedSecretReport, RbacAssessmentReport, etc.) - same large-
+    # annotation issue as Longhorn's/CNPG's own CRDs, hence
+    # ServerSideApply=true below. Nothing in apps/ consumes those CRDs or
+    # depends on this app existing first, and it needs no PVC - wave 1
+    # (same tier as redis-operator/cloudnative-pg/descheduler) is
+    # arbitrary but harmless.
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: trivy-system
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  sources:
+    - repoURL: https://aquasecurity.github.io/helm-charts/
+      chart: trivy-operator
+      targetRevision: 0.36.0
+      helm:
+        releaseName: trivy-operator
+        valueFiles:
+          - $values/apps/trivy-operator/values.yaml
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      ref: values
