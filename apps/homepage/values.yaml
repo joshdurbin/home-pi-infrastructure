@@ -1,0 +1,61 @@
+# No official Helm chart exists for Homepage (gethomepage/homepage ships
+# only Docker Compose / plain `docker run` instructions, confirmed against
+# its own repo) - same generic `bjw-s-labs/app-template` chart already used
+# for Blocky/SearXNG/RedisInsight instead, running the official
+# ghcr.io/gethomepage/homepage image directly.
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: ghcr.io/gethomepage/homepage
+          tag: v2.4.0
+        envFrom:
+          # HOMEPAGE_VAR_TAILNET_DOMAIN (substituted into services.yaml
+          # below via Homepage's own {{HOMEPAGE_VAR_*}} syntax, confirmed
+          # against its config.js source) and HOMEPAGE_ALLOWED_HOSTS
+          # (required as of Homepage v1.0 for any access that isn't
+          # localhost, confirmed against its installation docs) both
+          # depend on this tailnet's hostname, which isn't known here -
+          # same reasoning as searxng_secret_key, seeded by the k8s_secrets
+          # bridge instead (group_vars/all/cluster_secrets.yaml) rather
+          # than hardcoded in this git-committed file.
+          - configMapRef:
+              name: homepage-env
+        probes:
+          liveness:
+            enabled: false
+          readiness:
+            enabled: false
+          startup:
+            enabled: false
+
+service:
+  main:
+    controller: main
+    ports:
+      http:
+        port: 3000
+
+persistence:
+  # Entirely static config (apps/homepage/manifests/configmap.yaml) - no
+  # credentials, no per-cluster values (those are the two env vars above
+  # instead), so this is a plain git-managed ConfigMap like Blocky's, not
+  # something seeded by the k8s_secrets bridge.
+  config:
+    enabled: true
+    type: configMap
+    name: homepage-config
+    globalMounts:
+      - path: /app/config/settings.yaml
+        subPath: settings.yaml
+        readOnly: true
+      - path: /app/config/services.yaml
+        subPath: services.yaml
+        readOnly: true
+      - path: /app/config/bookmarks.yaml
+        subPath: bookmarks.yaml
+        readOnly: true
+      - path: /app/config/widgets.yaml
+        subPath: widgets.yaml
+        readOnly: true

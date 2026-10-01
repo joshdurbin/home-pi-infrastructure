@@ -1,0 +1,35 @@
+# Egress-only restriction (Tailscale reaching Homepage's web UI is
+# ingress, unaffected). Every service link on the dashboard
+# (manifests/configmap.yaml) is opened directly by the viewer's own
+# browser over Tailscale, not proxied through this pod - Homepage isn't
+# configured with a "ping"/status-check widget against any of them - so
+# this pod itself talks to the outside world for exactly one thing: its
+# own built-in update-check API route
+# (https://api.github.com/repos/gethomepage/homepage/releases, confirmed
+# against its source, src/pages/api/releases.js), hit from the server side
+# whenever the dashboard page loads. GitHub's API isn't a small fixed IP
+# set, same rationale as Blocky's/SearXNG's own blocklist/search-engine
+# 443 rules, so this stays broad rather than an ipBlock.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: homepage-egress
+  namespace: homepage
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - ports:
+        - protocol: TCP
+          port: 443

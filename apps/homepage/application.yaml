@@ -1,0 +1,44 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: homepage
+  namespace: argocd
+  annotations:
+    # Same tier as every other end-user-facing app (searxng, redisinsight):
+    # after Longhorn (wave 0) and redis-operator/CRDs (wave 1), no PVC or
+    # CRD dependency of its own. Its own Ingress (apps/tailscale-operator/
+    # manifests/ingresses.yaml) is the only cross-app reference, and that's
+    # a dangling-backend-safe one-way read at wave 3, same as every other
+    # app tailscale-operator points at.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: homepage
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  sources:
+    - repoURL: https://bjw-s-labs.github.io/helm-charts
+      chart: app-template
+      targetRevision: 5.2.1
+      helm:
+        releaseName: homepage
+        valueFiles:
+          - $values/apps/homepage/values.yaml
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      ref: values
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      path: apps/homepage/manifests

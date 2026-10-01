@@ -24,6 +24,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [Redis Clusters (Blocky + SearXNG Caching)](#redis-clusters-blocky--searxng-caching)
 - [Postgres (CloudNativePG)](#postgres-cloudnativepg)
 - [Temporal](#temporal)
+- [Home Dashboard (Homepage)](#home-dashboard-homepage)
 - [Exposing UIs via Tailscale Operator](#exposing-uis-via-tailscale-operator)
 - [Tailscale Integration (Optional)](#tailscale-integration-optional)
 - [Cluster Configuration](#cluster-configuration)
@@ -550,8 +551,8 @@ cluster-admin access — fine for a single-user homelab, but keep it as private 
 ## GitOps (Argo CD)
 
 Longhorn, VictoriaMetrics, OpenSearch, Blocky, SearXNG, redis-operator, RedisInsight, CloudNativePG,
-Postgres, and the Tailscale Operator are no longer installed or upgraded by Ansible. Argo CD runs in-cluster
-(namespace `argocd`) and continuously reconciles all ten from this **same** repo's `apps/` directory — edit a file there, commit, and Argo CD applies it within its
+Postgres, Temporal, Homepage, and the Tailscale Operator are no longer installed or upgraded by Ansible. Argo CD runs in-cluster
+(namespace `argocd`) and continuously reconciles all twelve from this **same** repo's `apps/` directory — edit a file there, commit, and Argo CD applies it within its
 next poll cycle (or immediately via `argocd app sync` / the UI). This replaced hand-templating every
 chart's values through Jinja and running `kubectl`/`helm` manually to fix drift — Argo CD's own continuous
 reconciliation makes drift structurally impossible to miss.
@@ -1104,10 +1105,40 @@ kubectl -n temporal logs job/temporal-schema-setup
 kubectl -n postgres get databaserole,database
 ```
 
+## Home Dashboard (Homepage)
+
+[Homepage](https://gethomepage.dev/) (`gethomepage/homepage`), a landing page linking out to every other UI in
+this repo, deployed via the same `bjw-s-labs/app-template` chart as Blocky/SearXNG/RedisInsight - Homepage
+ships no official Helm chart of its own, only Docker instructions.
+
+- **Config**: `apps/homepage/manifests/configmap.yaml` - `settings.yaml`, `bookmarks.yaml`, `widgets.yaml`
+  (unused, empty), and `services.yaml` (one entry per `Ingress` in
+  `apps/tailscale-operator/manifests/ingresses.yaml`, grouped by what the service does). Entirely
+  git-managed and portable, like Blocky's config - no credentials, and the one per-cluster value it needs
+  (this tailnet's hostname) is a runtime placeholder, not baked in at commit time - see below.
+- **Tailnet hostname**: `services.yaml`'s links use `{{HOMEPAGE_VAR_TAILNET_DOMAIN}}`, Homepage's own
+  runtime env-var substitution syntax (any `HOMEPAGE_VAR_*` env var is replaced by literal string match
+  across every config file before it's parsed as YAML). The actual value, plus the separate
+  `HOMEPAGE_ALLOWED_HOSTS` env var Homepage requires for any non-`localhost` access (both derived from
+  `tailnet_domain`), come from the `homepage-env` ConfigMap - one more entry in the generic `k8s_secrets`
+  bridge (`group_vars/all/cluster_secrets.yaml`), wired in via `apps/homepage/values.yaml`'s `envFrom`. Not
+  a credential like this bridge's other entries, but still kept out of `apps/` for the same reason
+  `tailnet_domain` is kept out of it everywhere else in this repo.
+- **Icons**: all `mdi-` (Material Design Icons bundled in the Homepage image itself), not the slug-based
+  icons Homepage can otherwise fetch from an external CDN - keeps `apps/homepage/manifests/networkpolicy.yaml`
+  from needing broad egress just to draw them. That NetworkPolicy does still allow broad `443/tcp` for one
+  other reason: Homepage's own built-in update-check API route
+  (`https://api.github.com/repos/gethomepage/homepage/releases`), hit server-side on every page load.
+- **Access**: `https://home.<tailnet>.ts.net` - see [Exposing UIs via Tailscale
+  Operator](#exposing-uis-via-tailscale-operator) below. To add a newly-exposed service to the dashboard,
+  add an entry to `apps/homepage/manifests/configmap.yaml`'s `services.yaml` and commit - no Ansible run
+  needed, same as adding the `Ingress` itself.
+
 ## Exposing UIs via Tailscale Operator
 
-Reaches Grafana, Alertmanager, the VictoriaMetrics UI, the Longhorn UI, Blocky's `/metrics`, SearXNG, and the Argo CD
-UI privately from any device signed into your tailnet (e.g. the Tailscale app on your phone) — no VPN
+Reaches Grafana, Alertmanager, the VictoriaMetrics UI, the Longhorn UI, Blocky's `/metrics`, SearXNG, the Argo CD
+UI, and Homepage (a dashboard linking to all of them) privately from any device signed into your tailnet
+(e.g. the Tailscale app on your phone) — no VPN
 config, no port-forwarding, valid HTTPS. This is **not** Funnel — nothing here is reachable from the public
 internet, only from devices in your own tailnet. **The operator install, ProxyGroup, and per-service
 Ingresses now live in this repo's `apps/` directory** (`apps/tailscale-operator/`, see [GitOps (Argo CD)](#gitops-argo-cd)) — this
@@ -1178,13 +1209,16 @@ hostname shown there):
 
 | Service | URL |
 |---|---|
+| Homepage (links to everything below) | `https://home.<tailnet>.ts.net` |
 | Grafana | `https://grafana.<tailnet>.ts.net` |
 | Alertmanager | `https://alertmanager.<tailnet>.ts.net` |
 | VictoriaMetrics | `https://victoriametrics.<tailnet>.ts.net` |
+| OpenSearch Dashboards | `https://opensearch.<tailnet>.ts.net` |
 | Longhorn | `https://longhorn.<tailnet>.ts.net` |
 | Blocky (`/metrics`) | `https://blocky.<tailnet>.ts.net` |
 | SearXNG | `https://search.<tailnet>.ts.net` |
 | RedisInsight | `https://redisinsight.<tailnet>.ts.net` |
+| Temporal Web UI | `https://temporal.<tailnet>.ts.net` |
 | Argo CD | `https://argocd.<tailnet>.ts.net` |
 
 Confirmed working from a phone with the Tailscale app active. If you test from a **Mac terminal or

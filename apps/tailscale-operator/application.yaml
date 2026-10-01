@@ -5,7 +5,7 @@ metadata:
   namespace: argocd
   annotations:
     # Its Ingresses reference Services in every other app's namespace
-    # (monitoring, longhorn, blocky, searxng) - not a hard dependency (a dangling
+    # (monitoring, longhorn, blocky, searxng, homepage) - not a hard dependency (a dangling
     # Ingress backend is valid, just unreachable until the Service shows up),
     # but syncing last avoids that transient state on a fresh bootstrap.
     # Confirmed by a real failure on the namespace an earlier-wave app hadn't
