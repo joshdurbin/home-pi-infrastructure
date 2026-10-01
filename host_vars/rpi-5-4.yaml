@@ -1,0 +1,13 @@
+---
+k8s_labels:
+  database: "true"
+  # See host_vars/rpi-5-1.yaml's own comment - Pi 4B's CPU can't run
+  # apps/opensearch's Amazon-Linux-based images at all (confirmed live,
+  # "Fatal glibc error"), not opensearch-specific.
+  pi5: "true"
+  # Deliberately no storage=true or telemetry=true - this node's whole
+  # purpose is being the second database=true node for
+  # apps/postgres/manifests/cluster.yaml's instances: 2 (podAntiAffinity,
+  # topologyKey kubernetes.io/hostname), not a Longhorn replica target or
+  # the VictoriaMetrics vmsingle pod's home. Revisit only if a concrete
+  # need shows up.

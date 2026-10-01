@@ -34,19 +34,21 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 ## Hardware Setup
 
 - **Control Plane**: 3x Raspberry Pi 5 (8GB RAM) — `rpi-5-1`, `rpi-5-2`, `rpi-5-3`
-- **Worker Nodes**: 3x Raspberry Pi 4B (4GB RAM, 128GB SSD) — `rpi-4b-1`, `rpi-4b-2`, `rpi-4b-3`
+- **Worker Nodes**: 3x Raspberry Pi 4B (4GB RAM, 128GB SSD) — `rpi-4b-1`, `rpi-4b-2`, `rpi-4b-3` — plus a
+  4th Raspberry Pi 5 (`rpi-5-4`, worker only, see below)
 
 Control plane moved to the Pi 5s deliberately, not by original design - confirmed live that the Pi 4B
 nodes' disks were too slow/inconsistent for etcd's fsync latency sensitivity, causing real API server
 instability (intermittent 503s, TLS handshake timeouts, connection resets) under normal cluster load. See
-`inventory.dist`'s own `[server]` group comment for the full reasoning, including why a future 4th Pi 5
-(`rpi-5-4`) must join `[pi5]`/`[agent]` and never `[server]` - etcd quorum needs a fixed, deliberately-sized
+`inventory.dist`'s own `[server]` group comment for the full reasoning, including why `rpi-5-4` joins
+`[pi5]`/`[agent]`/`[database]` and never `[server]` - etcd quorum needs a fixed, deliberately-sized
 odd-numbered membership, not "however many Pi 5s happen to exist."
 
 The Pi 5 nodes also carry this cluster's disk-heavy workloads (Longhorn, VictoriaMetrics, OpenSearch,
 Postgres - see each `host_vars/rpi-5-*.yaml`'s labels) - accepted deliberately alongside etcd, not
 overlooked; revisit if the Pi 5 disks turn out not to keep up with both together, but that hasn't been
-observed.
+observed. `rpi-5-4` carries only Postgres's `database=true` label - it's a worker (`[agent]`), not control
+plane, so it doesn't carry etcd's own fsync sensitivity at all.
 
 (RAM figures confirmed live via `kubectl get nodes -o jsonpath='{.status.capacity.memory}'` - the 4B nodes
 report ~3.9GiB, i.e. 4GB boards; this matters for anything sizing container `resources.limits.memory`
@@ -54,9 +56,10 @@ against the smaller of the two node classes.)
 
 Two of the Pi 5 nodes (`rpi-5-2`, `rpi-5-3`) carry a `storage=true` Kubernetes node label and back Longhorn's
 distributed storage. Two Pi 5 nodes (`rpi-5-1`, `rpi-5-2`) carry a `telemetry=true` label and host the
-VictoriaMetrics storage pod. OpenSearch's data node is deliberately unpinned (no node label of its own) -
-see [Logging](#logging-opensearch) below. See also [Storage (Longhorn)](#storage-longhorn) and
-[Monitoring](#monitoring-victoriametrics-grafana).
+VictoriaMetrics storage pod. Two Pi 5 nodes (`rpi-5-1`, `rpi-5-4`) carry a `database=true` label and run
+Postgres (see [Postgres (CloudNativePG)](#postgres-cloudnativepg)). OpenSearch's data node is deliberately
+unpinned (no node label of its own) - see [Logging](#logging-opensearch) below. See also
+[Storage (Longhorn)](#storage-longhorn) and [Monitoring](#monitoring-victoriametrics-grafana).
 
 Each node has:
 - 64-bit Raspberry Pi OS (Lite)
@@ -766,7 +769,7 @@ curl -k -u admin:<opensearch_admin_password> "https://localhost:9200/logs-*/_sea
 |---|---|---|
 | `storage=true` | rpi-5-2, rpi-5-3 | Longhorn replica placement (physical data) |
 | `telemetry=true` | rpi-5-1, rpi-5-2 | vmsingle pod placement |
-| `database=true` | rpi-5-1 (rpi-5-4 once it joins the `[database]` inventory group) | Reserved for gating scheduling eligibility for Postgres workloads - no Postgres deployment exists yet, this just labels the node ahead of it |
+| `database=true` | rpi-5-1, rpi-5-4 | Gates scheduling eligibility for the Postgres `Cluster`'s two instances (`apps/postgres/manifests/cluster.yaml`) - required `podAntiAffinity` keeps one instance per node |
 
 Labels are declared per-host in `host_vars/rpi-5-*.yaml` under the `k8s_labels` key, and applied to the live
 cluster by the `k8s_labels` role (which reads every host's `k8s_labels` var and patches the matching
@@ -971,11 +974,12 @@ Blocky/SearXNG. Namespace: `redisinsight`.
 
 ## Postgres (CloudNativePG)
 
-A single-primary Postgres cluster, managed by the [CloudNativePG](https://cloudnative-pg.io/) operator
-(`apps/cloudnative-pg/`) rather than a hand-assembled Patroni+DCS setup - the operator itself is the "control
-plane" that handles failover and primary/replica promotion, no separate component needed for that. The
-actual cluster (`apps/postgres/`) is internal-only for now (no Tailscale Ingress, no external exposure) -
-deliberately, applications are meant to reach it only through the two poolers below, never directly.
+A primary + streaming-replica Postgres cluster, managed by the [CloudNativePG](https://cloudnative-pg.io/)
+operator (`apps/cloudnative-pg/`) rather than a hand-assembled Patroni+DCS setup - the operator itself is
+the "control plane" that handles failover and primary/replica promotion, no separate component needed for
+that. The actual cluster (`apps/postgres/`) is internal-only for now (no Tailscale Ingress, no external
+exposure) - deliberately, applications are meant to reach it only through the two poolers below, never
+directly.
 
 - **Operator**: `apps/cloudnative-pg/`, namespace `cnpg-system`, official `cnpg/cloudnative-pg` chart.
   Installs the `Cluster`/`Pooler`/etc. CRDs `apps/postgres/` depends on. Exports its own controller metrics
@@ -984,31 +988,30 @@ deliberately, applications are meant to reach it only through the two poolers be
   toggle depends on the VM operator's unverified ServiceMonitor/PodMonitor converter, so this repo's proven
   hand-written mechanism is used instead. Also ships CloudNativePG's own official Grafana dashboard, wired
   straight into the existing Grafana sidecar (`grafana_dashboard: "1"` label) with no extra plumbing.
-- **The `Cluster`** (`apps/postgres/manifests/cluster.yaml`), namespace `postgres`: `instances: 1` today -
-  only `rpi-5-1` carries the `database=true` node label (see [Node Labels Reference](#node-labels-reference)
-  and the `[database]` inventory group in `inventory.dist`). Bump to `instances: 2` once `rpi-5-4` is racked
-  and labeled the same way; `affinity.podAntiAffinityType: required` (topologyKey
-  `kubernetes.io/hostname`) then guarantees the second instance lands on a *different* `database=true` node
-  rather than doubling up, satisfying "one Postgres instance per node" by construction. Image:
-  `ghcr.io/cloudnative-pg/postgresql:18.6` (current latest major, confirmed against the real registry, not
-  assumed).
+- **The `Cluster`** (`apps/postgres/manifests/cluster.yaml`), namespace `postgres`: `instances: 2` -
+  `rpi-5-1` and `rpi-5-4` both carry the `database=true` node label (see [Node Labels
+  Reference](#node-labels-reference) and the `[database]` inventory group in `inventory.dist`).
+  `affinity.podAntiAffinityType: required` (topologyKey `kubernetes.io/hostname`) guarantees each instance
+  lands on a *different* `database=true` node rather than doubling up, satisfying "one Postgres instance per
+  node" by construction. CNPG elects one instance primary and streams WAL to the other as a replica, and
+  automatically promotes the replica on primary failure - the operator's own job, nothing hand-rolled for
+  it. Image: `ghcr.io/cloudnative-pg/postgresql:18.6` (current latest major, confirmed against the real
+  registry, not assumed).
 - **Storage**: `local-path` - k3s's own built-in StorageClass - not Longhorn, deliberately. Its
   `volumeBindingMode: WaitForFirstConsumer` bakes node affinity into the resulting PV for whichever node
   the pod first lands on, so a restarted pod can only ever reschedule back onto that same node - this is
   what makes the data "sticky" to a node, with no extra provisioner needed. Redundancy comes from Postgres's
-  own streaming replication once `instances: 2` exists, not from the storage layer - replicating at both the
-  storage layer (Longhorn) and the Postgres layer would be redundant and slower on these nodes' local
-  NVMe/SSD.
+  own streaming replication, not from the storage layer - replicating at both the storage layer (Longhorn)
+  and the Postgres layer would be redundant and slower on these nodes' local NVMe/SSD.
 - **The two Poolers** (`apps/postgres/manifests/pooler-{rw,ro}.yaml`): PgBouncer, fully managed by
   CloudNativePG's own `Pooler` CRD - config, auth (a dedicated `cnpg_pooler_pgbouncer` role + lookup
   function the operator creates itself), and TLS are all operator-managed, confirmed directly against
   CloudNativePG's docs, not hand-rolled. `postgres-pooler-rw` always routes to the current primary via
   CNPG's own `postgres-rw` Service; `postgres-pooler-ro` routes to replicas via `postgres-ro` - both
   Services are kept correct by the operator across a failover, so nothing in this repo tracks "which pod is
-  primary" itself. Until `instances: 2` gives this cluster a real replica, `postgres-pooler-ro` has no live
-  backend to route to - expected, not a bug. `instances: 1` on each pooler (not pinned to `database=true`
-  nodes - PgBouncer holds no data of its own, so it can run anywhere). Native Prometheus metrics on port
-  9127 per pod, no separate exporter needed (unlike ProxySQL, which was considered and dropped - see below).
+  primary" itself. `instances: 1` on each pooler (not pinned to `database=true` nodes - PgBouncer holds no
+  data of its own, so it can run anywhere). Native Prometheus metrics on port 9127 per pod, no separate
+  exporter needed (unlike ProxySQL, which was considered and dropped - see below).
 - **Enforcing "apps talk to the pool, never the databases directly"**: at the network layer, not just
   convention. Two separate NetworkPolicies (`apps/postgres/manifests/networkpolicy.yaml`) - one locks the
   actual Postgres pods down to ingress only from the two poolers, the `cnpg-system` operator, and
@@ -1034,9 +1037,9 @@ deliberately, applications are meant to reach it only through the two poolers be
   have had to either accept or take on a custom image build pipeline to close. CNPG's `Pooler` avoids both
   problems entirely: fully operator-managed config/auth, and metrics built in with no exporter needed.
 - **No backups configured**: deliberate, for now. Durability comes only from Postgres streaming replication
-  across `database=true` nodes (once `instances: 2` exists) - no point-in-time recovery, and losing every
-  `database=true` node at once loses everything. Revisit with CloudNativePG's Barman Cloud plugin
-  (`cnpg/plugin-barman-cloud`) if/when object storage exists in this cluster.
+  across `database=true` nodes - no point-in-time recovery, and losing every `database=true` node at once
+  loses everything. Revisit with CloudNativePG's Barman Cloud plugin (`cnpg/plugin-barman-cloud`) if/when
+  object storage exists in this cluster.
 
 **Troubleshooting:**
 ```bash

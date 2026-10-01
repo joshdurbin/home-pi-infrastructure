@@ -4,13 +4,18 @@
 # maintains <name>-rw/-ro/-r Services that always point at the current
 # primary/replicas, which pooler-rw.yaml/pooler-ro.yaml route through.
 #
-# instances: 1 today (only rpi-5-1 carries the database=true label - see
-# host_vars/rpi-5-1.yaml and the [database] inventory group). Bump to 2
-# once rpi-5-4 is racked and labeled - podAntiAffinity below (topologyKey:
-# kubernetes.io/hostname, required) then guarantees the second instance
-# lands on a *different* database=true node rather than doubling up on
-# rpi-5-1, satisfying "only one postgres instance per node" by
-# construction rather than by convention.
+# instances: 2 - rpi-5-1 and rpi-5-4 both carry the database=true label
+# (see host_vars/rpi-5-1.yaml, host_vars/rpi-5-4.yaml, and the [database]
+# inventory group) - podAntiAffinity below (topologyKey:
+# kubernetes.io/hostname, required) guarantees the second instance lands
+# on the *other* database=true node rather than doubling up on either one,
+# satisfying "only one postgres instance per node" by construction rather
+# than by convention. CNPG elects one instance primary and the other a
+# streaming-replication replica, and automatically promotes the replica on
+# primary failure - no separate failover component (Patroni/DCS) needed,
+# that's the operator's whole job. postgres-pooler-ro
+# (apps/postgres/manifests/pooler-ro.yaml) only gets a real backend to
+# route to once this is >= 2, which is now.
 #
 # Storage: local-path (k3s's built-in StorageClass), not Longhorn -
 # deliberate. Its volumeBindingMode: WaitForFirstConsumer means the
@@ -18,17 +23,16 @@
 # first lands on, so a restarted pod can only ever be rescheduled back
 # onto that same node - exactly the "sticky to the node the data lives on"
 # behavior asked for, with no extra provisioner needed. Redundancy comes
-# from Postgres's own streaming replication once instances: 2 exists, not
-# from the storage layer - replicating both at the storage layer (Longhorn)
-# and the Postgres layer would be redundant and slower on these nodes'
-# local NVMe/SSD.
+# from Postgres's own streaming replication, not from the storage layer -
+# replicating both at the storage layer (Longhorn) and the Postgres layer
+# would be redundant and slower on these nodes' local NVMe/SSD.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
   name: postgres
   namespace: postgres
 spec:
-  instances: 1
+  instances: 2
   imageName: ghcr.io/cloudnative-pg/postgresql:18.6
 
   storage:

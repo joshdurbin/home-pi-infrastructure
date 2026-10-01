@@ -5,6 +5,7 @@ rpi-4b-3 ansible_host=192.168.1.18
 rpi-5-1  ansible_host=192.168.1.30
 rpi-5-2  ansible_host=192.168.1.41
 rpi-5-3  ansible_host=192.168.1.28
+rpi-5-4  ansible_host=192.168.1.83
 
 [all:vars]
 ansible_user=ansible
@@ -21,15 +22,15 @@ rpi-4b-3
 rpi-5-1
 rpi-5-2
 rpi-5-3
-# rpi-5-4 joins here once it's racked and added above to [all] with a real
-# ansible_host. Deliberately NOT [server] (see that group's own comment) -
-# [pi5] is a hardware-class group, [server] is a control-plane-membership
-# group, and after this change they're no longer the same set.
+rpi-5-4
+# Deliberately NOT [server] (see that group's own comment) - [pi5] is a
+# hardware-class group, [server] is a control-plane-membership group, and
+# the two are no longer the same set now that rpi-5-4 exists.
 
 # Control plane (etcd + API server) - explicitly enumerated rather than
 # aliased to [pi5], and deliberately kept that way: etcd quorum needs a
-# fixed, deliberately-chosen odd-numbered membership. rpi-5-4 (arriving in
-# a few days) must join [pi5] and [agent], never this group - a 4th etcd
+# fixed, deliberately-chosen odd-numbered membership. rpi-5-4 joins [pi5],
+# [agent], and [database] below, never this group - a 4th etcd
 # member would be strictly worse for fault tolerance than 3 (still only
 # tolerates 1 node failure, but now needs 3 of 4 to agree instead of 2 of
 # 3), not better. Previously the pi4 nodes - moved here because etcd is
@@ -47,25 +48,32 @@ rpi-5-1
 rpi-5-2
 rpi-5-3
 
-# Workers - previously the pi5 nodes. Compute/network-bound workloads only
-# now that the pi4 nodes' disks are known to struggle - nothing with heavy
-# disk activity should be pinned here via a node label.
+# Workers - previously only the pi4 nodes. Compute/network-bound workloads
+# by default now that the pi4 nodes' disks are known to struggle - nothing
+# with heavy disk activity should be pinned here via a node label. rpi-5-4
+# is the one exception, deliberately: its own disk hasn't shown the pi4
+# nodes' fsync problems (it's a Pi 5, same class as [server]), which is
+# exactly why it carries database=true below instead of being held to the
+# same "no heavy disk" rule as the pi4 agents.
 [agent]
 rpi-4b-1
 rpi-4b-2
 rpi-4b-3
-# rpi-5-4 joins here (and [pi5]) once racked, not [server] - see that
-# group's own comment.
+rpi-5-4
 
-# Nodes carrying the database=true k8s label (see host_vars/rpi-5-1.yaml),
-# gating scheduling eligibility for Postgres workloads. rpi-5-1 today;
-# rpi-5-4 joins this group once it's actually racked and labeled the same
-# way - don't add it here first. Independent of [server]/[agent]
-# membership - k3s doesn't taint server/control-plane nodes against
-# regular workloads by default, and this cluster has never changed that,
-# so a node can be both [server] and database=true at once.
+# Nodes carrying the database=true k8s label (see host_vars/rpi-5-1.yaml,
+# host_vars/rpi-5-4.yaml), gating scheduling eligibility for Postgres
+# workloads - apps/postgres/manifests/cluster.yaml's affinity.nodeSelector
+# targets exactly this label, and its required podAntiAffinity
+# (topologyKey kubernetes.io/hostname) guarantees each of the Cluster's
+# instances lands on a different one of these nodes. Independent of
+# [server]/[agent] membership - k3s doesn't taint server/control-plane
+# nodes against regular workloads by default, and this cluster has never
+# changed that, so a node can be both [server] and database=true at once
+# (rpi-5-1 is).
 [database]
 rpi-5-1
+rpi-5-4
 
 [k3s_cluster:children]
 server
