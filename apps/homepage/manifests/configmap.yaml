@@ -92,3 +92,7 @@ data:
             href: https://whodb.{{HOMEPAGE_VAR_TAILNET_DOMAIN}}
             description: Postgres, OpenSearch and Redis browser (read-only)
             icon: mdi-database-search-outline
+        - LiteLLM:
+            href: https://litellm.{{HOMEPAGE_VAR_TAILNET_DOMAIN}}/ui
+            description: LLM gateway (API, keys, spend)
+            icon: mdi-router-network

@@ -64,6 +64,12 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
    openwebui_db_password: "<output of: openssl rand -hex 32>"
    grafana_db_password: "<output of: openssl rand -hex 32>"
    pgadmin_db_password: "<output of: openssl rand -hex 32>"
+   litellm_master_key: "sk-<output of: openssl rand -hex 24>"   # must start with sk-
+   litellm_salt_key: "sk-<output of: openssl rand -hex 24>"     # never change once set
+   litellm_db_password: "<output of: openssl rand -hex 32>"
+   # optional - LLM provider keys for LiteLLM:
+   # anthropic_api_key: "sk-ant-..."
+   # openai_api_key: "sk-..."
    ```
 
 6. Deploy everything:
@@ -80,7 +86,7 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
 From there, Longhorn (storage), VictoriaMetrics/Grafana (metrics), OpenSearch/OpenSearch
 Dashboards + VictoriaLogs (logs, dual-shipped to both), Blocky (DNS), SearXNG (search), the redis-operator
 (Blocky's and SearXNG's own small caching clusters), WhoDB (a UI for browsing Postgres, OpenSearch and those caches),
-CloudNativePG (a Postgres cluster on the `database=true` nodes, behind PgBouncer poolers), Temporal (a
+CloudNativePG (a Postgres cluster on the `database=true` nodes, behind PgBouncer poolers), LiteLLM (an LLM gateway backed by Postgres and its own Redis cache), Temporal (a
 workflow orchestration platform, backed by that same Postgres cluster), Homepage (a dashboard linking out
 to every other UI below), Open WebUI (a chat UI for LLMs - no backend wired up, add one via its own
 Settings UI), the descheduler (periodically rebalances pods across nodes), Trivy Operator (continuous
@@ -127,6 +133,7 @@ Once Tailscale is set up and synced:
 | Temporal Web UI | `https://temporal.<tailnet>.ts.net` |
 | Open WebUI | `https://chat.<tailnet>.ts.net` |
 | WhoDB | `https://whodb.<tailnet>.ts.net` |
+| LiteLLM | `https://litellm.<tailnet>.ts.net/ui` |
 
 (Replace `<tailnet>` with your tailnet's `.ts.net` domain — run `tailscale status` on any connected device
 to find it.)

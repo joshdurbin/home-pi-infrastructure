@@ -1,0 +1,52 @@
+# Egress-only (Tailscale reaching the UI/API is ingress, unaffected):
+# - CoreDNS
+# - Postgres poolers, 5432 in the postgres namespace (the poolers' own
+#   ingress is open by design, see apps/postgres/manifests/networkpolicy.yaml)
+# - litellm-cache Redis, 6379 (no Sentinel - only the "-master" Service)
+# - HTTPS (443) to anywhere outside the cluster/LAN: the LLM provider APIs
+#   (Anthropic, OpenAI, ...). Private ranges are excluded so this doesn't
+#   double as a path to other in-cluster or LAN services.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: litellm-egress
+  namespace: litellm
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: litellm-cache
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

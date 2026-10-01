@@ -1,0 +1,27 @@
+# Monitors litellm-cache (redis-replication.yaml) and promotes the replica if
+# the master pod dies. 3 sentinels for a real majority quorum. LiteLLM does
+# NOT talk to these directly - it connects to litellm-cache's "-master"
+# Service, which this Sentinel keeps pointed at the real master.
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisSentinel
+metadata:
+  name: litellm-cache-sentinel
+  namespace: litellm-cache
+spec:
+  clusterSize: 3
+  podSecurityContext:
+    runAsUser: 1000
+    fsGroup: 1000
+  redisSentinelConfig:
+    redisReplicationName: litellm-cache
+    masterGroupName: litellm-cache
+  kubernetesConfig:
+    image: quay.io/opstree/redis-sentinel:v8.10.1
+    imagePullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi

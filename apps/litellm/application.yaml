@@ -1,0 +1,47 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: litellm
+  namespace: argocd
+  annotations:
+    # Needs the Postgres cluster + poolers (wave 2, same tier - its DB/role
+    # are CRs in apps/postgres, and the chart's PreSync migration Job simply
+    # retries until they exist), redis-operator's CRDs (wave 1) and Longhorn
+    # (wave 0) for litellm-cache's PVCs. Same tier as every other end-user
+    # facing app.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: litellm
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  sources:
+    # Official chart, published by BerriAI as an OCI artifact (no classic
+    # Helm repo) - chart version tracks the LiteLLM release, and its default
+    # image tag is the same version (appVersion), so pinning the chart pins
+    # the image too. Re-pin deliberately on bumps.
+    - repoURL: ghcr.io/berriai
+      chart: litellm-helm
+      targetRevision: 1.103.2
+      helm:
+        releaseName: litellm
+        valueFiles:
+          - $values/apps/litellm/values.yaml
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      ref: values
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      path: apps/litellm/manifests

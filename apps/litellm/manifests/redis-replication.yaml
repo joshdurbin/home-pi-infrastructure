@@ -1,0 +1,51 @@
+# LiteLLM's Redis: response cache plus router state (rate limits, cooldowns,
+# spend counters). Two pods (master + one replica), each with its own PVC;
+# redis-sentinel.yaml here fails over automatically at the storage layer.
+# LiteLLM's config (apps/litellm/values.yaml) follows the master via this
+# CR's operator-maintained "-master" Service rather than Sentinel directly.
+#
+# Sizing: same as apps/searxng/manifests/redis-replication.yaml - cache-only,
+# 128MB maxmemory (allkeys-lru), container memory is that plus overhead.
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisReplication
+metadata:
+  name: litellm-cache
+  namespace: litellm-cache
+spec:
+  clusterSize: 2
+  podSecurityContext:
+    runAsUser: 1000
+    fsGroup: 1000
+  redisConfig:
+    dynamicConfig:
+      - maxmemory 128mb
+      - maxmemory-policy allkeys-lru
+  kubernetesConfig:
+    image: quay.io/opstree/redis:v8.10.1
+    imagePullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 50m
+        memory: 192Mi
+      limits:
+        cpu: 200m
+        memory: 192Mi
+  redisExporter:
+    enabled: true
+    image: quay.io/opstree/redis-exporter:v1.89.0
+    imagePullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: longhorn
+        resources:
+          requests:
+            storage: 512Mi

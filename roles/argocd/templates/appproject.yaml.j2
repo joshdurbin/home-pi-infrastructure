@@ -22,6 +22,7 @@ spec:
     - https://kubernetes-sigs.github.io/descheduler/
     - https://aquasecurity.github.io/helm-charts/
     - https://helm.openwebui.com/
+    - ghcr.io/berriai
     - '{{ argocd_vars.gitops.repo_url }}'
   # Scoped to the namespaces these apps actually use.
   destinations:
@@ -51,6 +52,10 @@ spec:
     - namespace: searxng-cache
       server: https://kubernetes.default.svc
     - namespace: whodb
+      server: https://kubernetes.default.svc
+    - namespace: litellm
+      server: https://kubernetes.default.svc
+    - namespace: litellm-cache
       server: https://kubernetes.default.svc
     - namespace: cnpg-system
       server: https://kubernetes.default.svc

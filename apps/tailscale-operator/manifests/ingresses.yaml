@@ -290,3 +290,29 @@ spec:
                 name: whodb
                 port:
                   number: 8080
+---
+# LiteLLM's API (OpenAI-compatible, /v1) and admin UI (/ui) on one host -
+# https://litellm.<tailnet>.ts.net. Service "litellm", port 4000 (chart
+# default, confirmed via `helm template`). Plain HTTP backend, TLS ends at
+# Tailscale like every other UI here.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: litellm
+  namespace: litellm
+  annotations:
+    tailscale.com/proxy-group: ingress-proxies
+spec:
+  ingressClassName: tailscale
+  tls:
+    - hosts: [litellm]
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: litellm
+                port:
+                  number: 4000

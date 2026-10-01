@@ -1,0 +1,36 @@
+# LiteLLM's own Postgres user and database (apps/litellm/), created
+# declaratively via CloudNativePG's DatabaseRole/Database CRDs - same
+# pattern as open-webui-database.yaml beside this file. LiteLLM connects
+# through postgres-pooler-rw (session pool mode, so Prisma migrations and
+# advisory locks work). It owns its database, which it needs: the chart's
+# migration Job runs `prisma db push` as this role.
+#
+# The password Secret (litellm-db-credentials) is seeded by the k8s_secrets
+# Ansible role from the Vault-encrypted litellm_db_password - once here
+# (basic-auth shape, for CNPG) and once in the litellm namespace (what the
+# chart's db.secret reads), since Secrets are namespace-scoped.
+apiVersion: postgresql.cnpg.io/v1
+kind: DatabaseRole
+metadata:
+  name: litellm
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  name: litellm
+  ensure: present
+  login: true
+  passwordSecret:
+    name: litellm-db-credentials
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: litellm
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  name: litellm
+  owner: litellm
+  ensure: present

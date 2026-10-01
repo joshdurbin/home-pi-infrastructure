@@ -1,0 +1,113 @@
+# LiteLLM proxy - one OpenAI-compatible endpoint in front of every LLM
+# provider, with virtual keys, spend tracking and a UI (/ui).
+#
+# - Database: the cluster's CloudNativePG Postgres via postgres-pooler-rw
+#   (apps/postgres/manifests/litellm-database.yaml), NOT the chart's bundled
+#   Bitnami Postgres. Credentials come from the litellm-db-credentials
+#   Secret seeded by k8s_secrets.
+# - Cache: litellm-cache, a Redis replication+sentinel pair of its own
+#   (manifests/redis-*.yaml), same shape as Blocky's/SearXNG's. Used for
+#   response caching and router state (rate limits, cooldowns).
+# - Metrics: the `prometheus` callback exposes /metrics on :4000
+#   (token/spend/latency/failure counters per model, key and team);
+#   `prometheus_system` adds Redis/Postgres latency. Scraped by
+#   manifests/vmservicescrape.yaml.
+# - Secrets (never in git): master key, salt key and provider API keys, from
+#   the litellm-masterkey / litellm-env Secrets seeded by k8s_secrets.
+
+# Chart default is Always, which would re-pull a multi-hundred-MB image on
+# every restart on this fleet. The tag itself is the chart's appVersion
+# (matches the pinned chart version in application.yaml).
+image:
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+# Chart's PROXY_MASTER_KEY env comes from this Secret (key `masterkey`).
+masterkeySecretName: litellm-masterkey
+masterkeySecretKey: masterkey
+
+# LITELLM_SALT_KEY (encrypts provider credentials stored in the DB - must
+# never change once set) plus the optional provider keys, all as env vars.
+# LiteLLM picks ANTHROPIC_API_KEY / OPENAI_API_KEY up natively, so the config
+# below needs no api_key entries.
+environmentSecrets:
+  - litellm-env
+
+db:
+  useExisting: true
+  deployStandalone: false
+  endpoint: postgres-pooler-rw.postgres.svc.cluster.local:5432
+  database: litellm
+  secret:
+    name: litellm-db-credentials
+    usernameKey: username
+    passwordKey: password
+
+# Bundled Redis subchart stays off - litellm-cache (manifests/) is the cache.
+redis:
+  enabled: false
+
+envVars:
+  # No telemetry/updates phoning home.
+  LITELLM_TELEMETRY: "False"
+  DISABLE_ADMIN_UI: "False"
+
+proxy_config:
+  model_list:
+    # Wildcards: any model the provider offers is reachable as
+    # anthropic/<model> or openai/<model> without editing this file. Needs
+    # the matching API key in litellm-env.
+    - model_name: "anthropic/*"
+      litellm_params:
+        model: "anthropic/*"
+    - model_name: "openai/*"
+      litellm_params:
+        model: "openai/*"
+    # Friendly aliases for the Claude models.
+    - model_name: claude-sonnet
+      litellm_params:
+        model: anthropic/claude-sonnet-5-5
+    - model_name: claude-opus
+      litellm_params:
+        model: anthropic/claude-opus-5-5
+    - model_name: claude-haiku
+      litellm_params:
+        model: anthropic/claude-haiku-4-5-20251001
+  litellm_settings:
+    callbacks: ["prometheus"]
+    service_callback: ["prometheus_system"]
+    drop_params: true
+    cache: true
+    cache_params:
+      type: redis
+      # litellm-cache's operator-maintained "-master" Service - follows
+      # whichever pod Sentinel has promoted (see apps/searxng for the same
+      # pattern; LiteLLM's Redis client takes one host, not Sentinel).
+      host: litellm-cache-master.litellm-cache.svc.cluster.local
+      port: 6379
+      namespace: litellm.cache
+      ttl: 600
+  router_settings:
+    redis_host: litellm-cache-master.litellm-cache.svc.cluster.local
+    redis_port: 6379
+    routing_strategy: simple-shuffle
+    num_retries: 2
+  general_settings:
+    master_key: os.environ/PROXY_MASTER_KEY
+    # Lets models/keys/teams be managed in the UI (stored encrypted in
+    # Postgres using LITELLM_SALT_KEY) on top of the model_list above.
+    store_model_in_db: true
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1536Mi
+
+# Python startup + Prisma client generation is slow on a Pi: allow 10
+# minutes (60 x 10s) instead of the chart's 5 before the pod is killed.
+startupProbe:
+  failureThreshold: 60

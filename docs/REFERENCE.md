@@ -29,6 +29,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [Node Rebalancing (descheduler)](#node-rebalancing-descheduler)
 - [Vulnerability Scanning (Trivy Operator)](#vulnerability-scanning-trivy-operator)
 - [Open WebUI](#open-webui)
+- [LiteLLM](#litellm)
 - [Exposing UIs via Tailscale Operator](#exposing-uis-via-tailscale-operator)
 - [Tailscale Integration (Optional)](#tailscale-integration-optional)
 - [Cluster Configuration](#cluster-configuration)
@@ -1354,6 +1355,43 @@ replaces the former pgAdmin and RedisInsight apps. Runs the official `clidey/who
 may linger - drop it with `DROP ROLE pgadmin;` as `postgres`. The old `pgadmin-db-credentials` Secret in the
 `postgres` namespace can be deleted too.
 
+## LiteLLM
+
+An OpenAI-compatible gateway in front of LLM providers (`apps/litellm/`, namespace `litellm`): one endpoint,
+virtual API keys, per-key/team spend tracking, an admin UI. Deployed from BerriAI's official Helm chart, which
+is published only as an OCI artifact (`ghcr.io/berriai/litellm-helm`) - so `roles/argocd` registers that
+registry with `enableOCI` and the AppProject allows it. Chart version = LiteLLM version (default image tag is
+the chart's `appVersion`); re-pin deliberately.
+
+- **Database**: the cluster's CloudNativePG Postgres through `postgres-pooler-rw`, database/role `litellm`
+  (`apps/postgres/manifests/litellm-database.yaml`) - the chart's bundled Postgres is off. The chart's PreSync
+  migration Job runs the Prisma schema push as that role.
+- **Cache**: `litellm-cache`, its own Redis replication + Sentinel (`apps/litellm/manifests/redis-*.yaml`,
+  namespace `litellm-cache`), same shape as the Blocky/SearXNG ones. Used for response caching
+  (`cache_params`, 10 min TTL) and router state (`router_settings.redis_*`). LiteLLM connects to the
+  operator-maintained `litellm-cache-master` Service - failover-aware, no Sentinel client needed.
+- **Metrics**: `callbacks: ["prometheus"]` (request/token/spend/latency/failure counters per model, key, team)
+  plus `service_callback: ["prometheus_system"]` (Redis/Postgres latency), at `/metrics` on :4000. `/metrics`
+  needs an API key by default, so the `VMServiceScrape` (`apps/litellm/manifests/vmservicescrape.yaml`) sends
+  the master key as a bearer token. The Redis exporter sidecars are scraped by a `VMPodScrape` like the other
+  caches.
+- **Models** (`apps/litellm/values.yaml`, `proxy_config.model_list`): wildcards `anthropic/*` and `openai/*`
+  (anything the provider offers, no edits needed) plus aliases `claude-sonnet`, `claude-opus`, `claude-haiku`.
+  `store_model_in_db: true` also lets you add models and keys in the UI (stored encrypted in Postgres).
+- **Secrets** (Vault, seeded by `k8s_secrets` -> `make deploy-secrets`): `litellm_master_key` (admin key / UI
+  login, must start with `sk-`), `litellm_salt_key` (encrypts DB-stored provider credentials; **never change it
+  once set**), `litellm_db_password`, and optionally `anthropic_api_key` / `openai_api_key`. Provider keys are
+  read at process start: after adding one, re-seed and `kubectl -n litellm rollout restart deploy/litellm`.
+- **Egress NetworkPolicy**: DNS, 5432 to `postgres`, 6379 to `litellm-cache`, and 443 to anywhere outside the
+  private ranges (provider APIs).
+
+**First-time order**: add the Vault vars -> `make deploy-secrets` -> `make deploy-argocd` (registers the OCI
+registry, allows the namespaces) -> push. **Use it**: sign in to `/ui` with the master key (username `admin`),
+create a virtual key, then point clients (e.g. Open WebUI's OpenAI connection) at
+`http://litellm.litellm.svc.cluster.local:4000/v1` or `https://litellm.<tailnet>.ts.net/v1`.
+
+**Access it**: `https://litellm.<tailnet>.ts.net/ui`.
+
 ## Exposing UIs via Tailscale Operator
 
 Reaches Grafana, Alertmanager, the VictoriaMetrics UI, the Longhorn UI, Blocky's `/metrics`, SearXNG, the Argo CD
@@ -1441,6 +1479,7 @@ hostname shown there):
 | Argo CD | `https://argocd.<tailnet>.ts.net` |
 | Open WebUI | `https://chat.<tailnet>.ts.net` |
 | WhoDB | `https://whodb.<tailnet>.ts.net` |
+| LiteLLM | `https://litellm.<tailnet>.ts.net/ui` |
 
 Confirmed working from a phone with the Tailscale app active. If you test from a **Mac terminal or
 Safari** and it doesn't resolve, see the Troubleshooting note below before assuming the deployment is
