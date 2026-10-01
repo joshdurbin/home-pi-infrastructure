@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: descheduler
+  namespace: argocd
+  annotations:
+    # No CRDs, no PVC, nothing else in apps/ depends on it - it only reads
+    # Node/Pod state and evicts, cluster-wide, via the chart's own
+    # ClusterRole. Wave 1 (same tier as redis-operator/cloudnative-pg) is
+    # arbitrary but harmless: it's a CronJob, so sync ordering only affects
+    # when the CronJob object itself is created, not when it first actually
+    # runs (next schedule tick either way).
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: descheduler
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  sources:
+    - repoURL: https://kubernetes-sigs.github.io/descheduler/
+      chart: descheduler
+      targetRevision: 0.36.0
+      helm:
+        releaseName: descheduler
+        valueFiles:
+          - $values/apps/descheduler/values.yaml
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      ref: values

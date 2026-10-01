@@ -25,6 +25,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [Postgres (CloudNativePG)](#postgres-cloudnativepg)
 - [Temporal](#temporal)
 - [Home Dashboard (Homepage)](#home-dashboard-homepage)
+- [Node Rebalancing (descheduler)](#node-rebalancing-descheduler)
 - [Exposing UIs via Tailscale Operator](#exposing-uis-via-tailscale-operator)
 - [Tailscale Integration (Optional)](#tailscale-integration-optional)
 - [Cluster Configuration](#cluster-configuration)
@@ -554,8 +555,9 @@ cluster-admin access — fine for a single-user homelab, but keep it as private 
 ## GitOps (Argo CD)
 
 Longhorn, VictoriaMetrics, OpenSearch, Blocky, SearXNG, redis-operator, RedisInsight, CloudNativePG,
-Postgres, Temporal, Homepage, and the Tailscale Operator are no longer installed or upgraded by Ansible. Argo CD runs in-cluster
-(namespace `argocd`) and continuously reconciles all twelve from this **same** repo's `apps/` directory — edit a file there, commit, and Argo CD applies it within its
+Postgres, Temporal, Homepage, the descheduler, and the Tailscale Operator are no longer installed or
+upgraded by Ansible. Argo CD runs in-cluster
+(namespace `argocd`) and continuously reconciles all thirteen from this **same** repo's `apps/` directory — edit a file there, commit, and Argo CD applies it within its
 next poll cycle (or immediately via `argocd app sync` / the UI). This replaced hand-templating every
 chart's values through Jinja and running `kubectl`/`helm` manually to fix drift — Argo CD's own continuous
 reconciliation makes drift structurally impossible to miss.
@@ -1136,6 +1138,40 @@ ships no official Helm chart of its own, only Docker instructions.
   Operator](#exposing-uis-via-tailscale-operator) below. To add a newly-exposed service to the dashboard,
   add an entry to `apps/homepage/manifests/configmap.yaml`'s `services.yaml` and commit - no Ansible run
   needed, same as adding the `Ingress` itself.
+
+## Node Rebalancing (descheduler)
+
+The kube-scheduler only ever places a pod once, at creation - it never moves a running pod to rebalance
+load across nodes. Confirmed live the gap this left: right after `rpi-5-4` joined, it sat at 19%
+memory/12 pods while `rpi-5-2` was at 69% memory/22 pods, with no mechanism to ever reconsider that.
+[kubernetes-sigs/descheduler](https://github.com/kubernetes-sigs/descheduler) (`apps/descheduler/`,
+SIG Scheduling's own project, no vendor chart) is what actually moves already-running pods.
+
+- **Mode**: `kind: CronJob`, every 30 minutes - runs, evicts whatever the policy below flags, then exits.
+  Picked over the chart's `Deployment` mode (a long-lived pod doing the same thing via its own internal
+  `--descheduling-interval`) for no benefit on a 7-node homelab.
+- **Policy** (`apps/descheduler/values.yaml`'s `deschedulerPolicy`): `LowNodeUtilization` - a node under
+  30% cpu/memory/pods is a valid eviction target, a node over 60% on any of those is a source to evict
+  from. Thresholds picked against this cluster's own real numbers (the 69%/19% split above).
+- **Safety**: `DefaultEvictor`'s `nodeFit: true` simulates whether an evicted pod could actually be
+  rescheduled (nodeSelector, taints, resource requests) before evicting it - protects e.g. vmsingle's
+  `telemetry=true` pin or Longhorn's `storage=true` one. The one gap its docs don't confirm it covers is a
+  PV's own baked-in node affinity (`local-path`'s `WaitForFirstConsumer`), which is why the `postgres`
+  namespace is excluded outright via `evictableNamespaces` instead - evicting either Postgres instance
+  would just force-restart it right back onto the same node (the only one satisfying both the
+  `database=true` nodeSelector and the PV's own affinity at once), a pointless disruption for zero actual
+  rebalancing. `kube-system` is excluded too - standard "don't let a descheduler touch core cluster
+  services" default.
+
+**Troubleshooting:**
+```bash
+# Did the last run evict anything
+kubectl -n descheduler get jobs
+kubectl -n descheduler logs job/<latest-job-name>
+
+# Current pod distribution per node
+kubectl get pods -A -o custom-columns='NODE:.spec.nodeName' --no-headers | sort | uniq -c | sort -rn
+```
 
 ## Exposing UIs via Tailscale Operator
 

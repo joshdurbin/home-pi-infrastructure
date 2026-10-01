@@ -76,8 +76,9 @@ From there, Longhorn (storage), VictoriaMetrics/Grafana (metrics), OpenSearch/Op
 Dashboards (logs), Blocky (DNS), SearXNG (search), the redis-operator (Blocky's and SearXNG's own small
 caching clusters), RedisInsight (a UI for browsing those caches), CloudNativePG (a Postgres cluster on
 the `database=true` nodes, behind PgBouncer poolers), Temporal (a workflow orchestration platform,
-backed by that same Postgres cluster), Homepage (a dashboard linking out to every other UI below), and
-the Tailscale Operator all come up on their own — Argo CD
+backed by that same Postgres cluster), Homepage (a dashboard linking out to every other UI below), the
+descheduler (periodically rebalances pods across nodes), and the Tailscale Operator all come up on their
+own — Argo CD
 manages them from this repo's `apps/` directory. See [docs/REFERENCE.md](docs/REFERENCE.md) for what
 each one does.
 
@@ -138,5 +139,5 @@ kubectl get nodes
 
 [docs/REFERENCE.md](docs/REFERENCE.md) covers: project structure, the GitOps split between Ansible and
 Argo CD, per-app configuration (Longhorn, VictoriaMetrics, OpenSearch, Blocky, SearXNG, redis-operator,
-RedisInsight, Postgres/CloudNativePG, Temporal, Homepage, Tailscale Operator), user management, node
-maintenance, and troubleshooting.
+RedisInsight, Postgres/CloudNativePG, Temporal, Homepage, descheduler, Tailscale Operator), user
+management, node maintenance, and troubleshooting.

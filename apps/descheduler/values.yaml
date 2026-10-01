@@ -1,0 +1,96 @@
+# The kube-scheduler only ever places a pod once, at creation - it never
+# moves a running pod to rebalance load. Confirmed live the gap this
+# leaves: right after rpi-5-4 joined the cluster, it sat at 19% memory/12
+# pods while rpi-5-2 was at 69% memory/22 pods - every pod that existed
+# before rpi-5-4 existed was still exactly where it originally landed, with
+# no mechanism to ever reconsider that. This chart (kubernetes-sigs,
+# SIG Scheduling's own project) is what actually moves already-running
+# pods, on a schedule, by evicting them off over-utilized nodes so the
+# scheduler's normal placement logic reconsiders them against the full
+# current node set.
+
+# CronJob over Deployment: runs, evicts whatever the policy below flags,
+# then exits - no long-lived pod sitting idle between runs (Deployment mode
+# would need its own --descheduling-interval doing the same job internally,
+# for no benefit on a 7-node homelab). Every 30 minutes - frequent enough to
+# matter after a node join or a deploy-driven pod reshuffle, not so
+# frequent it fights the scheduler or causes needless pod churn.
+kind: CronJob
+schedule: '*/30 * * * *'
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+deschedulerPolicy:
+  profiles:
+    - name: default
+      pluginConfig:
+        - name: DefaultEvictor
+          args:
+            # Confirmed against the project's own README: nodeFit simulates
+            # whether an evicted pod could actually be rescheduled
+            # (nodeSelector, taints/tolerations, resource requests) before
+            # evicting it - a real safety net for e.g. vmsingle's
+            # telemetry=true nodeSelector or Longhorn's storage=true one,
+            # so this won't evict something into a state where it can only
+            # go right back where it was (or worse, Pending). The one gap
+            # the docs don't confirm it covers is a PV's own baked-in node
+            # affinity (local-path's WaitForFirstConsumer) - that's why
+            # the postgres namespace is excluded outright below instead of
+            # relying on this for it.
+            nodeFit: true
+            evictLocalStoragePods: false
+        - name: LowNodeUtilization
+          args:
+            # Thresholds are percent-of-allocatable, per node, and must
+            # specify the same resource keys in both maps (confirmed
+            # against the README) - any resource left out defaults to
+            # 100%, which would make that resource's utilization
+            # irrelevant to the decision rather than just "lenient", so
+            # all three are listed explicitly even though pod *count*
+            # imbalance matters less here than cpu/memory.
+            #
+            # thresholds: 30 - a node below 30% on every listed resource
+            # counts as underutilized, i.e. a valid eviction target.
+            # targetThresholds: 60 - a node above 60% on any listed
+            # resource counts as overutilized, i.e. a source to evict
+            # from. Picked against this cluster's own real numbers:
+            # rpi-5-2 was observed at 69% memory (would trigger) while
+            # most other nodes sat in the 30-45% range (wouldn't) - wide
+            # enough that normal day-to-day variance doesn't cause
+            # constant back-and-forth evictions, narrow enough to have
+            # actually caught the real imbalance this was added for.
+            thresholds:
+              cpu: 30
+              memory: 30
+              pods: 30
+            targetThresholds:
+              cpu: 60
+              memory: 60
+              pods: 60
+            evictableNamespaces:
+              exclude:
+                # kube-system: CoreDNS/metrics-server/local-path-provisioner
+                # - standard "don't let a descheduler touch core cluster
+                # services" default, same reasoning as every other
+                # conservative descheduler policy published.
+                - kube-system
+                # postgres: both instances are pinned by cluster.yaml's
+                # own nodeSelector (database=true) *and* by local-path's
+                # per-node PV affinity - evicting either pod would just
+                # force-restart it right back onto the same node (the only
+                # one satisfying both constraints at once), a pointless
+                # disruption to a stateful primary/replica pair for zero
+                # actual rebalancing. See the DefaultEvictor comment above
+                # for why this is an explicit exclude rather than trusting
+                # nodeFit alone to work this out.
+                - postgres
+      plugins:
+        balance:
+          enabled:
+            - LowNodeUtilization
