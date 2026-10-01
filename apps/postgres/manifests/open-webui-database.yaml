@@ -1,0 +1,45 @@
+# Open WebUI's own Postgres user and database (apps/open-webui/), created
+# declaratively via CloudNativePG's DatabaseRole/Database CRDs - same
+# pattern as temporal-database.yaml beside this file. Open WebUI connects
+# through postgres-pooler-rw (apps/postgres/manifests/pooler-rw.yaml) like
+# everything else does, not a dedicated pooler pair.
+#
+# Only moves the relational DB (chats/users/settings, previously SQLite at
+# /app/backend/data/webui.db) - Open WebUI still needs its own PVC
+# regardless (apps/open-webui/values.yaml's persistence block stays as-is):
+# file uploads (STORAGE_PROVIDER, default local) and RAG vector embeddings
+# (VECTOR_DB, default chroma) are controlled by entirely separate env vars
+# and aren't touched by DATABASE_URL at all - confirmed against Open
+# WebUI's own env-configuration docs, not assumed.
+#
+# The password Secret (open-webui-db-credentials) is seeded by the
+# k8s_secrets Ansible role (group_vars/all/cluster_secrets.yaml) from a
+# Vault-encrypted value - same content (modulo key shape) also seeded into
+# the open-webui namespace as a single composed DATABASE_URL, since
+# Kubernetes Secrets are namespace-scoped and CNPG requires the referent
+# in the same namespace as the DatabaseRole.
+apiVersion: postgresql.cnpg.io/v1
+kind: DatabaseRole
+metadata:
+  name: open-webui
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  name: open_webui
+  ensure: present
+  login: true
+  passwordSecret:
+    name: open-webui-db-credentials
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: open-webui
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  name: open_webui
+  owner: open_webui
+  ensure: present

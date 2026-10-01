@@ -38,8 +38,9 @@ websocket:
 persistence:
   enabled: true
   storageClass: longhorn
-  # Chats/users/settings/SQLite DB - small for a single/few-user homelab
-  # instance, not model weights (no local Ollama here, see top comment).
+  # File uploads and RAG vector embeddings now (chats/users/settings moved
+  # to Postgres, see the DATABASE_URL env var below) - still needed
+  # regardless, not model weights (no local Ollama here, see top comment).
   size: 2Gi
 
 # WEBUI_SECRET_KEY signs session cookies - not an LLM-backend credential,
@@ -56,6 +57,21 @@ extraEnvVars:
       secretKeyRef:
         name: open-webui-secret-key
         key: secret-key
+  # Moves chats/users/settings onto the cluster's existing HA Postgres
+  # (apps/postgres/manifests/open-webui-database.yaml), via
+  # postgres-pooler-rw - instead of the local SQLite file this previously
+  # used. Does NOT remove the need for the PVC below: file uploads and RAG
+  # vector embeddings are separate concerns (STORAGE_PROVIDER/VECTOR_DB
+  # env vars, both still local/default) that DATABASE_URL doesn't touch -
+  # confirmed against Open WebUI's own docs, not assumed. Pre-existing
+  # chat data in webui.db is NOT migrated by this - this starts a fresh
+  # database, a deliberate tradeoff given how little was in it at the time
+  # (deployed minutes earlier, not a real loss).
+  - name: DATABASE_URL
+    valueFrom:
+      secretKeyRef:
+        name: open-webui-database-url
+        key: url
 
 resources:
   requests:

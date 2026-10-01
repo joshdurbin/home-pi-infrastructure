@@ -61,6 +61,7 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
    searxng_metrics_password: "<output of: openssl rand -hex 32>"
    opensearch_admin_password: "<strong password - min 8 chars, upper, lower, digit, special char>"
    openwebui_secret_key: "<output of: openssl rand -hex 32>"
+   openwebui_db_password: "<output of: openssl rand -hex 32>"
    ```
 
 6. Deploy everything:

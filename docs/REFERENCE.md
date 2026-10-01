@@ -1310,25 +1310,34 @@ directly, no redeploy needed) - not something this repo should decide on your be
   auto-install a local Ollama and a plugin middleware) - turned off here to match the no-backend scope
   above. `websocket.manager` left as the in-memory default (`redis.enabled: false`) - only needed for
   multi-replica websocket fan-out, and this is a single replica.
-- **Persistence**: a 2Gi Longhorn PVC for the SQLite DB (chats/users/settings) - unlike Homepage
-  (stateless) or SearXNG (deliberately no PVC), this app genuinely has state to keep across restarts.
+- **Database**: `DATABASE_URL` points at the cluster's existing CloudNativePG Postgres, through
+  `postgres-pooler-rw` - same "apps talk to the pool, never the database directly" pattern as Temporal
+  (`apps/postgres/manifests/open-webui-database.yaml`, a `DatabaseRole`/`Database` pair). Moves
+  chats/users/settings off local SQLite onto the HA, replicated cluster. Does **not** remove the need for
+  the PVC below - file uploads (`STORAGE_PROVIDER`) and RAG vector embeddings (`VECTOR_DB`) are separate
+  env vars, both still local/default, confirmed against Open WebUI's own docs. Switching didn't migrate
+  whatever was already in the old `webui.db` - deliberate, given how little was in it at the time.
+- **Persistence**: a 2Gi Longhorn PVC - file uploads and RAG vector embeddings now (chats/users/settings
+  moved to Postgres, above) - unlike Homepage (stateless) or SearXNG (deliberately no PVC), this app
+  still genuinely has state to keep across restarts.
 - **`WEBUI_SECRET_KEY`**: signs session cookies - not an LLM-backend credential, same category as
   Homepage's own `HOMEPAGE_ALLOWED_HOSTS` was (required for the app to run at all, not a provider API
   key). Wired via `extraEnvVars` + a pre-created Secret, seeded by the `k8s_secrets` bridge with a new
   `openwebui_secret_key` Vault variable - see [Secrets & Variables](#secrets--variables).
-- **Egress NetworkPolicy**: DNS-only for now - couldn't fully confirm or rule out a startup update-check
-  call in the time available, so this stays conservative rather than guessing a broad `443` rule it
-  might not need. Whichever LLM backend gets configured later (an external API, or an in-cluster Ollama)
-  will need its own egress rule added at that point regardless.
+- **Egress NetworkPolicy**: DNS + Postgres (`postgres-pooler-rw`, port 5432) - couldn't fully confirm or
+  rule out a startup update-check call in the time available, so this otherwise stays conservative rather
+  than guessing a broad `443` rule it might not need. Whichever LLM backend gets configured later (an
+  external API, or an in-cluster Ollama) will need its own egress rule added at that point regardless.
 
-**One-time**: create the session-signing key in Vault before first deploy:
+**One-time**: create the session-signing key and database password in Vault before first deploy:
 ```bash
 openssl rand -hex 32
 ansible-vault edit group_vars/all/main.yaml
 ```
 Add:
 ```yaml
-openwebui_secret_key: "<paste the generated value>"
+openwebui_secret_key: "<paste a generated value>"
+openwebui_db_password: "<paste another generated value>"
 ```
 
 **Access it**: `https://chat.<tailnet>.ts.net` once the Tailscale Operator step below has synced.
@@ -1645,7 +1654,9 @@ Update `inventory.dist` if your network differs.
   Kubernetes Operator makes auth mandatory on the cluster itself; min 8 chars, upper, lower, digit,
   special char - see [Logging](#logging-opensearch)), `openwebui_secret_key` (signs Open WebUI's session
   cookies, `WEBUI_SECRET_KEY` - not an LLM-provider credential; no API key for any backend lives in this
-  repo at all, that's configured through Open WebUI's own Settings UI after it's running). The first
+  repo at all, that's configured through Open WebUI's own Settings UI after it's running), and
+  `openwebui_db_password` (used by both `apps/postgres/manifests/open-webui-database.yaml` and
+  `apps/open-webui/` - same pattern as `temporal_db_password`, see [Open WebUI](#open-webui)). The first
   pair never appear in `apps/` — see [GitOps (Argo CD)](#gitops-argo-cd)'s "Secrets bridge"; the
   node-join pair are consumed directly by `roles/tailscale` and never touch `apps/` either.
 - **Unencrypted**: All other group_vars and host_vars
