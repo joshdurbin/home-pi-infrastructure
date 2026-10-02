@@ -8,3 +8,40 @@
     group: root
   tags:
     - k3s_maintenance
+
+# Agent (worker) nodes run no API server and ship no kubeconfig, so `kubectl`
+# there falls back to localhost:8080 and fails with "connection refused".
+# That made on-node maintenance (k3s-maintenance -e, or a plain
+# `sudo kubectl drain`) impossible from an agent. Give agents a kubeconfig
+# that talks to the first server's API (the same endpoint they join through,
+# k3s_server in group_vars/k3s_cluster/k3s.yaml), at the path k3s's bundled
+# kubectl already reads by default.
+#
+# SECURITY: this is the cluster-admin kubeconfig, copied from a server, so a
+# compromised agent can administer the whole cluster. Root-only (0600) so
+# only `sudo` reaches it. Accepted deliberately for a homelab; remove this
+# task (and the file) if agents should stay credential-free. It also pins the
+# API endpoint to the first server - if that server is down, on-node kubectl
+# fails until it's back (use the laptop or another server meanwhile).
+- name: read the cluster kubeconfig from the first server
+  ansible.builtin.slurp:
+    src: /etc/rancher/k3s/k3s.yaml
+  delegate_to: "{{ groups['server'][0] }}"
+  register: k3s_maintenance_kubeconfig
+  when: inventory_hostname in groups['agent']
+  no_log: true
+  tags:
+    - k3s_maintenance
+
+- name: install the kubeconfig on agent nodes
+  ansible.builtin.copy:
+    content: "{{ k3s_maintenance_kubeconfig.content | b64decode | regex_replace('https://127\\.0\\.0\\.1:6443', k3s_server) }}"
+    dest: /etc/rancher/k3s/k3s.yaml
+    mode: '0600'
+    owner: root
+    group: root
+  when: inventory_hostname in groups['agent']
+  no_log: true
+  tags:
+    - k3s_maintenance
+

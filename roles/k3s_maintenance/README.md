@@ -27,13 +27,31 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass --tags maintenance
 
 ## Using the Maintenance Script
 
-**Server nodes only** — the script shells out to local `kubectl`, which only has a working kubeconfig on
-server nodes (`/etc/rancher/k3s/k3s.yaml`). Agent nodes (the `pi4` group - previously `pi5`, before control
-plane moved to the Pi 5s, see `inventory.dist`'s `[server]` group comment) have the `kubectl` binary but no
-kubeconfig, so running this there fails with a connection-refused error against `localhost:8080`. To
-drain/uncordon an *agent* node, run the commands below from a server node, targeting the agent by name —
-see the "Reboot nodes with pending config.txt changes" play in `site.yml` for a worked example of exactly
-this (drain/uncordon delegated to a server, targeting any node by `inventory_hostname`).
+Works on **every** node, including agents. The script shells out to local `kubectl`, which needs a kubeconfig
+at `/etc/rancher/k3s/k3s.yaml`. Servers have one natively; agent nodes (`rpi-4b-*`, `rpi-5-4`) don't run an API
+server and used to have none, so `kubectl` there failed with `connection refused` against `localhost:8080`.
+This role now installs a root-only (`0600`) kubeconfig on agents, copied from the first server and pointed at
+its API (`k3s_server`, the endpoint agents already join through). Trade-offs, both deliberate:
+
+- It is the **cluster-admin** kubeconfig, so a compromised agent could administer the cluster. Remove the two
+  agent tasks in `tasks/main.yml` (and the file) if agents should stay credential-free.
+- It pins the API endpoint to the first server. If that server is down, on-node `kubectl` fails until it's
+  back - use your laptop or another server meanwhile.
+
+The script drains **the node it runs on**: it takes the node name from the host's hostname (k3s names nodes
+after the hostname; set `K3S_NODE_NAME` for a custom `--node-name`) and checks that node exists before
+touching it. (Earlier versions drained the *first node in the cluster* regardless of where they ran.)
+
+Things that can stall a drain, with the fix:
+
+- **A CloudNativePG primary on the node** (Postgres): CNPG's PodDisruptionBudget allows 0 disruptions for the
+  primary, so the drain hangs until its timeout. Switch the primary elsewhere first:
+  `kubectl cnpg promote postgres <replica-instance> -n postgres`, then drain.
+- **Longhorn `instance-manager` pods** on storage nodes (`rpi-5-2`, `rpi-5-3`): each has a PDB that blocks
+  eviction by design; drain with `--pod-selector 'longhorn.io/component!=instance-manager'` (see the reboot play
+  in `site.yml`). The script does not do this itself.
+
+To use the script, or to drain from your laptop or a server instead:
 
 ```bash
 # Enable maintenance mode (drain node)

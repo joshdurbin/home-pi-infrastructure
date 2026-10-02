@@ -16,6 +16,7 @@ Run with -d after reboot to return node to service.
 import argparse
 import json
 import os
+import socket
 import subprocess
 import sys
 from datetime import datetime
@@ -31,21 +32,31 @@ class MaintenanceManager:
         self.state = self._load_state()
 
     def _get_node_name(self) -> str:
-        """Get the current node's Kubernetes name."""
+        """Get the current node's Kubernetes name.
+
+        k3s names a node after its hostname unless --node-name is set (it
+        isn't anywhere in this repo), so this node is this host. Previously
+        this asked kubectl for the *first node in the cluster*
+        (items[0]), which is only ever this node by coincidence - running
+        the script on any other node drained the wrong one. Override with
+        K3S_NODE_NAME if a node ever does use a custom --node-name.
+        """
+        node_name = os.environ.get("K3S_NODE_NAME") or socket.gethostname().split(".")[0]
         try:
-            result = subprocess.run(
-                ["kubectl", "get", "nodes", "-o", "jsonpath={.items[0].metadata.name}"],
+            # Confirm the node exists under that name before touching it.
+            subprocess.run(
+                ["kubectl", "get", "node", node_name, "-o", "name"],
                 capture_output=True,
                 text=True,
                 timeout=10,
                 check=True,
             )
-            node_name = result.stdout.strip()
-            if not node_name:
-                raise ValueError("Could not determine node name from kubectl")
             return node_name
         except subprocess.CalledProcessError as e:
-            self._error(f"Failed to get node name: {e.stderr}")
+            self._error(
+                f"No Kubernetes node named '{node_name}' (this host's name): "
+                f"{e.stderr.strip()}\nSet K3S_NODE_NAME if this node uses a custom --node-name."
+            )
         except FileNotFoundError:
             self._error("kubectl not found. Is kubectl installed and in PATH?")
         except Exception as e:
