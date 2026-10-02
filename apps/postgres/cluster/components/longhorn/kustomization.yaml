@@ -1,0 +1,15 @@
+# Instances float anywhere on Longhorn volumes. See ../../kustomization.yaml
+# for the trade-offs.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - storageclass.yaml
+patches:
+  - target:
+      group: postgresql.cnpg.io
+      kind: Cluster
+      name: postgres
+    patch: |-
+      - op: add
+        path: /spec/storage/storageClass
+        value: longhorn-postgres

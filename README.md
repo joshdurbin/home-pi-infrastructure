@@ -11,7 +11,7 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
 - Control plane: 3x Raspberry Pi 5 — `rpi-5-1`, `rpi-5-2`, `rpi-5-3` (moved here from the 4Bs - their
   disks proved too slow for etcd; see `inventory.dist`'s `[server]` group comment)
 - Workers: 3x Raspberry Pi 4B (`rpi-4b-1`, `rpi-4b-2`, `rpi-4b-3`) + 1x Raspberry Pi 5 (`rpi-5-4`, the
-  second Postgres node — see `[database]` in `inventory.dist`)
+  the optional second Postgres node — see `[database]` in `inventory.dist`)
 
 ## Setup (one time)
 
@@ -87,7 +87,7 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
 From there, Longhorn (storage), VictoriaMetrics/Grafana (metrics), OpenSearch/OpenSearch
 Dashboards + VictoriaLogs (logs, dual-shipped to both), Blocky (DNS), SearXNG (search), the redis-operator
 (Blocky's and SearXNG's own small caching clusters), WhoDB (a UI for browsing Postgres, OpenSearch and those caches),
-CloudNativePG (a Postgres cluster on the `database=true` nodes, behind PgBouncer poolers), LiteLLM (an LLM gateway backed by Postgres and its own Redis cache), Temporal (a
+CloudNativePG (a two-instance Postgres cluster on Longhorn volumes, free to schedule anywhere, behind PgBouncer poolers), LiteLLM (an LLM gateway backed by Postgres and its own Redis cache), Temporal (a
 workflow orchestration platform, backed by that same Postgres cluster), Homepage (a dashboard linking out
 to every other UI below), Open WebUI (a chat UI for LLMs - no backend wired up, add one via its own
 Settings UI), the descheduler (periodically rebalances pods across nodes), Trivy Operator (continuous

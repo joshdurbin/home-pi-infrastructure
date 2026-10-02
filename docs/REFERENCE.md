@@ -60,10 +60,12 @@ report ~3.9GiB, i.e. 4GB boards; this matters for anything sizing container `res
 against the smaller of the two node classes.)
 
 Two of the Pi 5 nodes (`rpi-5-2`, `rpi-5-3`) carry a `storage=true` Kubernetes node label and back Longhorn's
-distributed storage. Two Pi 5 nodes (`rpi-5-1`, `rpi-5-2`) carry a `telemetry=true` label and host the
-VictoriaMetrics storage pod. Two Pi 5 nodes (`rpi-5-1`, `rpi-5-4`) carry a `database=true` label and run
-Postgres (see [Postgres (CloudNativePG)](#postgres-cloudnativepg)). OpenSearch's data node is deliberately
-unpinned (no node label of its own) - see [Logging](#logging-opensearch) below. See also
+distributed storage (their disks hold every Longhorn volume's replica *data*; the volumes themselves attach
+over the network to pods on any node). Two Pi 5 nodes (`rpi-5-1`, `rpi-5-4`) carry a `database=true` label,
+used only by Postgres's optional `local` storage mode (see [Postgres (CloudNativePG)](#postgres-cloudnativepg)).
+`pi5=true` marks the Pi 5s, required by OpenSearch (its Amazon Linux images won't run on a Pi 4B). Everything
+else - including VictoriaMetrics, VictoriaLogs and, by default, Postgres - is unpinned and can schedule on any
+node with capacity. See [Logging](#logging-opensearch) below. See also
 [Storage (Longhorn)](#storage-longhorn) and [Monitoring](#monitoring-victoriametrics-grafana).
 
 Each node has:
@@ -696,9 +698,9 @@ remaining job here is seeding the Grafana admin credentials Secret via the gener
 - **Metrics**: `victoria-metrics-k8s-stack` Helm chart — bundles the VictoriaMetrics operator, `vmsingle`
   (metrics storage), `vmagent` (scraper, cluster-wide), `vmalert`, Alertmanager, kube-state-metrics,
   node-exporter, and **Grafana** (bundled as part of this chart — there's no separate Grafana role).
-- The stateful piece (`vmsingle`) is pinned via nodeSelector to the `telemetry=true` labeled nodes
-  (`rpi-5-1`, `rpi-5-2`). Everything else (Grafana, vmagent, vmalert, kube-state-metrics, node-exporter) is
-  unpinned and can run anywhere.
+- Nothing here is pinned to a node. `vmsingle`'s 10Gi PVC is a Longhorn volume (network-attached, so the pod
+  can land on any node - on a 4GB Pi 4B too, since its 2Gi memory request is only satisfied where that much
+  is free), and Grafana, vmagent, vmalert, kube-state-metrics and node-exporter were never pinned.
 - **Grafana auth**: anonymous Admin access is enabled (`disable_login_form: true`) — visiting the UI drops
   you straight in with no login prompt. Reasonable for a single-user homelab already gated by kubeconfig
   access; the admin/password secret still exists underneath if you ever want to re-enable the login form.
@@ -801,8 +803,12 @@ curl -k -u admin:<opensearch_admin_password> "https://localhost:9200/logs-*/_sea
 | Label | Nodes | Used by |
 |---|---|---|
 | `storage=true` | rpi-5-2, rpi-5-3 | Longhorn replica placement (physical data) |
-| `telemetry=true` | rpi-5-1, rpi-5-2 | vmsingle pod placement |
-| `database=true` | rpi-5-1, rpi-5-4 | Gates scheduling eligibility for the Postgres `Cluster`'s two instances (`apps/postgres/manifests/cluster.yaml`) - required `podAntiAffinity` keeps one instance per node |
+| `pi5=true` | rpi-5-1..4 | OpenSearch (Amazon Linux images need a Pi 5 CPU) |
+| `database=true` | rpi-5-1, rpi-5-4 | Only Postgres's optional `local` storage mode (`apps/postgres/cluster/components/local`) - pins the instances to these nodes. Unused in the default `longhorn` mode |
+
+The former `telemetry=true` label (VictoriaMetrics/VictoriaLogs placement) is gone - nothing selects on it any
+more. It may still be set on the live nodes from before; remove it with
+`kubectl label node rpi-5-1 rpi-5-2 telemetry-`.
 
 Labels are declared per-host in `host_vars/rpi-5-*.yaml` under the `k8s_labels` key, and applied to the live
 cluster by the `k8s_labels` role (which reads every host's `k8s_labels` var and patches the matching
@@ -834,8 +840,7 @@ both get every log line, and either can be used to cross-check the other.
 - **Retention**: `7d`, matching OpenSearch's own `min_index_age` (see [Logging
   (OpenSearch)](#logging-opensearch) above) so both backends hold a comparable, honestly-equal window of
   the same dual-shipped data.
-- **Placement**: pinned to the `telemetry=true` nodes (`nodeSelector`), same convention `vmsingle`
-  already uses for stateful monitoring/logging storage in this cluster.
+- **Placement**: unpinned, same as `vmsingle` - the PVC is a Longhorn volume, so the pod can run on any node.
 - **Grafana datasource**: `victoriametrics-logs-datasource` (`apps/victoria-metrics/values.yaml`'s
   `grafana.plugins`) was explicitly removed when this app was removed the first time - restored now,
   alongside a `grafana-datasource-configmap.yaml` using the same sidecar-provisioning mechanism
@@ -1049,28 +1054,48 @@ directly.
   toggle depends on the VM operator's unverified ServiceMonitor/PodMonitor converter, so this repo's proven
   hand-written mechanism is used instead. Also ships CloudNativePG's own official Grafana dashboard, wired
   straight into the existing Grafana sidecar (`grafana_dashboard: "1"` label) with no extra plumbing.
-- **The `Cluster`** (`apps/postgres/manifests/cluster.yaml`), namespace `postgres`: `instances: 2` -
-  `rpi-5-1` and `rpi-5-4` both carry the `database=true` node label (see [Node Labels
-  Reference](#node-labels-reference) and the `[database]` inventory group in `inventory.dist`).
-  `affinity.podAntiAffinityType: required` (topologyKey `kubernetes.io/hostname`) guarantees each instance
-  lands on a *different* `database=true` node rather than doubling up, satisfying "one Postgres instance per
-  node" by construction. CNPG elects one instance primary and streams WAL to the other as a replica, and
+- **The `Cluster`** (`apps/postgres/cluster/`, a Kustomize dir), namespace `postgres`: `instances: 2`.
+  `affinity.podAntiAffinityType: required` (topologyKey `kubernetes.io/hostname`) keeps each instance on a
+  *different* node in either storage mode, satisfying "one Postgres instance per node" by construction. Where
+  they run and what they store on is the one-line **storage mode** switch described next. CNPG elects one instance primary and streams WAL to the other as a replica, and
   automatically promotes the replica on primary failure - the operator's own job, nothing hand-rolled for
   it. Image: `ghcr.io/cloudnative-pg/postgresql:18.6` (current latest major, confirmed against the real
   registry, not assumed).
-- **Storage**: `local-path` - k3s's own built-in StorageClass - not Longhorn, deliberately. Its
-  `volumeBindingMode: WaitForFirstConsumer` bakes node affinity into the resulting PV for whichever node
-  the pod first lands on, so a restarted pod can only ever reschedule back onto that same node - this is
-  what makes the data "sticky" to a node, with no extra provisioner needed. Redundancy comes from Postgres's
-  own streaming replication, not from the storage layer - replicating at both the storage layer (Longhorn)
-  and the Postgres layer would be redundant and slower on these nodes' local NVMe/SSD.
+- **Storage mode** (`apps/postgres/cluster/kustomization.yaml`): pick exactly one component, one line:
+  - `components/longhorn` (default) - volumes use a dedicated `longhorn-postgres` StorageClass (2 Longhorn
+    replicas on `rpi-5-2`/`rpi-5-3`, `best-effort` data locality). The instances can run on **any** node and
+    reschedule freely (still one per node). Costs: network-attached I/O instead of local disk, and 4 copies
+    of the data on disk (2 Postgres instances x 2 Longhorn replicas) plus the replication traffic that
+    implies. The StorageClass's `numberOfReplicas: "1"` halves that, but then both instances' volumes could
+    land on the same storage node (Longhorn doesn't see CNPG's anti-affinity), so one storage-node loss could
+    take the database - `"2"` is the safe default. StorageClass parameters are immutable; change one by
+    creating a new class and migrating onto it.
+  - `components/local` - volumes on k3s `local-path` (`WaitForFirstConsumer` bakes the node into each PV), and
+    the instances pinned to the `database=true` nodes (`rpi-5-1`, `rpi-5-4`). Fastest, no Longhorn
+    dependency, redundancy from Postgres replication alone - but the instances cannot move.
+  - **Flipping the line does not move a running cluster.** CNPG never migrates an existing PVC to another
+    StorageClass; the switch only decides how *new* instances are provisioned. See **Switching Postgres
+    storage mode** below.
+- **Switching Postgres storage mode** (e.g. `local` -> `longhorn`), with `kubectl cnpg` installed. The
+  database stays up throughout (one instance at a time), but redundancy is reduced while a replacement
+  instance is rebuilding:
+  1. Flip the component line in `apps/postgres/cluster/kustomization.yaml`, commit, push, let Argo CD sync.
+     Existing pods keep their old PVCs and stay where they are; CNPG may roll them once for the changed spec.
+  2. Replace the **replica** first: find it (`kubectl cnpg status postgres -n postgres`), then delete its PVC
+     and pod: `kubectl -n postgres delete pvc <replica> --wait=false && kubectl -n postgres delete pod
+     <replica>`. CNPG recreates it as a new instance (next serial number) on the new StorageClass and
+     rebuilds it from the primary. Wait until `kubectl cnpg status` shows it streaming and healthy.
+  3. Switch over: `kubectl cnpg promote postgres <new-instance> -n postgres`. Confirm the apps are fine.
+  4. Replace the old primary the same way as step 2 (delete its PVC and pod); wait for the rebuild.
+  5. Done when both instances' PVCs show the new StorageClass: `kubectl -n postgres get pvc`.
+  There is no WAL archive or backup (see below), so confirm both instances are healthy between steps.
 - **The two Poolers** (`apps/postgres/manifests/pooler-{rw,ro}.yaml`): PgBouncer, fully managed by
   CloudNativePG's own `Pooler` CRD - config, auth (a dedicated `cnpg_pooler_pgbouncer` role + lookup
   function the operator creates itself), and TLS are all operator-managed, confirmed directly against
   CloudNativePG's docs, not hand-rolled. `postgres-pooler-rw` always routes to the current primary via
   CNPG's own `postgres-rw` Service; `postgres-pooler-ro` routes to replicas via `postgres-ro` - both
   Services are kept correct by the operator across a failover, so nothing in this repo tracks "which pod is
-  primary" itself. `instances: 1` on each pooler (not pinned to `database=true` nodes - PgBouncer holds no
+  primary" itself. `instances: 1` on each pooler (not pinned - PgBouncer holds no
   data of its own, so it can run anywhere). Native Prometheus metrics on port 9127 per pod, no separate
   exporter needed (unlike ProxySQL, which was considered and dropped - see below).
 - **Enforcing "apps talk to the pool, never the databases directly"**: at the network layer, not just
@@ -1098,8 +1123,7 @@ directly.
   have had to either accept or take on a custom image build pipeline to close. CNPG's `Pooler` avoids both
   problems entirely: fully operator-managed config/auth, and metrics built in with no exporter needed.
 - **No backups configured**: deliberate, for now. Durability comes only from Postgres streaming replication
-  across `database=true` nodes - no point-in-time recovery, and losing every `database=true` node at once
-  loses everything. Revisit with CloudNativePG's Barman Cloud plugin (`cnpg/plugin-barman-cloud`) if/when
+  across the two instances - no point-in-time recovery, and losing both at once loses everything. Revisit with CloudNativePG's Barman Cloud plugin (`cnpg/plugin-barman-cloud`) if/when
   object storage exists in this cluster.
 
 **Troubleshooting:**
@@ -1213,13 +1237,11 @@ SIG Scheduling's own project, no vendor chart) is what actually moves already-ru
   30% cpu/memory/pods is a valid eviction target, a node over 60% on any of those is a source to evict
   from. Thresholds picked against this cluster's own real numbers (the 69%/19% split above).
 - **Safety**: `DefaultEvictor`'s `nodeFit: true` simulates whether an evicted pod could actually be
-  rescheduled (nodeSelector, taints, resource requests) before evicting it - protects e.g. vmsingle's
-  `telemetry=true` pin or Longhorn's `storage=true` one. The one gap its docs don't confirm it covers is a
-  PV's own baked-in node affinity (`local-path`'s `WaitForFirstConsumer`), which is why the `postgres`
-  namespace is excluded outright via `evictableNamespaces` instead - evicting either Postgres instance
-  would just force-restart it right back onto the same node (the only one satisfying both the
-  `database=true` nodeSelector and the PV's own affinity at once), a pointless disruption for zero actual
-  rebalancing. `kube-system` is excluded too - standard "don't let a descheduler touch core cluster
+  rescheduled (nodeSelector, taints, resource requests) before evicting it - protects e.g. Longhorn's
+  `storage=true` pin or OpenSearch's `pi5=true` one. The `postgres` namespace is excluded outright via
+  `evictableNamespaces` regardless of storage mode: in `local` mode an evicted instance could only restart on
+  the same node (PV node affinity + the `database=true` nodeSelector), and in `longhorn` mode evicting a
+  primary/replica for rebalancing is still a needless disruption to a stateful pair. `kube-system` is excluded too - standard "don't let a descheduler touch core cluster
   services" default.
 
 **Troubleshooting:**

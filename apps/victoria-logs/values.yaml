@@ -11,11 +11,8 @@ server:
     enabled: true
     size: 10Gi
     storageClassName: longhorn
-  # Same stateful-logging/metrics-storage placement convention as
-  # vmsingle (apps/victoria-metrics/values.yaml) - the telemetry=true
-  # nodes are where this cluster's monitoring-storage PVCs already live.
-  nodeSelector:
-    telemetry: "true"
+  # No nodeSelector, same as vmsingle (apps/victoria-metrics/values.yaml):
+  # the PVC is Longhorn-backed, so this can schedule on any node.
   replicaCount: 1
   # 512Mi - what this ran at before (see git log on this app's prior
   # incarnation), not re-confirmed against today's actual log volume.

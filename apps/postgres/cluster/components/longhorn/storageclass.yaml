@@ -1,0 +1,31 @@
+# Dedicated Longhorn StorageClass for the Postgres Cluster, separate from the
+# default `longhorn` class (apps/longhorn/values.yaml) so Postgres's trade-offs
+# can be tuned without touching every other app's volumes. StorageClass
+# parameters are immutable - to change one, create a new class and migrate
+# instances onto it (see docs/REFERENCE.md, "Switching Postgres storage mode").
+#
+# numberOfReplicas: Postgres already keeps 2 copies of the data (primary +
+# streaming replica), so "2" here means 4 copies on disk and double the
+# replication traffic for every write - the price of surviving a storage-node
+# loss without ever depending on Postgres alone. Set to "1" to halve that:
+# then each instance's volume lives on exactly one of rpi-5-2/rpi-5-3, and
+# *both* instances' volumes could land on the same storage node (Longhorn
+# doesn't know about CNPG's anti-affinity), so one storage-node loss could
+# take the whole database. "2" is the safe default.
+#
+# dataLocality best-effort: Longhorn tries to keep a replica on the node the
+# pod runs on - useful only when the pod happens to land on a storage=true
+# node (rpi-5-2/rpi-5-3); on any other node it's a no-op, not an error.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn-postgres
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+parameters:
+  numberOfReplicas: "2"
+  dataLocality: best-effort
+  staleReplicaTimeout: "30"
+  fsType: ext4

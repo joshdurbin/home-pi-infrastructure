@@ -5,9 +5,7 @@ k8s_labels:
   # apps/opensearch's Amazon-Linux-based images at all (confirmed live,
   # "Fatal glibc error"), not opensearch-specific.
   pi5: "true"
-  # Deliberately no storage=true or telemetry=true - this node's whole
-  # purpose is being the second database=true node for
-  # apps/postgres/manifests/cluster.yaml's instances: 2 (podAntiAffinity,
-  # topologyKey kubernetes.io/hostname), not a Longhorn replica target or
-  # the VictoriaMetrics vmsingle pod's home. Revisit only if a concrete
+  # Deliberately no storage=true - this node's purpose is being the second
+  # database=true node for apps/postgres/cluster's `local` mode (see
+  # components/local there), not a Longhorn replica target. Revisit only if a concrete
   # need shows up.

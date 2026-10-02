@@ -1,0 +1,22 @@
+# Instances pinned to the database=true nodes on k3s local-path volumes. See
+# ../../kustomization.yaml for the trade-offs.
+#
+# local-path's WaitForFirstConsumer bakes node affinity into each PV for
+# whichever node the pod first lands on, so a restarted pod can only return
+# to that node - sticky by construction, no extra provisioner needed.
+# Redundancy comes from Postgres streaming replication, not the storage layer.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - target:
+      group: postgresql.cnpg.io
+      kind: Cluster
+      name: postgres
+    patch: |-
+      - op: add
+        path: /spec/storage/storageClass
+        value: local-path
+      - op: add
+        path: /spec/affinity/nodeSelector
+        value:
+          database: "true"

@@ -1,0 +1,45 @@
+# CloudNativePG's own primary/replica management replaces what would
+# otherwise need a hand-assembled Patroni+DCS setup - the operator (see
+# apps/cloudnative-pg/) handles failover and promotion itself, and
+# maintains <name>-rw/-ro/-r Services that always point at the current
+# primary/replicas, which pooler-rw.yaml/pooler-ro.yaml route through.
+#
+# This is the *base* Cluster: everything except where the instances run and
+# what their volumes sit on. That part is a one-line switch in
+# kustomization.yaml (this directory) - `components/longhorn` (default:
+# volumes on Longhorn, instances float anywhere) or `components/local`
+# (volumes on k3s local-path, instances pinned to the database=true nodes).
+# See kustomization.yaml for how to flip it, and docs/REFERENCE.md's
+# Postgres section for the migration steps - changing the mode on a live
+# cluster does NOT move existing instances by itself.
+#
+# instances: 2 - one primary, one streaming-replication replica, promoted
+# automatically on primary failure. The required podAntiAffinity below keeps
+# them on different nodes in either mode (one Postgres instance per node), so
+# a single node loss never takes both.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres
+  namespace: postgres
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.6
+
+  # storage.storageClass is set by the selected component.
+  storage:
+    size: 10Gi
+
+  # affinity.nodeSelector is set by the `local` component only.
+  affinity:
+    enablePodAntiAffinity: true
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1024Mi

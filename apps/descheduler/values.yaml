@@ -35,8 +35,8 @@ deschedulerPolicy:
             # Confirmed against the project's own README: nodeFit simulates
             # whether an evicted pod could actually be rescheduled
             # (nodeSelector, taints/tolerations, resource requests) before
-            # evicting it - a real safety net for e.g. vmsingle's
-            # telemetry=true nodeSelector or Longhorn's storage=true one,
+            # evicting it - a real safety net for e.g. OpenSearch's pi5=true
+            # nodeSelector or Longhorn's storage=true one,
             # so this won't evict something into a state where it can only
             # go right back where it was (or worse, Pending). The one gap
             # the docs don't confirm it covers is a PV's own baked-in node
@@ -80,15 +80,14 @@ deschedulerPolicy:
                 # services" default, same reasoning as every other
                 # conservative descheduler policy published.
                 - kube-system
-                # postgres: both instances are pinned by cluster.yaml's
-                # own nodeSelector (database=true) *and* by local-path's
-                # per-node PV affinity - evicting either pod would just
-                # force-restart it right back onto the same node (the only
-                # one satisfying both constraints at once), a pointless
-                # disruption to a stateful primary/replica pair for zero
-                # actual rebalancing. See the DefaultEvictor comment above
-                # for why this is an explicit exclude rather than trusting
-                # nodeFit alone to work this out.
+                # postgres: evicting a primary/replica pair member for
+                # rebalancing is a needless disruption in either storage
+                # mode (apps/postgres/cluster) - in `local` mode the pod could
+                # only restart on the same node anyway (nodeSelector + PV
+                # node affinity); in `longhorn` mode it can move, but a
+                # failover just to balance CPU isn't worth it. See the
+                # DefaultEvictor comment above for why this is an explicit
+                # exclude rather than trusting nodeFit alone.
                 - postgres
       plugins:
         balance:

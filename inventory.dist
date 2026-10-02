@@ -39,8 +39,8 @@ rpi-5-4
 # instability (intermittent 503s, TLS handshake timeouts, connection
 # resets) under normal cluster load. The pi5 nodes also carry this
 # cluster's disk-heavy workloads (storage=true, telemetry=true,
-# database=true host_vars labels - Longhorn, VictoriaMetrics/VictoriaLogs,
-# Postgres) - accepted deliberately, not overlooked: if their disks can't
+# database=true host_vars labels - Longhorn, OpenSearch, Postgres's optional
+# `local` mode) - accepted deliberately, not overlooked: if their disks can't
 # keep up with etcd *and* those workloads together, revisit then, but
 # don't pre-split them without evidence it's actually needed.
 [server]
@@ -63,10 +63,11 @@ rpi-5-4
 
 # Nodes carrying the database=true k8s label (see host_vars/rpi-5-1.yaml,
 # host_vars/rpi-5-4.yaml), gating scheduling eligibility for Postgres
-# workloads - apps/postgres/manifests/cluster.yaml's affinity.nodeSelector
-# targets exactly this label, and its required podAntiAffinity
-# (topologyKey kubernetes.io/hostname) guarantees each of the Cluster's
-# instances lands on a different one of these nodes. Independent of
+# workloads - only used by apps/postgres/cluster's optional `local` storage
+# mode (components/local), whose affinity.nodeSelector targets exactly this
+# label. In the default `longhorn` mode Postgres isn't pinned and this label
+# is unused. Either way the Cluster's required podAntiAffinity (topologyKey
+# kubernetes.io/hostname) keeps its instances on different nodes. Independent of
 # [server]/[agent] membership - k3s doesn't taint server/control-plane
 # nodes against regular workloads by default, and this cluster has never
 # changed that, so a node can be both [server] and database=true at once

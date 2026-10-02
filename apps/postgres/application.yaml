@@ -4,9 +4,10 @@ metadata:
   name: postgres
   namespace: argocd
   annotations:
-    # Needs cloudnative-pg's CRDs (Cluster, Pooler) to exist first, and its
-    # Cluster's PVC uses local-path (k3s's own built-in StorageClass,
-    # always present) rather than Longhorn - no dependency on apps/longhorn.
+    # Needs cloudnative-pg's CRDs (Cluster, Pooler) to exist first. In
+    # `longhorn` storage mode (the default, see cluster/kustomization.yaml)
+    # the Cluster's PVCs are Longhorn volumes, so it also needs Longhorn
+    # (wave 0) - already guaranteed by being wave 2.
     argocd.argoproj.io/sync-wave: "2"
 spec:
   project: home-pi
@@ -25,10 +26,16 @@ spec:
         duration: 5s
         factor: 2
         maxDuration: 3m
-  # No chart source - a Cluster/Pooler CR is a complete manifest on its
-  # own, nothing to template. Same shape as apps/blocky/manifests's
-  # redis-replication.yaml etc.
+  # No chart source - Cluster/Pooler CRs are complete manifests on their
+  # own, nothing to template. Two plain-git paths: manifests/ (poolers,
+  # roles, databases, scrapes - applied as-is) and cluster/ (a Kustomize
+  # dir, because the Cluster's storage/placement mode is a switchable
+  # component - see cluster/kustomization.yaml). Argo CD auto-detects the
+  # kustomization.yaml there.
   sources:
     - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
       targetRevision: master
       path: apps/postgres/manifests
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      path: apps/postgres/cluster

@@ -1,0 +1,33 @@
+# Where Postgres runs and what it stores on - ONE line to flip.
+#
+# Pick exactly one component below:
+#
+#   components/longhorn  (default) Volumes are Longhorn volumes
+#       (StorageClass longhorn-postgres, defined in that component). Longhorn
+#       volumes attach over the network from any node, so the two instances
+#       can run on ANY node (the required podAntiAffinity still keeps them on
+#       different nodes) and reschedule freely. Replica data stays on the
+#       storage=true nodes (rpi-5-2/rpi-5-3) like every other Longhorn volume.
+#       Costs: network-attached I/O instead of local NVMe/SSD, and a Longhorn
+#       volume replica count on top of Postgres's own replication (see the
+#       StorageClass's numberOfReplicas knob).
+#
+#   components/local     Volumes are k3s local-path PVs, instances pinned to
+#       the database=true nodes (rpi-5-1, rpi-5-4) by nodeSelector and, via the
+#       PV's baked-in node affinity, to whichever node each volume first
+#       landed on. Fastest I/O, no Longhorn dependency, redundancy is Postgres
+#       replication alone - but the instances cannot move.
+#
+# IMPORTANT: this only changes how *new* instances are provisioned. Existing
+# instances keep their existing PVCs (CNPG never migrates a PVC to another
+# StorageClass). To move a running cluster between modes, replace the
+# instances one at a time - see docs/REFERENCE.md ("Switching Postgres
+# storage mode").
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: postgres
+resources:
+  - cluster.yaml
+components:
+  - components/longhorn
+  # - components/local

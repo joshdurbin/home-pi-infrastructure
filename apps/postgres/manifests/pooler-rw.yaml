@@ -7,9 +7,8 @@
 # postgres pod (see networkpolicy.yaml, which enforces this at the
 # network layer, not just by convention).
 #
-# instances: 1 ("container size of 1 for now") - not pinned to
-# database=true nodes; PgBouncer holds no data of its own, so it can run
-# anywhere in the cluster.
+# instances: 1 ("container size of 1 for now") - not pinned to any node;
+# PgBouncer holds no data of its own, so it can run anywhere in the cluster.
 #
 # No manual config: CloudNativePG fully manages PgBouncer's config, auth
 # (a dedicated cnpg_pooler_pgbouncer role + lookup function the operator
