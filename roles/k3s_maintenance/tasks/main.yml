@@ -9,6 +9,41 @@
   tags:
     - k3s_maintenance
 
+# kubectl-cnpg: the CloudNativePG kubectl plugin. k3s-maintenance uses
+# `kubectl cnpg promote` to do a clean switchover before draining a node that
+# hosts a Postgres primary (CNPG's PodDisruptionBudget blocks evicting the
+# primary, so a plain drain would hang). Pinned release; sha256 of the arm64
+# tarball recorded here. To upgrade: bump the version and checksum, and delete
+# /usr/local/bin/kubectl-cnpg on the nodes (the unarchive step's `creates`
+# guard skips otherwise). Keep it in step with the operator version in apps/cloudnative-pg.
+- name: download the CloudNativePG kubectl plugin
+  ansible.builtin.get_url:
+    url: "https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v{{ k3s_maintenance_cnpg_version }}/kubectl-cnpg_{{ k3s_maintenance_cnpg_version }}_linux_arm64.tar.gz"
+    dest: "/tmp/kubectl-cnpg-{{ k3s_maintenance_cnpg_version }}.tar.gz"
+    checksum: "sha256:{{ k3s_maintenance_cnpg_sha256 }}"
+    mode: '0644'
+  vars:
+    k3s_maintenance_cnpg_version: "1.30.1"
+    k3s_maintenance_cnpg_sha256: "6ffad753bbbf5d353576967233063f2ba0adb843a4e7ef5ff4cb7384b2716d5e"
+  tags:
+    - k3s_maintenance
+
+- name: install the kubectl-cnpg binary
+  ansible.builtin.unarchive:
+    src: "/tmp/kubectl-cnpg-{{ k3s_maintenance_cnpg_version }}.tar.gz"
+    dest: /usr/local/bin
+    remote_src: true
+    include:
+      - kubectl-cnpg
+    mode: '0755'
+    owner: root
+    group: root
+    creates: /usr/local/bin/kubectl-cnpg
+  vars:
+    k3s_maintenance_cnpg_version: "1.30.1"
+  tags:
+    - k3s_maintenance
+
 # Agent (worker) nodes run no API server and ship no kubeconfig, so `kubectl`
 # there falls back to localhost:8080 and fails with "connection refused".
 # That made on-node maintenance (k3s-maintenance -e, or a plain

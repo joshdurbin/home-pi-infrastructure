@@ -42,14 +42,31 @@ The script drains **the node it runs on**: it takes the node name from the host'
 after the hostname; set `K3S_NODE_NAME` for a custom `--node-name`) and checks that node exists before
 touching it. (Earlier versions drained the *first node in the cluster* regardless of where they ran.)
 
-Things that can stall a drain, with the fix:
+### Taking every node out, one at a time
 
-- **A CloudNativePG primary on the node** (Postgres): CNPG's PodDisruptionBudget allows 0 disruptions for the
-  primary, so the drain hangs until its timeout. Switch the primary elsewhere first:
-  `kubectl cnpg promote postgres <replica-instance> -n postgres`, then drain.
-- **Longhorn `instance-manager` pods** on storage nodes (`rpi-5-2`, `rpi-5-3`): each has a PDB that blocks
-  eviction by design; drain with `--pod-selector 'longhorn.io/component!=instance-manager'` (see the reboot play
-  in `site.yml`). The script does not do this itself.
+`sudo k3s-maintenance -e` is built for this. Before it drains it:
+
+1. **Refuses if another node is already cordoned** - finish and uncordon that one first.
+2. **Refuses if any attached Longhorn volume isn't fully healthy** (a replica is still rebuilding), since draining
+   a storage node then could take a volume's last good copy.
+3. **Promotes a replica first if this node hosts a CloudNativePG primary.** CNPG's PodDisruptionBudget
+   deliberately blocks evicting the primary (it only fails over automatically on a *crash*, not on a voluntary
+   drain), and the primary's Longhorn volume is attached here, so a plain `kubectl drain` stalls on both the
+   Postgres pod and Longhorn's `instance-manager`. The script does the clean switchover with `kubectl cnpg
+   promote` (the plugin is installed by this role) and waits for it. If there's no healthy replica on another
+   schedulable node it refuses rather than take the database down.
+4. **Drains**, skipping Longhorn `instance-manager` pods (their PDBs block eviction by design; they stop when the
+   node reboots anyway - same as the reboot play in `site.yml`).
+
+`sudo k3s-maintenance -d` uncordons and then **waits for Longhorn volumes to be healthy again**, so "done" means
+the node is safe to follow with the next one. `--no-wait` skips that.
+
+Flags: `-n/--dry-run` runs the checks and says what it would do without changing anything; `-f/--force`
+skips checks 1 and 2.
+
+Alternative to the pre-promote step: set `enablePDB: false` on the Postgres `Cluster`. A plain drain then evicts
+the primary and CNPG fails over on its own - but every drain of the primary's node becomes an abrupt failover
+(short write interruption, connections cut) instead of a clean switchover. Not enabled here.
 
 To use the script, or to drain from your laptop or a server instead:
 
