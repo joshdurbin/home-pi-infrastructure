@@ -98,24 +98,35 @@ spec:
         memory: 512Mi
 
   nodePools:
-    # Coordinating (ingest) pool. NOT cluster_manager-eligible: this pool has
-    # no persistent storage (emptyDir below), so every pod restart that wipes
-    # it (a drain/eviction, not just a container restart) gives it a brand-new
-    # node ID. While it was master-eligible (it used to be, alongside the data
-    # pool - an earlier fix for an OOM-induced stuck election added the data
-    # pool as a second voter, treating this one as "permanent"), the old IDs
-    # stayed in the cluster's voting configuration forever; after an eviction
-    # only 1 of the 3 recorded voters existed, a quorum was impossible, and
-    # OpenSearch stayed down until manually recovered. Only the data pool - a
-    # stable identity backed by its PVC - is the cluster manager, so this pool
-    # can be evicted and rescheduled freely (e.g. by a node drain).
+    # Coordinating (ingest) + cluster-manager pool. Two things must hold:
+    #
+    # 1. cluster_manager-ELIGIBLE here, alongside the data pool. The operator
+    #    bootstraps a new cluster with a throwaway bootstrap pod, which starts
+    #    as the lone voter; OpenSearch keeps an ODD-sized voting set, so with
+    #    only ONE other eligible node (data) it never makes that node a voter,
+    #    and removing the bootstrap pod leaves nobody who can win an election
+    #    (quorum lost the moment bootstrap exits - confirmed live, no recovery).
+    #    With two eligible pool nodes plus bootstrap there are three voters
+    #    during bootstrap and the hand-off works.
+    # 2. PERSISTENT storage (a PVC, not emptyDir). With emptyDir every pod
+    #    eviction - a node drain, not just a container restart - gave it a
+    #    brand-new node ID; the old IDs stayed in the voting configuration
+    #    forever, quorum was permanently lost, and OpenSearch stayed down until
+    #    rebuilt. With a PVC the node keeps its identity across restarts,
+    #    reschedules and drains: it simply comes back (a short outage while it
+    #    does) instead of the cluster dying.
     - component: client
       replicas: 1
       roles:
+        - cluster_manager
         - ingest
         - remote_cluster_client
+      diskSize: '2Gi'
       persistence:
-        emptyDir: {}
+        pvc:
+          storageClass: longhorn
+          accessModes:
+            - ReadWriteOnce
       # Amazon-Linux-based image requires ARMv8.2-A + crypto extensions -
       # Pi 4B's Cortex-A72 doesn't have them, Pi 5's Cortex-A76 does.
       # Confirmed live: "Fatal glibc error: This version of Amazon Linux
