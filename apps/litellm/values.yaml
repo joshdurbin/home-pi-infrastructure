@@ -21,7 +21,21 @@
 image:
   pullPolicy: IfNotPresent
 
-replicaCount: 1
+# 2 replicas on different nodes: LiteLLM is stateless (state is in Postgres,
+# cache/limits in Redis), so a drain takes one away while the other serves.
+# Each is ~700Mi (limit 1.5Gi); startup is slow on a Pi, which is why the PDB
+# below matters - a drain waits for the replacement to be Ready first.
+replicaCount: 2
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: litellm
+        topologyKey: kubernetes.io/hostname
+pdb:
+  enabled: true
+  maxUnavailable: 1
 
 # Chart's PROXY_MASTER_KEY env comes from this Secret (key `masterkey`).
 masterkeySecretName: litellm-masterkey

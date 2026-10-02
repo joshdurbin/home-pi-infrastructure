@@ -16,3 +16,17 @@ metadata:
 spec:
   metrics:
     enable: true
+  # The ingress ProxyGroup runs 2 proxies that carry every tailnet UI. Require
+  # them on different nodes: without this nothing stops both landing together,
+  # and draining that one node would take all UIs offline at once.
+  statefulSet:
+    pod:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  tailscale.com/parent-resource: ingress-proxies
+                  tailscale.com/parent-resource-type: proxygroup
+              topologyKey: kubernetes.io/hostname
+

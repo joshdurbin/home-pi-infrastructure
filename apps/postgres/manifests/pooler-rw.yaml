@@ -7,7 +7,7 @@
 # postgres pod (see networkpolicy.yaml, which enforces this at the
 # network layer, not just by convention).
 #
-# instances: 1 ("container size of 1 for now") - not pinned to any node;
+# instances: 2, different nodes (see below) - not pinned to any particular node;
 # PgBouncer holds no data of its own, so it can run anywhere in the cluster.
 #
 # No manual config: CloudNativePG fully manages PgBouncer's config, auth
@@ -24,6 +24,19 @@ spec:
   cluster:
     name: postgres
   type: rw
-  instances: 1
+  # 2 instances on different nodes: PgBouncer holds no data, so a drain just
+  # takes one away while the other keeps serving (the -rw Service load-balances).
+  # With 1 instance, every drain of its node cut all apps off from Postgres.
+  instances: 2
+  template:
+    spec:
+      containers: []
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  cnpg.io/poolerName: postgres-pooler-rw
+              topologyKey: kubernetes.io/hostname
   pgbouncer:
     poolMode: session

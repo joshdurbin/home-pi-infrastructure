@@ -1,3 +1,16 @@
+# 2 replicas with leader election (the chart passes --leader-elect): the
+# standby takes over within seconds. Without it, draining the node the operator
+# runs on - which may also be the Postgres primary's node - leaves nothing to
+# promote the replica until the operator pod is rescheduled.
+replicaCount: 2
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: cloudnative-pg
+        topologyKey: kubernetes.io/hostname
+
 # Manages apps/postgres/'s single Cluster + two Poolers - a fraction of
 # the chart's own default request/limit is plenty for reconciling a
 # handful of small CRs, same reasoning as redis-operator's own sizing.

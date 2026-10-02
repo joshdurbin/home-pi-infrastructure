@@ -11,6 +11,19 @@ spec:
   cluster:
     name: postgres
   type: ro
-  instances: 1
+  # 2 instances on different nodes: PgBouncer holds no data, so a drain just
+  # takes one away while the other keeps serving (the -ro Service load-balances).
+  # With 1 instance, every drain of its node cut all apps off from Postgres.
+  instances: 2
+  template:
+    spec:
+      containers: []
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  cnpg.io/poolerName: postgres-pooler-ro
+              topologyKey: kubernetes.io/hostname
   pgbouncer:
     poolMode: session

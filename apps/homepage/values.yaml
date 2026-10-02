@@ -5,6 +5,17 @@
 # ghcr.io/gethomepage/homepage image directly.
 controllers:
   main:
+    # Static config, no state: 2 replicas on different nodes (PDB in
+    # manifests/pdb.yaml) so a drain never takes the dashboard down.
+    replicas: 2
+    pod:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: homepage
+              topologyKey: kubernetes.io/hostname
     containers:
       main:
         image:

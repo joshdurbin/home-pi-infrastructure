@@ -17,6 +17,18 @@ metadata:
   namespace: searxng-cache
 spec:
   clusterSize: 3
+  # One sentinel per node and at most 1 down at a time, so a drain never costs
+  # the 2-of-3 quorum Sentinel needs to promote a replica.
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: searxng-cache-sentinel-sentinel
+          topologyKey: kubernetes.io/hostname
+  pdb:
+    enabled: true
+    maxUnavailable: 1
   podSecurityContext:
     runAsUser: 1000
     fsGroup: 1000

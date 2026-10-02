@@ -16,10 +16,12 @@ Enabling maintenance is built for taking every node out one at a time:
   2. Refuses if any attached Longhorn volume isn't fully healthy (a replica is
      still rebuilding) - draining now could take a volume's last good copy.
   3. If this node hosts a CloudNativePG primary, promotes a healthy replica on
-     another node first (the primary's PodDisruptionBudget blocks eviction,
-     and it holds Longhorn's engine for the volume, which blocks the node).
-  4. Drains the node, skipping Longhorn instance-manager pods (their PDBs
-     block eviction by design; they stop when the node reboots anyway).
+     another node first, for a clean switchover (the cluster also tolerates a
+     plain drain - enablePDB is off - but that is an abrupt failover).
+  4. Drains the node. Nothing is special-cased: Longhorn blocks the drain
+     itself, via its instance-manager PodDisruptionBudgets, only if this node
+     holds the last healthy replica of some volume (nodeDrainPolicy
+     block-if-contains-last-replica in apps/longhorn/values.yaml).
 
 The script maintains state in /var/lib/k3s-maintenance.state
 After running with -e, you can safely reboot the node.
@@ -258,16 +260,15 @@ class MaintenanceManager:
             self._info(f"{tag}checks passed; would cordon and drain '{self.node_name}'. Nothing changed.")
             return 0
 
-        # 4. Drain. instance-manager pods excluded: their PDBs block eviction
-        # by design and they stop with the node anyway (same as site.yml's
-        # reboot play).
+        # 4. Drain. No exceptions: Longhorn's own drain policy decides whether
+        # its instance-manager PDBs block (only when this node holds a
+        # volume's last healthy replica) - that protection should stay.
         self._info("Draining node of workloads...")
         result = self._run_kubectl(
             "drain",
             self.node_name,
             "--ignore-daemonsets",
             "--delete-emptydir-data",
-            "--pod-selector", "longhorn.io/component!=instance-manager",
             f"--timeout={DEFAULT_DRAIN_TIMEOUT}s",
             check=False,
         )

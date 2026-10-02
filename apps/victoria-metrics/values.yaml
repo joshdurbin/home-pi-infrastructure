@@ -38,6 +38,18 @@ defaultDashboards:
     victoriametrics-vmalert:
       enabled: true
 grafana:
+  # Stateless (all state is in Postgres, see grafana.ini below), so it runs 2
+  # replicas on different nodes (`replicas` below); a drain takes one away
+  # while the other serves. Costs another ~512Mi (Grafana 13 is heavy).
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+          topologyKey: kubernetes.io/hostname
+  podDisruptionBudget:
+    maxUnavailable: 1
   admin:
     existingSecret: vmks-credentials
     userKey: admin-user
@@ -78,7 +90,7 @@ grafana:
   # PVC deadlock).
   persistence:
     enabled: false
-  replicas: 1
+  replicas: 2
   # 256Mi was right-sized for Grafana 12.4.2. Confirmed live (OOMKilled,
   # exitCode 137) that Grafana 13.1.1 (bundled by this chart version) is a
   # meaningfully heavier process - its startup log shows a whole new

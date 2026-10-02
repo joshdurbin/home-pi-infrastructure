@@ -11,7 +11,19 @@ defaultSettings:
   disableSchedulingOnCordonedNode: true
   logLevel: Warn
   nodeDownPodDeletionPolicy: delete-both-statefulset-and-deployment-pod
-  nodeDrainPolicy: block-for-eviction
+  # Longhorn's own default. A drain is blocked only if the node holds the
+  # LAST healthy replica of some volume - i.e. you can take rpi-5-2 or rpi-5-3
+  # out one at a time (every volume keeps a second healthy copy), but not both,
+  # which is exactly the protection wanted. The previous value,
+  # block-for-eviction, made every instance-manager's PodDisruptionBudget
+  # block the drain until Longhorn had moved the node's replicas to *other*
+  # nodes - impossible with 2 storage nodes and 2 replicas, so no node could
+  # be drained with plain `kubectl drain`.
+  # NOTE: defaultSettings may only be applied on first install; if the live
+  # setting still differs after sync, patch it:
+  #   kubectl -n longhorn patch settings.longhorn.io node-drain-policy \
+  #     --type merge -p '{"value":"block-if-contains-last-replica"}'
+  nodeDrainPolicy: block-if-contains-last-replica
   removeSnapshotsDuringFilesystemTrim: false
   replicaAutoBalance: least-effort
 defaultClass: longhorn

@@ -49,14 +49,20 @@ touching it. (Earlier versions drained the *first node in the cluster* regardles
 1. **Refuses if another node is already cordoned** - finish and uncordon that one first.
 2. **Refuses if any attached Longhorn volume isn't fully healthy** (a replica is still rebuilding), since draining
    a storage node then could take a volume's last good copy.
-3. **Promotes a replica first if this node hosts a CloudNativePG primary.** CNPG's PodDisruptionBudget
-   deliberately blocks evicting the primary (it only fails over automatically on a *crash*, not on a voluntary
-   drain), and the primary's Longhorn volume is attached here, so a plain `kubectl drain` stalls on both the
-   Postgres pod and Longhorn's `instance-manager`. The script does the clean switchover with `kubectl cnpg
-   promote` (the plugin is installed by this role) and waits for it. If there's no healthy replica on another
-   schedulable node it refuses rather than take the database down.
-4. **Drains**, skipping Longhorn `instance-manager` pods (their PDBs block eviction by design; they stop when the
-   node reboots anyway - same as the reboot play in `site.yml`).
+3. **Promotes a replica first if this node hosts a CloudNativePG primary**, for a clean switchover (with
+   `kubectl cnpg promote`, installed by this role) and waits for it. This is a nicety, not a requirement: the
+   Postgres `Cluster` has `enablePDB: false`, so a plain `kubectl drain` also works - CNPG fails over by itself
+   (an abrupt failover: brief write interruption, connections cut). If there's no healthy replica on another
+   schedulable node the script refuses rather than take the database down.
+4. **Drains**, with no special cases. Draining is safe or blocked according to the cluster's own definitions,
+   not exceptions in this script:
+   - **Longhorn** (`nodeDrainPolicy: block-if-contains-last-replica`, `apps/longhorn/values.yaml`): its
+     `instance-manager` PodDisruptionBudgets block a drain only if this node holds the *last healthy replica* of
+     some volume. So any one storage node (`rpi-5-2` or `rpi-5-3`) can be drained while the other is healthy, and
+     Longhorn itself refuses the second. (The old `block-for-eviction` made every node undrainable: it demanded
+     replicas be moved to other nodes, and there are only two storage nodes.)
+   - **Postgres** (`enablePDB: false`, `apps/postgres/cluster/cluster.yaml`): no budget on the primary.
+   - Plain `kubectl drain --ignore-daemonsets --delete-emptydir-data <node>` therefore works too.
 
 `sudo k3s-maintenance -d` uncordons and then **waits for Longhorn volumes to be healthy again**, so "done" means
 the node is safe to follow with the next one. `--no-wait` skips that.
@@ -64,9 +70,9 @@ the node is safe to follow with the next one. `--no-wait` skips that.
 Flags: `-n/--dry-run` runs the checks and says what it would do without changing anything; `-f/--force`
 skips checks 1 and 2.
 
-Alternative to the pre-promote step: set `enablePDB: false` on the Postgres `Cluster`. A plain drain then evicts
-the primary and CNPG fails over on its own - but every drain of the primary's node becomes an abrupt failover
-(short write interruption, connections cut) instead of a clean switchover. Not enabled here.
+The reboot play in `site.yml` still passes `--pod-selector 'longhorn.io/component!=instance-manager'` (written
+for the old drain policy). With the current policy that exclusion is no longer needed and bypasses Longhorn's
+last-replica protection; drop it if you'd rather the reboot play honour it.
 
 To use the script, or to drain from your laptop or a server instead:
 

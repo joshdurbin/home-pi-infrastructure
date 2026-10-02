@@ -13,6 +13,18 @@ metadata:
   namespace: litellm-cache
 spec:
   clusterSize: 2
+  # Master and replica on different nodes, and never both down for a drain - a node
+  # going away must not take the whole cache (and its failover target) with it.
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: litellm-cache
+          topologyKey: kubernetes.io/hostname
+  pdb:
+    enabled: true
+    maxUnavailable: 1
   podSecurityContext:
     runAsUser: 1000
     fsGroup: 1000

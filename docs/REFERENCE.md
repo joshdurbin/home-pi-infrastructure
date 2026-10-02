@@ -30,6 +30,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [Vulnerability Scanning (Trivy Operator)](#vulnerability-scanning-trivy-operator)
 - [Open WebUI](#open-webui)
 - [LiteLLM](#litellm)
+- [Availability and node maintenance](#availability-and-node-maintenance)
 - [Exposing UIs via Tailscale Operator](#exposing-uis-via-tailscale-operator)
 - [Tailscale Integration (Optional)](#tailscale-integration-optional)
 - [Cluster Configuration](#cluster-configuration)
@@ -1418,6 +1419,58 @@ a key with that exact value in the LiteLLM UI (Virtual Keys -> Create, "Key" fie
 only seed Open WebUI's connection on first start; afterwards edit it in Admin Settings -> Connections.
 
 **Access it**: `https://litellm.<tailnet>.ts.net/ui`.
+
+## Availability and node maintenance
+
+**Goal**: mirror a managed cloud cluster. Any *one* node can be drained and rebooted with a plain
+`kubectl drain --ignore-daemonsets --delete-emptydir-data <node>` and nothing user-visible drops. The cluster
+does **not** have the spare capacity for more than one node out at a time, so the model assumes exactly one.
+(`k3s-maintenance -e` / `-d` wraps this with safety checks; see its role README.)
+
+**Rules the definitions follow** (apply them to anything new):
+- Anything on a request path that is stateless (or whose state is in Postgres/Redis) runs **2 replicas**, with
+  *required* pod anti-affinity on `kubernetes.io/hostname` and a **PodDisruptionBudget** (`maxUnavailable: 1`), so
+  a drain evicts one, waits for its replacement to be Ready, then continues. It needs a real **readiness probe**:
+  without one the replacement receives traffic before it can answer.
+- Stateful single-instance apps on an RWO volume can't run 2 replicas; they take a short blip while the pod and
+  its Longhorn volume move.
+- No `nodeSelector` unless the workload can't run elsewhere (OpenSearch: `pi5=true`). Volumes are Longhorn, so
+  pods are free to move; only Longhorn's *replica data* is pinned (`storage=true`: `rpi-5-2`, `rpi-5-3`).
+- No special-casing in maintenance tooling: whether a drain is safe is decided by the resources' own budgets.
+
+**What happens when one node is drained** (config in parentheses):
+| Component | Behaviour |
+|---|---|
+| Postgres primary | Evicted (no PDB: `enablePDB: false`); CNPG promotes the replica and re-creates the old primary on another node. `smartShutdownTimeout: 10` so the primary shuts down fast and the failover isn't delayed by the 180s default |
+| Postgres replica | Evicted and rescheduled elsewhere (required anti-affinity keeps it off the primary's node); its Longhorn volume follows |
+| CNPG operator | 2 replicas, leader-elected - the standby can promote even if the active one was on the drained node |
+| PgBouncer poolers (rw, ro) | 2 each on different nodes + PDB |
+| Longhorn | `nodeDrainPolicy: block-if-contains-last-replica`: a node can be drained while every volume has a second healthy replica; Longhorn refuses a second concurrent node. CSI controllers run 2 replicas |
+| Blocky (LAN DNS) | 2 replicas on different nodes + PDB + TCP readiness probe |
+| Tailscale ingress proxies | 2, required anti-affinity + PDB |
+| Redis caches (3 clusters) | master/replica and the 3 sentinels each on different nodes, PDB `maxUnavailable: 1` (keeps sentinel quorum) |
+| LiteLLM, Grafana, Homepage | 2 replicas, anti-affinity, PDB (state is in Postgres/Redis) |
+
+**Accepted blips** (single replica by design; recover when the pod reschedules, typically under a minute):
+Open WebUI and WhoDB (RWO volume), SearXNG, Temporal (all services), OpenSearch and its Dashboards,
+VictoriaMetrics/VictoriaLogs/Alertmanager (vmagent and Vector buffer or retry), Argo CD, and the other
+operators. None are on a path that other workloads need to keep running.
+
+**Known gaps** (not yet addressed):
+- **CoreDNS** is a single replica managed by k3s - draining its node blips cluster-internal DNS. Scaling it with
+  `kubectl scale` works but k3s can reset it on an upgrade; the durable fixes are disabling the k3s addon and
+  running your own, or an Ansible step that re-asserts the replica count.
+- **Traefik** (k3s default) is a single replica and unused (every Ingress is Tailscale). Disabling it
+  (`--disable traefik`) removes it and its per-node load balancers.
+- **API endpoint**: agents, the Ansible-installed agent kubeconfig, and your laptop's kubeconfig point at the first
+  server (`rpi-5-1`). While it is down, `kubectl` from those places fails, and `make drain` delegates to it.
+  A stable endpoint (kube-vip / a DNS name over all three servers) would fix this.
+- **LAN DNS clients** should be given at least two node IPs: Blocky is reachable on every node IP, and a rebooting
+  node's IP stops answering.
+- While a storage node (`rpi-5-2`/`rpi-5-3`) is out, every Longhorn volume has one replica until it returns.
+- Control plane: `rpi-5-1/2/3` are the etcd members; one at a time keeps quorum (2 of 3).
+- **Not yet verified on the live cluster**: the real write-outage time when the primary's node is drained. Test:
+  run a write loop through `postgres-pooler-rw`, drain the primary's node, and measure the gap.
 
 ## Exposing UIs via Tailscale Operator
 

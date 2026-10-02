@@ -1,0 +1,15 @@
+# The ProxyGroup creates no PodDisruptionBudget of its own. With one ingress
+# proxy per node (proxyclass.yaml's anti-affinity), a drain evicts one, waits
+# for its replacement to be Ready, then proceeds - the other keeps serving the
+# whole time.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ingress-proxies
+  namespace: tailscale
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      tailscale.com/parent-resource: ingress-proxies
+      tailscale.com/parent-resource-type: proxygroup

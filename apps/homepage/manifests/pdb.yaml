@@ -1,0 +1,12 @@
+# Keep at least one Homepage replica up through a drain (see values.yaml:
+# 2 replicas on different nodes).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: homepage
+  namespace: homepage
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: homepage

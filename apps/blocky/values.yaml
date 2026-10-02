@@ -1,5 +1,20 @@
 controllers:
   main:
+    # This is the LAN's DNS (LoadBalancer on every node IP via k3s servicelb),
+    # so a single replica meant every drain/reboot of the node it ran on took
+    # DNS down for the whole network until it was rescheduled. 2 replicas on
+    # different nodes (PDB in manifests/pdb.yaml): any one node can go and the
+    # Service keeps answering from the other. State is already shared - the
+    # cache lives in the blocky-cache Redis, the config is a static ConfigMap.
+    replicas: 2
+    pod:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: blocky
+              topologyKey: kubernetes.io/hostname
     containers:
       main:
         image:
@@ -8,8 +23,18 @@ controllers:
         probes:
           liveness:
             enabled: false
+          # Without a readiness probe a rescheduled pod receives DNS traffic
+          # the instant it exists, before it is listening. Ready = the DNS
+          # port accepts TCP connections.
           readiness:
-            enabled: false
+            enabled: true
+            custom: true
+            spec:
+              tcpSocket:
+                port: 53
+              initialDelaySeconds: 3
+              periodSeconds: 5
+              failureThreshold: 3
           startup:
             enabled: false
 

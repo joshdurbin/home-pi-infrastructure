@@ -26,6 +26,28 @@ spec:
   instances: 2
   imageName: ghcr.io/cloudnative-pg/postgresql:18.6
 
+  # No PodDisruptionBudget: with the default (true), CNPG's PDB refuses to
+  # evict the primary, so draining the primary's node stalls until someone runs
+  # a manual switchover first. With it off, a drain evicts the primary and CNPG
+  # fails over to the replica by itself, then re-creates the old primary as a
+  # replica on another node (volumes are Longhorn - they follow the pod).
+  # Cost: a drain of the primary's node is an abrupt failover (a brief write
+  # interruption, connections cut) rather than a clean switchover - and so is
+  # any other voluntary eviction of the primary. The postgres namespace is
+  # excluded from the descheduler (apps/descheduler/values.yaml) for that
+  # reason. (`k3s-maintenance -e` still does a clean switchover first.)
+  enablePDB: false
+
+  # When the primary's pod is evicted, Postgres first does a "smart" shutdown:
+  # it refuses new connections but waits for existing ones to end, for up to
+  # smartShutdownTimeout (default 180s) - during which the primary is up but
+  # unusable and NO failover happens (that starts once the primary is down).
+  # Keep that window short so a drain turns into a fast shutdown and a prompt
+  # promotion of the replica. failoverDelay 0 = promote as soon as the primary
+  # is seen unhealthy.
+  smartShutdownTimeout: 10
+  failoverDelay: 0
+
   # storage.storageClass is set by the selected component.
   storage:
     size: 10Gi
