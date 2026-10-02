@@ -1446,13 +1446,13 @@ does **not** have the spare capacity for more than one node out at a time, so th
 | CNPG operator | 2 replicas, leader-elected - the standby can promote even if the active one was on the drained node |
 | PgBouncer poolers (rw, ro) | 2 each on different nodes + PDB |
 | Longhorn | `nodeDrainPolicy: block-if-contains-last-replica`: a node can be drained while every volume has a second healthy replica; Longhorn refuses a second concurrent node. CSI controllers run 2 replicas |
-| Blocky (LAN DNS) | 2 replicas on different nodes + PDB + TCP readiness probe |
+| Blocky (LAN DNS) | 1 replica: a drain reschedules it, ~10-30s gap in which LAN DNS is down (accepted; flip to 2 replicas with anti-affinity + a PDB to remove it). Updates start the new pod first (`RollingUpdate`, surge 1) and it is readiness-gated |
 | Tailscale ingress proxies | 2, required anti-affinity + PDB |
 | Redis caches (3 clusters) | master/replica and the 3 sentinels each on different nodes, PDB `maxUnavailable: 1` (keeps sentinel quorum) |
-| LiteLLM, Grafana, Homepage | 2 replicas, anti-affinity, PDB (state is in Postgres/Redis) |
+| LiteLLM, Grafana, Homepage | 1 replica each (stateless - state is in Postgres/Redis); a drain reschedules them, gaps of roughly 1-2 min, 30-90s and 10-30s (Pi start-up, plus an image pull on a node that hasn't run them) |
 
-**Accepted blips** (single replica by design; recover when the pod reschedules, typically under a minute):
-Open WebUI and WhoDB (RWO volume), SearXNG, Temporal (all services), OpenSearch and its Dashboards,
+**Accepted blips** (single replica by design; recover when the pod reschedules, typically under a minute or two):
+Blocky, LiteLLM, Grafana and Homepage, Open WebUI and WhoDB (RWO volume), SearXNG, Temporal (all services), OpenSearch and its Dashboards,
 VictoriaMetrics/VictoriaLogs/Alertmanager (vmagent and Vector buffer or retry), Argo CD, and the other
 operators. None are on a path that other workloads need to keep running.
 

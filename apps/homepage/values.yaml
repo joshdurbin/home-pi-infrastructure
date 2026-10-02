@@ -5,24 +5,16 @@
 # ghcr.io/gethomepage/homepage image directly.
 controllers:
   main:
-    # Static config, no state: 2 replicas on different nodes (PDB in
-    # manifests/pdb.yaml) so a drain never takes the dashboard down.
-    replicas: 2
+    # Static config, no state. One replica: a drain just reschedules it
+    # (~10-30s) - a dashboard blip is accepted.
+    replicas: 1
     # app-template defaults to Recreate (kill the old pod, then start the new
-    # one) - with 2 replicas that still means a full outage on every update.
-    # Roll one pod at a time instead, never dropping below 2 ready.
+    # one) - an outage on every update. Start the new pod first and only then
+    # stop the old one (surge 1, unavailable 0).
     strategy: RollingUpdate
     rollingUpdate:
       unavailable: 0
       surge: 1
-    pod:
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchLabels:
-                  app.kubernetes.io/name: homepage
-              topologyKey: kubernetes.io/hostname
     containers:
       main:
         image:

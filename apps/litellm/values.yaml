@@ -21,21 +21,12 @@
 image:
   pullPolicy: IfNotPresent
 
-# 2 replicas on different nodes: LiteLLM is stateless (state is in Postgres,
-# cache/limits in Redis), so a drain takes one away while the other serves.
-# Each is ~700Mi (limit 1.5Gi); startup is slow on a Pi, which is why the PDB
-# below matters - a drain waits for the replacement to be Ready first.
-replicaCount: 2
-affinity:
-  podAntiAffinity:
-    requiredDuringSchedulingIgnoredDuringExecution:
-      - labelSelector:
-          matchLabels:
-            app.kubernetes.io/name: litellm
-        topologyKey: kubernetes.io/hostname
-pdb:
-  enabled: true
-  maxUnavailable: 1
+# One replica: LiteLLM is stateless (state in Postgres, cache/limits in
+# Redis) so a drain simply reschedules it - a gap of roughly 1-2 minutes
+# (slow Python start on a Pi, plus an image pull on a node that hasn't run it).
+# Nothing depends on it continuously, so that blip is accepted; a second
+# replica would cost ~700Mi.
+replicaCount: 1
 
 # Chart's PROXY_MASTER_KEY env comes from this Secret (key `masterkey`).
 masterkeySecretName: litellm-masterkey

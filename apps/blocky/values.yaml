@@ -1,27 +1,21 @@
 controllers:
   main:
-    # This is the LAN's DNS (LoadBalancer on every node IP via k3s servicelb),
-    # so a single replica meant every drain/reboot of the node it ran on took
-    # DNS down for the whole network until it was rescheduled. 2 replicas on
-    # different nodes (PDB in manifests/pdb.yaml): any one node can go and the
-    # Service keeps answering from the other. State is already shared - the
-    # cache lives in the blocky-cache Redis, the config is a static ConfigMap.
-    replicas: 2
+    # This is the LAN's DNS (LoadBalancer on every node IP via k3s servicelb).
+    # One replica: draining its node reschedules it, a ~10-30s gap in which DNS
+    # is down for the whole network - accepted. A second replica (on a
+    # different node, with a PodDisruptionBudget) would remove that gap and
+    # costs almost nothing, so flip `replicas` to 2 and add required pod
+    # anti-affinity on app.kubernetes.io/name=blocky if it ever bites. State is
+    # already shareable: the cache lives in the blocky-cache Redis and the
+    # config is a static ConfigMap.
+    replicas: 1
     # app-template defaults to Recreate (kill the old pod, then start the new
-    # one) - with 2 replicas that still means a full outage on every update.
-    # Roll one pod at a time instead, never dropping below 2 ready.
+    # one) - a DNS outage on every update. Start the new pod first and only
+    # then stop the old one (surge 1, unavailable 0).
     strategy: RollingUpdate
     rollingUpdate:
       unavailable: 0
       surge: 1
-    pod:
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchLabels:
-                  app.kubernetes.io/name: blocky
-              topologyKey: kubernetes.io/hostname
     containers:
       main:
         image:
