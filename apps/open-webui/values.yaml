@@ -74,11 +74,12 @@ extraEnvVars:
       secretKeyRef:
         name: open-webui-database-url
         key: url
-  # LiteLLM, in-cluster (not via Tailscale). The key is a LiteLLM virtual
-  # key (restricted to the claude-* aliases), not the master key - seeded by
-  # k8s_secrets from the Vault variable openwebui_litellm_key.
-  - name: OPENAI_API_BASE_URL
-    value: http://litellm.litellm.svc.cluster.local:4000/v1
+  # LiteLLM virtual key (restricted to the claude-* aliases), not the master
+  # key - seeded by k8s_secrets from the Vault variable openwebui_litellm_key.
+  # Set here rather than via the chart's openaiApiKey* values only because
+  # those can't mark the Secret optional (see below). The chart's own
+  # openaiApiKey is blanked further down so it doesn't emit a second
+  # OPENAI_API_KEY (duplicate env names break Argo CD's diff).
   - name: OPENAI_API_KEY
     valueFrom:
       secretKeyRef:
@@ -87,6 +88,13 @@ extraEnvVars:
         # Optional so Open WebUI still starts before the Secret is seeded
         # (no key -> no LiteLLM models listed, nothing else breaks).
         optional: true
+
+# LiteLLM (apps/litellm/), in-cluster (not via Tailscale), is the LLM backend.
+# These are the chart's own OpenAI settings - it already emits
+# OPENAI_API_BASE_URL itself. openaiApiKey is blanked so the chart omits its
+# default placeholder key; the real key comes from extraEnvVars above.
+openaiBaseApiUrl: http://litellm.litellm.svc.cluster.local:4000/v1
+openaiApiKey: ""
 
 resources:
   requests:
