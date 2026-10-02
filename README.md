@@ -10,8 +10,8 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
 
 - Control plane: 3x Raspberry Pi 5 — `rpi-5-1`, `rpi-5-2`, `rpi-5-3` (moved here from the 4Bs - their
   disks proved too slow for etcd; see `inventory.dist`'s `[server]` group comment)
-- Workers: 3x Raspberry Pi 4B (`rpi-4b-1`, `rpi-4b-2`, `rpi-4b-3`) + 1x Raspberry Pi 5 (`rpi-5-4`, the
-  the optional second Postgres node — see `[database]` in `inventory.dist`)
+- Workers: 3x Raspberry Pi 4B (`rpi-4b-1`, `rpi-4b-2`, `rpi-4b-3`) + 1x Raspberry Pi 5 (`rpi-5-4`, a
+  general-purpose worker)
 
 ## Setup (one time)
 

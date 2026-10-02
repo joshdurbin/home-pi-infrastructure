@@ -37,15 +37,119 @@ service:
       http:
         port: 3000
 
+# Homepage's config files, as a chart-owned ConfigMap (rather than a separate
+# manifest in manifests/) so app-template can hash it into a pod annotation:
+# any change here restarts the pod, which the subPath mounts below need to
+# pick it up (Kubernetes never refreshes subPath mounts in a running pod).
+#
+# Fully static and portable - no credentials, no per-cluster values. The one
+# per-cluster thing (this tailnet's hostname) is Homepage's own runtime
+# env-var substitution, {{HOMEPAGE_VAR_TAILNET_DOMAIN}} (confirmed against
+# its config.js source: a literal replaceAll of "{{HOMEPAGE_VAR_<name>}}"
+# against every HOMEPAGE_VAR_-prefixed env var, across every config file,
+# before parsing YAML) - the value comes from the HOMEPAGE_VAR_TAILNET_DOMAIN
+# env var seeded by the k8s_secrets bridge (group_vars/all/cluster_secrets.yaml,
+# wired in via envFrom above).
+#
+# app-template runs every string containing "{{" through Helm's tpl, which
+# would try to evaluate that placeholder, so services.yaml defines it once as
+# a Go-template string ($d) and each entry references {{ $d }} - rendered
+# output is byte-for-byte the placeholder Homepage expects.
+configMaps:
+  config:
+    enabled: true
+    data:
+      settings.yaml: |
+        title: Home Pi Infrastructure
+        theme: dark
+        headerStyle: clean
+        hideVersion: true
+
+      bookmarks.yaml: |
+        []
+
+      widgets.yaml: |
+        []
+
+      # One entry per Ingress already in
+      # apps/tailscale-operator/manifests/ingresses.yaml - add a service here
+      # (and commit) whenever a new one is added there, same "no Ansible run
+      # needed" workflow that file's own docs/REFERENCE.md section describes.
+      # Icons are all bundled `mdi-` (Material Design Icons shipped in the
+      # Homepage image itself) rather than the slug-based icons Homepage
+      # fetches from an external CDN - keeps this pod's NetworkPolicy
+      # (manifests/networkpolicy.yaml) from needing broad egress just to draw
+      # icons.
+
+      services.yaml: |
+        {{- $d := "{{HOMEPAGE_VAR_TAILNET_DOMAIN}}" }}
+        ---
+        - Platform:
+            - Argo CD:
+                href: https://argocd.{{ $d }}
+                description: GitOps continuous delivery
+                icon: mdi-infinity
+
+        - Monitoring:
+            - Grafana:
+                href: https://grafana.{{ $d }}
+                description: Dashboards
+                icon: mdi-chart-box-outline
+            - Alertmanager:
+                href: https://alertmanager.{{ $d }}
+                description: Alert routing
+                icon: mdi-bell-alert-outline
+            - VictoriaMetrics:
+                href: https://victoriametrics.{{ $d }}
+                description: Metrics backend
+                icon: mdi-chart-line
+
+        - Logging:
+            - OpenSearch Dashboards:
+                href: https://opensearch.{{ $d }}
+                description: Log search and visualization
+                icon: mdi-text-search
+
+        - Storage:
+            - Longhorn:
+                href: https://longhorn.{{ $d }}
+                description: Distributed block storage
+                icon: mdi-harddisk
+
+        - Network:
+            - Blocky:
+                href: https://blocky.{{ $d }}
+                description: DNS / ad-blocking metrics
+                icon: mdi-shield-check-outline
+
+        - Apps:
+            - SearXNG:
+                href: https://search.{{ $d }}
+                description: Metasearch engine
+                icon: mdi-magnify
+            - Temporal:
+                href: https://temporal.{{ $d }}
+                description: Workflow orchestration
+                icon: mdi-sync-circle
+            - Open WebUI:
+                href: https://chat.{{ $d }}
+                description: LLM chat interface
+                icon: mdi-chat-processing-outline
+            - WhoDB:
+                href: https://whodb.{{ $d }}
+                description: Postgres, OpenSearch and Redis browser (read-only)
+                icon: mdi-database-search-outline
+            - LiteLLM:
+                href: https://litellm.{{ $d }}/ui
+                description: LLM gateway (API, keys, spend)
+                icon: mdi-router-network
+
 persistence:
-  # Entirely static config (apps/homepage/manifests/configmap.yaml) - no
-  # credentials, no per-cluster values (those are the two env vars above
-  # instead), so this is a plain git-managed ConfigMap like Blocky's, not
-  # something seeded by the k8s_secrets bridge.
   config:
     enabled: true
     type: configMap
-    name: homepage-config
+    # The chart-managed ConfigMap above (rendered as `homepage`), not an external one.
+    identifier: config
     globalMounts:
       - path: /app/config/settings.yaml
         subPath: settings.yaml

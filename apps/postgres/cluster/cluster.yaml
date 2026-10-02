@@ -8,7 +8,7 @@
 # what their volumes sit on. That part is a one-line switch in
 # kustomization.yaml (this directory) - `components/longhorn` (default:
 # volumes on Longhorn, instances float anywhere) or `components/local`
-# (volumes on k3s local-path, instances pinned to the database=true nodes).
+# (volumes on k3s local-path, instances pinned to rpi-5-1/rpi-5-4).
 # See kustomization.yaml for how to flip it, and docs/REFERENCE.md's
 # Postgres section for the migration steps - changing the mode on a live
 # cluster does NOT move existing instances by itself.
@@ -30,7 +30,7 @@ spec:
   storage:
     size: 10Gi
 
-  # affinity.nodeSelector is set by the `local` component only.
+  # affinity.nodeAffinity is set by the `local` component only.
   affinity:
     enablePodAntiAffinity: true
     podAntiAffinityType: required

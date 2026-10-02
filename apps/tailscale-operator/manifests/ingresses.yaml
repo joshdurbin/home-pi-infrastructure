@@ -213,7 +213,7 @@ spec:
                   number: 5601
 ---
 # Landing page linking out to every other Ingress in this file
-# (apps/homepage/manifests/configmap.yaml) - hostname "home" rather than
+# (apps/homepage/values.yaml, configMaps.config) - hostname "home" rather than
 # "homepage" so it reads naturally as the tailnet's actual home page
 # (https://home.<tailnet>.ts.net). Service name "homepage" confirmed by the
 # app-template chart convention already used by every other single-service

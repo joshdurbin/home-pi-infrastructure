@@ -13,9 +13,9 @@
 #       StorageClass's numberOfReplicas knob).
 #
 #   components/local     Volumes are k3s local-path PVs, instances pinned to
-#       the database=true nodes (rpi-5-1, rpi-5-4) by nodeSelector and, via the
-#       PV's baked-in node affinity, to whichever node each volume first
-#       landed on. Fastest I/O, no Longhorn dependency, redundancy is Postgres
+#       two named nodes (rpi-5-1, rpi-5-4, by hostname - see that component) and,
+#       via the PV's baked-in node affinity, to whichever node each volume
+#       first landed on. Fastest I/O, no Longhorn dependency, redundancy is Postgres
 #       replication alone - but the instances cannot move.
 #
 # IMPORTANT: this only changes how *new* instances are provisioned. Existing

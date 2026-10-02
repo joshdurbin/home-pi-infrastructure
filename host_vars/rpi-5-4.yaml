@@ -1,11 +1,10 @@
 ---
 k8s_labels:
-  database: "true"
   # See host_vars/rpi-5-1.yaml's own comment - Pi 4B's CPU can't run
   # apps/opensearch's Amazon-Linux-based images at all (confirmed live,
   # "Fatal glibc error"), not opensearch-specific.
   pi5: "true"
-  # Deliberately no storage=true - this node's purpose is being the second
-  # database=true node for apps/postgres/cluster's `local` mode (see
-  # components/local there), not a Longhorn replica target. Revisit only if a concrete
-  # need shows up.
+  # Deliberately no storage=true - not a Longhorn replica target. (Postgres's
+  # optional `local` mode pins to this node and rpi-5-1 by hostname - see
+  # apps/postgres/cluster/components/local.) Revisit only if a concrete need
+  # shows up.

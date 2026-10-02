@@ -1,6 +1,5 @@
 ---
 k8s_labels:
-  database: "true"
   # Pi 5's Cortex-A76 is ARMv8.2-A with crypto extensions; Pi 4B's Cortex-A72
   # is not - confirmed live: apps/opensearch's OpenSearch/Dashboards pods
   # (Amazon Linux base image) crash-looped with "Fatal glibc error: This

@@ -46,14 +46,14 @@ Control plane moved to the Pi 5s deliberately, not by original design - confirme
 nodes' disks were too slow/inconsistent for etcd's fsync latency sensitivity, causing real API server
 instability (intermittent 503s, TLS handshake timeouts, connection resets) under normal cluster load. See
 `inventory.dist`'s own `[server]` group comment for the full reasoning, including why `rpi-5-4` joins
-`[pi5]`/`[agent]`/`[database]` and never `[server]` - etcd quorum needs a fixed, deliberately-sized
+`[pi5]`/`[agent]` and never `[server]` - etcd quorum needs a fixed, deliberately-sized
 odd-numbered membership, not "however many Pi 5s happen to exist."
 
 The Pi 5 nodes also carry this cluster's disk-heavy workloads (Longhorn, VictoriaMetrics, OpenSearch,
 Postgres - see each `host_vars/rpi-5-*.yaml`'s labels) - accepted deliberately alongside etcd, not
 overlooked; revisit if the Pi 5 disks turn out not to keep up with both together, but that hasn't been
-observed. `rpi-5-4` carries only Postgres's `database=true` label - it's a worker (`[agent]`), not control
-plane, so it doesn't carry etcd's own fsync sensitivity at all.
+observed. `rpi-5-4` is a worker (`[agent]`), not control plane, so it doesn't carry etcd's own fsync
+sensitivity at all.
 
 (RAM figures confirmed live via `kubectl get nodes -o jsonpath='{.status.capacity.memory}'` - the 4B nodes
 report ~3.9GiB, i.e. 4GB boards; this matters for anything sizing container `resources.limits.memory`
@@ -61,9 +61,7 @@ against the smaller of the two node classes.)
 
 Two of the Pi 5 nodes (`rpi-5-2`, `rpi-5-3`) carry a `storage=true` Kubernetes node label and back Longhorn's
 distributed storage (their disks hold every Longhorn volume's replica *data*; the volumes themselves attach
-over the network to pods on any node). Two Pi 5 nodes (`rpi-5-1`, `rpi-5-4`) carry a `database=true` label,
-used only by Postgres's optional `local` storage mode (see [Postgres (CloudNativePG)](#postgres-cloudnativepg)).
-`pi5=true` marks the Pi 5s, required by OpenSearch (its Amazon Linux images won't run on a Pi 4B). Everything
+over the network to pods on any node). `pi5=true` marks the Pi 5s, required by OpenSearch (its Amazon Linux images won't run on a Pi 4B). Everything
 else - including VictoriaMetrics, VictoriaLogs and, by default, Postgres - is unpinned and can schedule on any
 node with capacity. See [Logging](#logging-opensearch) below. See also
 [Storage (Longhorn)](#storage-longhorn) and [Monitoring](#monitoring-victoriametrics-grafana).
@@ -804,18 +802,15 @@ curl -k -u admin:<opensearch_admin_password> "https://localhost:9200/logs-*/_sea
 |---|---|---|
 | `storage=true` | rpi-5-2, rpi-5-3 | Longhorn replica placement (physical data) |
 | `pi5=true` | rpi-5-1..4 | OpenSearch (Amazon Linux images need a Pi 5 CPU) |
-| `database=true` | rpi-5-1, rpi-5-4 | Only Postgres's optional `local` storage mode (`apps/postgres/cluster/components/local`) - pins the instances to these nodes. Unused in the default `longhorn` mode |
 
-The former `telemetry=true` label (VictoriaMetrics/VictoriaLogs placement) is gone - nothing selects on it any
-more. It may still be set on the live nodes from before; remove it with
-`kubectl label node rpi-5-1 rpi-5-2 telemetry-`.
+The former `telemetry=true` (VictoriaMetrics/VictoriaLogs) and `database=true` (Postgres) labels are gone -
+those workloads are unpinned. Postgres's optional `local` storage mode pins to `rpi-5-1`/`rpi-5-4` by
+hostname instead (`apps/postgres/cluster/components/local`), so no custom label is needed for it.
 
 Labels are declared per-host in `host_vars/rpi-5-*.yaml` under the `k8s_labels` key, and applied to the live
 cluster by the `k8s_labels` role (which reads every host's `k8s_labels` var and patches the matching
-Kubernetes Node object — not tied to any single chart-deploying role). `database=true` is additionally
-tracked via a dedicated `[database]` inventory group (`inventory.dist`), separate from `[pi5]`, so future
-Postgres-specific Ansible plays can target `hosts: database` directly rather than every Pi 5 - deliberately
-*not* driven by group_vars, since this repo's `ansible.cfg` doesn't set `hash_behaviour = merge`, so a
+Kubernetes Node object — not tied to any single chart-deploying role). Labels are deliberately *not* driven
+by group_vars, since this repo's `ansible.cfg` doesn't set `hash_behaviour = merge`, so a
 group_vars-level `k8s_labels` would be silently replaced outright (not merged) by any host's own
 `k8s_labels` in `host_vars/`, rather than combined with it.
 
@@ -1071,7 +1066,7 @@ directly.
     take the database - `"2"` is the safe default. StorageClass parameters are immutable; change one by
     creating a new class and migrating onto it.
   - `components/local` - volumes on k3s `local-path` (`WaitForFirstConsumer` bakes the node into each PV), and
-    the instances pinned to the `database=true` nodes (`rpi-5-1`, `rpi-5-4`). Fastest, no Longhorn
+    the instances pinned by hostname to `rpi-5-1` and `rpi-5-4`. Fastest, no Longhorn
     dependency, redundancy from Postgres replication alone - but the instances cannot move.
   - **Flipping the line does not move a running cluster.** CNPG never migrates an existing PVC to another
     StorageClass; the switch only decides how *new* instances are provisioned. See **Switching Postgres
@@ -1199,7 +1194,7 @@ kubectl -n postgres get databaserole,database
 this repo, deployed via the same `bjw-s-labs/app-template` chart as Blocky/SearXNG/WhoDB - Homepage
 ships no official Helm chart of its own, only Docker instructions.
 
-- **Config**: `apps/homepage/manifests/configmap.yaml` - `settings.yaml`, `bookmarks.yaml`, `widgets.yaml`
+- **Config**: `configMaps.config` in `apps/homepage/values.yaml` - `settings.yaml`, `bookmarks.yaml`, `widgets.yaml`
   (unused, empty), and `services.yaml` (one entry per `Ingress` in
   `apps/tailscale-operator/manifests/ingresses.yaml`, grouped by what the service does). Entirely
   git-managed and portable, like Blocky's config - no credentials, and the one per-cluster value it needs
@@ -1219,8 +1214,11 @@ ships no official Helm chart of its own, only Docker instructions.
   (`https://api.github.com/repos/gethomepage/homepage/releases`), hit server-side on every page load.
 - **Access**: `https://home.<tailnet>.ts.net` - see [Exposing UIs via Tailscale
   Operator](#exposing-uis-via-tailscale-operator) below. To add a newly-exposed service to the dashboard,
-  add an entry to `apps/homepage/manifests/configmap.yaml`'s `services.yaml` and commit - no Ansible run
-  needed, same as adding the `Ingress` itself.
+  add an entry to `services.yaml` in `apps/homepage/values.yaml` and commit - no Ansible run needed, same
+  as adding the `Ingress` itself. Homepage restarts itself on any change here: the chart hashes the
+  ConfigMap into a pod annotation (Homepage's config is `subPath`-mounted, which Kubernetes never refreshes
+  in a running pod). In `services.yaml`, write the tailnet hostname as `{{ $d }}` (defined at the top of that
+  file) - the chart's own templating would choke on the literal `{{HOMEPAGE_VAR_TAILNET_DOMAIN}}`.
 
 ## Node Rebalancing (descheduler)
 
@@ -1240,7 +1238,7 @@ SIG Scheduling's own project, no vendor chart) is what actually moves already-ru
   rescheduled (nodeSelector, taints, resource requests) before evicting it - protects e.g. Longhorn's
   `storage=true` pin or OpenSearch's `pi5=true` one. The `postgres` namespace is excluded outright via
   `evictableNamespaces` regardless of storage mode: in `local` mode an evicted instance could only restart on
-  the same node (PV node affinity + the `database=true` nodeSelector), and in `longhorn` mode evicting a
+  the same node (PV node affinity + the hostname pin), and in `longhorn` mode evicting a
   primary/replica for rebalancing is still a needless disruption to a stateful pair. `kube-system` is excluded too - standard "don't let a descheduler touch core cluster
   services" default.
 

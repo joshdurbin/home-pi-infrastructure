@@ -83,7 +83,7 @@ deschedulerPolicy:
                 # postgres: evicting a primary/replica pair member for
                 # rebalancing is a needless disruption in either storage
                 # mode (apps/postgres/cluster) - in `local` mode the pod could
-                # only restart on the same node anyway (nodeSelector + PV
+                # only restart on the same node anyway (node affinity + PV
                 # node affinity); in `longhorn` mode it can move, but a
                 # failover just to balance CPU isn't worth it. See the
                 # DefaultEvictor comment above for why this is an explicit

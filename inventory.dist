@@ -30,7 +30,7 @@ rpi-5-4
 # Control plane (etcd + API server) - explicitly enumerated rather than
 # aliased to [pi5], and deliberately kept that way: etcd quorum needs a
 # fixed, deliberately-chosen odd-numbered membership. rpi-5-4 joins [pi5],
-# [agent], and [database] below, never this group - a 4th etcd
+# and [agent] below, never this group - a 4th etcd
 # member would be strictly worse for fault tolerance than 3 (still only
 # tolerates 1 node failure, but now needs 3 of 4 to agree instead of 2 of
 # 3), not better. Previously the pi4 nodes - moved here because etcd is
@@ -38,9 +38,8 @@ rpi-5-4
 # proved too slow/inconsistent for it, causing real, confirmed API server
 # instability (intermittent 503s, TLS handshake timeouts, connection
 # resets) under normal cluster load. The pi5 nodes also carry this
-# cluster's disk-heavy workloads (storage=true, telemetry=true,
-# database=true host_vars labels - Longhorn, OpenSearch, Postgres's optional
-# `local` mode) - accepted deliberately, not overlooked: if their disks can't
+# cluster's disk-heavy workloads (Longhorn's storage=true nodes, OpenSearch's
+# pi5=true nodes) - accepted deliberately, not overlooked: if their disks can't
 # keep up with etcd *and* those workloads together, revisit then, but
 # don't pre-split them without evidence it's actually needed.
 [server]
@@ -53,27 +52,13 @@ rpi-5-3
 # with heavy disk activity should be pinned here via a node label. rpi-5-4
 # is the one exception, deliberately: its own disk hasn't shown the pi4
 # nodes' fsync problems (it's a Pi 5, same class as [server]), which is
-# exactly why it carries database=true below instead of being held to the
+# exactly why Postgres's optional `local` mode pins to it (see
+# apps/postgres/cluster/components/local) instead of it being held to the
 # same "no heavy disk" rule as the pi4 agents.
 [agent]
 rpi-4b-1
 rpi-4b-2
 rpi-4b-3
-rpi-5-4
-
-# Nodes carrying the database=true k8s label (see host_vars/rpi-5-1.yaml,
-# host_vars/rpi-5-4.yaml), gating scheduling eligibility for Postgres
-# workloads - only used by apps/postgres/cluster's optional `local` storage
-# mode (components/local), whose affinity.nodeSelector targets exactly this
-# label. In the default `longhorn` mode Postgres isn't pinned and this label
-# is unused. Either way the Cluster's required podAntiAffinity (topologyKey
-# kubernetes.io/hostname) keeps its instances on different nodes. Independent of
-# [server]/[agent] membership - k3s doesn't taint server/control-plane
-# nodes against regular workloads by default, and this cluster has never
-# changed that, so a node can be both [server] and database=true at once
-# (rpi-5-1 is).
-[database]
-rpi-5-1
 rpi-5-4
 
 [k3s_cluster:children]
