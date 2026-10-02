@@ -98,24 +98,20 @@ spec:
         memory: 512Mi
 
   nodePools:
-    # Coordinating + cluster-manager pool - collapses what would normally be
-    # two separate pools into one, same reasoning as the plain-chart version
-    # this replaced: a homelab-scale, single-replica evaluation has no HA to
-    # gain from splitting them, and the cluster still needs at least one
-    # cluster_manager-eligible node regardless.
+    # Coordinating (ingest) pool. NOT cluster_manager-eligible: this pool has
+    # no persistent storage (emptyDir below), so every pod restart that wipes
+    # it (a drain/eviction, not just a container restart) gives it a brand-new
+    # node ID. While it was master-eligible (it used to be, alongside the data
+    # pool - an earlier fix for an OOM-induced stuck election added the data
+    # pool as a second voter, treating this one as "permanent"), the old IDs
+    # stayed in the cluster's voting configuration forever; after an eviction
+    # only 1 of the 3 recorded voters existed, a quorum was impossible, and
+    # OpenSearch stayed down until manually recovered. Only the data pool - a
+    # stable identity backed by its PVC - is the cluster manager, so this pool
+    # can be evicted and rescheduled freely (e.g. by a node drain).
     - component: client
       replicas: 1
-      # cluster_manager added to data pool too (below) - confirmed live via
-      # OOMKilled + stuck-election investigation: this pool being the ONLY
-      # cluster_manager-eligible node meant an OOM here (see resources
-      # below) or any pod-level disruption had no other node to fail over
-      # to, and its emptyDir-cached "I need node X to bootstrap" state
-      # survives container restarts (OOM only restarts the container, not
-      # the pod), pointing at the operator's transient bootstrap pod long
-      # after it's been cleaned up. Two permanent cluster_manager-eligible
-      # nodes removes that single point of failure entirely.
       roles:
-        - cluster_manager
         - ingest
         - remote_cluster_client
       persistence:

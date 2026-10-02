@@ -8,6 +8,13 @@ controllers:
     # Static config, no state: 2 replicas on different nodes (PDB in
     # manifests/pdb.yaml) so a drain never takes the dashboard down.
     replicas: 2
+    # app-template defaults to Recreate (kill the old pod, then start the new
+    # one) - with 2 replicas that still means a full outage on every update.
+    # Roll one pod at a time instead, never dropping below 2 ready.
+    strategy: RollingUpdate
+    rollingUpdate:
+      unavailable: 0
+      surge: 1
     pod:
       affinity:
         podAntiAffinity:
