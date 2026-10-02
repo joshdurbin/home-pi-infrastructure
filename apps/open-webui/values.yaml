@@ -84,6 +84,9 @@ extraEnvVars:
       secretKeyRef:
         name: open-webui-litellm-key
         key: api-key
+        # Optional so Open WebUI still starts before the Secret is seeded
+        # (no key -> no LiteLLM models listed, nothing else breaks).
+        optional: true
 
 resources:
   requests:
