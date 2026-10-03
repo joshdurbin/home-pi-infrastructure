@@ -1528,7 +1528,7 @@ kubectl cnpg promote postgres <replica-instance> -n postgres        # e.g. postg
 
 # Crash simulation: kill the primary and let CNPG fail over
 kubectl -n postgres delete pod <primary-instance>                   # add --grace-period=0 --force for a hard kill
-kubectl cnpg status postgres -n postgres -w 2>/dev/null || watch kubectl cnpg status postgres -n postgres
+watch kubectl cnpg status postgres -n postgres          # or re-run status until healthy
 ```
 Done when `status` shows a healthy primary and a streaming replica again. The `postgres-rw` Service and the
 `postgres-pooler-rw` PgBouncer follow the new primary on their own; apps reconnect without config changes. A failover
