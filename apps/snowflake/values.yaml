@@ -12,7 +12,10 @@
 # kubernetes.io/*-bandwidth annotations).
 controllers:
   main:
-    replicas: 2
+    # 0 = switched off (committed but not running). Set back to 2 to start it.
+    # Leave -capacity below as is: in Snowflake, -capacity 0 means UNLIMITED
+    # clients, the opposite of off.
+    replicas: 0
     strategy: RollingUpdate
     rollingUpdate:
       unavailable: 0
