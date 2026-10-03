@@ -32,6 +32,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [LiteLLM](#litellm)
 - [GO Feature Flag](#go-feature-flag)
 - [Snowflake (Tor)](#snowflake-tor)
+- [Audio node and shairport-sync](#audio-node-and-shairport-sync)
 - [Availability and node maintenance](#availability-and-node-maintenance)
 - [Exposing UIs via Tailscale Operator](#exposing-uis-via-tailscale-operator)
 - [Tailscale Integration (Optional)](#tailscale-integration-optional)
@@ -1412,6 +1413,29 @@ bandwidth to censored Tor users. Image `thetorproject/snowflake-proxy:v2.14.1` (
   so it can't be used to reach the LAN, cluster or tailnet.
 - **Metrics**: `/internal/metrics` on port 9999, scraped by a `VMServiceScrape` (connections, bytes in/out, by country).
 - 2 replicas (soft anti-affinity) + PDB; no state, no secrets, no Vault vars.
+
+## Audio node and shairport-sync
+
+`rpi-3b-1` (192.168.1.15) is a Pi 3B+ with 1GB RAM and an SD card - much slower and smaller than every other node - so it
+is dedicated to one job: an AirPlay receiver playing to a USB audio device (`apps/shairport-sync/`, namespace
+`shairport-sync`, `mikebrady/shairport-sync` classic/AirPlay 1).
+
+How it is kept to that job:
+- **Label** `audio_output=true` (`host_vars/rpi-3b-1.yaml`, applied by the `k8s_labels` role) says what the node is for;
+  shairport-sync selects on it.
+- **Taint** `dedicated=audio:NoSchedule` is what keeps everything else off. It is set with `--node-taint` when the k3s
+  agent first registers, so there is no window for other pods to land first. It also blocks DaemonSets, so Longhorn,
+  Vector and servicelb never run there. The only things that tolerate it are node-exporter
+  (`apps/victoria-metrics/values.yaml`) and shairport-sync.
+- k3s's own pieces (kubelet, containerd, kube-proxy, Flannel) are part of the agent process, not pods, so the base set is
+  agent + node-exporter + shairport-sync. No Longhorn host packages (`site.yml` skips `[audio]`), and no Tailscale (that
+  play only targets `pi4,pi5`).
+- To change the taint on an already-joined node, use `kubectl taint`; `--node-taint` only applies at registration.
+
+shairport-sync runs `hostNetwork` (mDNS discovery and the stream come straight from the sender), `Recreate` strategy
+(one USB device, one owner), privileged for `/dev/snd`. It outputs to ALSA `hw:0`: the Pi's onboard audio is disabled
+(`roles/setup/tasks/kill_audio.yml`), so the USB device should be card 0 - confirm with `aplay -l` on the node. Logs are
+`kubectl logs` only (Vector is excluded from this node).
 
 ## Availability and node maintenance
 

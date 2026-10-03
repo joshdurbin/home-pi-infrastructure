@@ -1,0 +1,62 @@
+# shairport-sync (https://github.com/mikebrady/shairport-sync): an AirPlay
+# receiver that plays to a USB audio device on rpi-3b-1, the dedicated audio
+# node (label audio_output=true, taint dedicated=audio:NoSchedule - see
+# host_vars/rpi-3b-1.yaml). This and node-exporter are the only things that
+# run there.
+#
+# `-classic` image = AirPlay 1 only: no NQPTP/PTP daemon and a much smaller
+# footprint, right for a 1GB Pi 3B+. (AirPlay 2 would add nqptp on UDP
+# 319/320; switch tag to 5.5.2 if multi-room/AirPlay 2 is ever wanted.)
+controllers:
+  main:
+    # One USB device, one owner: never run two pods at once, so stop the old
+    # before starting the new (a rolling update would fight over the device).
+    replicas: 1
+    strategy: Recreate
+    pod:
+      # AirPlay discovery is mDNS on the LAN and the stream comes straight from
+      # the iPhone/Mac, so the pod must be on the host network.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      nodeSelector:
+        audio_output: "true"
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: audio
+          effect: NoSchedule
+    containers:
+      main:
+        image:
+          repository: mikebrady/shairport-sync
+          tag: 5.5.2-classic
+        # Args go to shairport-sync: name it, then `--` passes the rest to the
+        # ALSA backend. hw:0 is the first sound card - with the Pi's onboard
+        # audio disabled (roles/setup/tasks/kill_audio.yml), the USB device is
+        # card 0. Confirm with `aplay -l` on the node; set the mixer with
+        # `-c <control>` if volume control is wanted (see `amixer -c 0`).
+        args:
+          - -a
+          - "Pi Audio"
+          - --
+          - -d
+          - hw:0
+        securityContext:
+          # /dev/snd access + real-time scheduling for glitch-free audio. A
+          # device plugin would be tidier but would be another container on a
+          # 1GB node; the node runs nothing else.
+          privileged: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 32Mi
+          limits:
+            memory: 128Mi
+
+persistence:
+  snd:
+    enabled: true
+    type: hostPath
+    hostPath: /dev/snd
+    globalMounts:
+      - path: /dev/snd

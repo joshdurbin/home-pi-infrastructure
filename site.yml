@@ -127,8 +127,10 @@
   become: yes
   tags: [labels, storage, longhorn, telemetry, charts]
 
+# Not the [audio] node: Longhorn never runs there (taint), so no iSCSI/NFS
+# packages on its SD card.
 - name: Longhorn host prerequisites
-  hosts: k3s_cluster
+  hosts: k3s_cluster:!audio
   gather_facts: false
   roles:
     - longhorn_prereqs

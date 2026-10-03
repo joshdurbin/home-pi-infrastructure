@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: shairport-sync
+  namespace: argocd
+  annotations:
+    # Stateless, no dependencies: wave 2 like every other app.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: shairport-sync
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  sources:
+    # One container with host devices - app-template like the rest, no extra manifests.
+    - repoURL: https://bjw-s-labs.github.io/helm-charts
+      chart: app-template
+      targetRevision: 5.2.1
+      helm:
+        releaseName: shairport-sync
+        valueFiles:
+          - $values/apps/shairport-sync/values.yaml
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master

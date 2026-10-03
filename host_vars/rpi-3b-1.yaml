@@ -1,0 +1,16 @@
+---
+# Pi 3B+, 1GB RAM, SD-card disk: far slower and smaller than every other node,
+# so it is a dedicated audio-output node. It runs the k3s agent, node-exporter
+# and shairport-sync (apps/shairport-sync), and nothing else.
+k8s_labels:
+  audio_output: "true"
+
+# The label above only says what the node is FOR; this taint is what keeps
+# everything else off it. Set at first registration (no window where other
+# pods can land on it first). No pod tolerates it by default - not even
+# DaemonSets (Longhorn, Vector, servicelb stay off) - so the only things that
+# run here are those that explicitly tolerate `dedicated=audio`:
+# node-exporter (apps/victoria-metrics/values.yaml) and shairport-sync.
+# NOTE: k3s applies --node-taint when the node registers; to change it on an
+# already-joined node use `kubectl taint`, then update this to match.
+extra_agent_args: "--node-taint dedicated=audio:NoSchedule"

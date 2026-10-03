@@ -136,6 +136,13 @@ kube-state-metrics:
       cpu: 10m
       memory: 128Mi
 prometheus-node-exporter:
+  # The audio node (host_vars/rpi-3b-1.yaml) is tainted dedicated=audio so
+  # nothing else lands on it; node-exporter is the one DaemonSet it keeps.
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: audio
+      effect: NoSchedule
   resources:
     limits:
       memory: 128Mi
