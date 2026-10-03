@@ -52,6 +52,26 @@ spec:
   storage:
     size: 10Gi
 
+  # Tuning for network-attached (Longhorn, 2 replicas) storage. Measured on the
+  # live primary: the databases total ~70 MB with a 99.97% cache hit ratio, so
+  # reads never touch the volume; only WAL writes do, and a commit's fsync
+  # takes ~1.8 ms (pg_test_fsync from rpi-4b-3; local NVMe would be 0.1-0.5).
+  # That is fine for this workload, so only cheap, safe settings are changed.
+  # All are reload-only (no restart). Deliberately NOT changed: fsync and
+  # full_page_writes (crash safety), checkpoint/max_wal_size (pointless at this
+  # write volume), synchronous_commit (would risk losing the last ~0.5s of
+  # commits on a crash; keep Temporal durable).
+  postgresql:
+    parameters:
+      # Records real WAL write/sync times in pg_stat_wal / pg_stat_io, so
+      # storage latency is visible if it ever becomes a question.
+      track_wal_io_timing: "on"
+      # Less WAL to ship over the network; trivial CPU on this workload.
+      wal_compression: "lz4"
+      # Planner hint only. The default is derived from node memory (5 GB),
+      # but the pod is limited to 1Gi; this reflects what it can really cache.
+      effective_cache_size: "512MB"
+
   # affinity.nodeAffinity is set by the `local` component only.
   affinity:
     enablePodAntiAffinity: true
