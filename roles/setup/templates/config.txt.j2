@@ -32,6 +32,7 @@ dtoverlay=nospi10
 arm_freq=2600
 {% elif board_model == 'pi4' %}
 
-# Pi 4 (rev 1.1): no overclock. arm_boost has no effect on these boards - see
-# roles/setup/README.md.
+# Pi 4 only
+# Overclock (stock 1500MHz), no voltage change - see roles/setup/README.md
+arm_freq=1900
 {% endif %}
