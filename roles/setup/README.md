@@ -72,16 +72,22 @@ Check on a node: `systemctl list-timers apt-daily-upgrade.timer`, `sudo unattend
 Note: the `setup` role also runs a full `apt dist-upgrade` whenever it is applied (`make deploy-system`),
 which is separate from, and not limited by, the blacklist above.
 
+## Boot config (`/boot/firmware/config.txt`)
+
+The whole file is rendered from `templates/config.txt.j2` per `board_model`, so each board only carries
+settings that apply to it: no `[pi5]`/`[cm4]`/`[cm5]` filter sections and no per-setting `lineinfile`
+appends. A timestamped backup of the previous file is kept beside it on each change.
+
 ## Overclocking
 
 Applied per `board_model` (set in `group_vars/{pi4,pi5}/main.yaml`, not by inventory group name or
-hostname — see `tasks/k3s_hardware_optimization.yml`):
+hostname — see `templates/config.txt.j2`, rendered by `tasks/config_txt.yml`):
 
 - **Pi 4**: no overclock. `arm_boost=1` was tried (Raspberry Pi's documented zero-voltage turbo step,
   1.5GHz → 1.8GHz on rev 1.4/1.5 boards) but confirmed to have **zero effect** on these boards — they're
   rev 1.1, which lacks the regulator headroom for it. Verified by direct measurement
-  (`/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq`) after a real reboot, not assumed. The line is
-  actively removed (`state: absent`) rather than left inert, so it won't reappear from a future OS image.
+  (`/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq`) after a real reboot, not assumed. The template simply
+  doesn't emit `arm_boost`, so the stock image's line is dropped.
 - **Pi 5**: `arm_freq=2600` (stock 2400MHz), no `over_voltage_delta`. Community-tested stable at this
   frequency without a voltage bump; the Pi 5's own DVFS supplies the needed voltage automatically.
   Confirmed live at 2600MHz on all 3 Pi 5 nodes after reboot.

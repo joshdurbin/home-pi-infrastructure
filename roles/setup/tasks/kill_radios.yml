@@ -1,24 +1,4 @@
 ---
-- name: disable on-board bluetooth
-  ansible.builtin.lineinfile:
-    path: /boot/firmware/config.txt
-    regexp: '^dtoverlay=disable-bt'
-    line: "dtoverlay=disable-bt"
-    insertafter: EOF
-  notify: restart pi after config change
-  tags:
-    - kill_radios
-
-- name: disable on-board wifi
-  ansible.builtin.lineinfile:
-    path: /boot/firmware/config.txt
-    regexp: '^dtoverlay=disable-wifi'
-    line: "dtoverlay=disable-wifi"
-    insertafter: EOF
-  notify: restart pi after config change
-  tags:
-    - kill_radios
-
 - name: disable wpa supplicant
   ansible.builtin.systemd:
     name: wpa_supplicant

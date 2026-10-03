@@ -1,7 +1,7 @@
 ---
 # The three ALSA services below save/restore mixer state; they're pointless on
 # every node except the [audio] one (rpi-3bplus-1), where they keep the USB
-# DAC's volume across reboots. The onboard-audio disable at the bottom applies
+# DAC's volume across reboots. The onboard-audio disable (in config.txt.j2) applies
 # everywhere: that node plays through its USB DAC, not the Pi's jack.
 - name: disable alsa-state.service
   ansible.builtin.systemd:
@@ -27,14 +27,5 @@
     state: stopped
     enabled: false
   when: "'audio' not in group_names"
-  tags:
-    - kill_audio
-
-- name: disable onboard audio
-  ansible.builtin.lineinfile:
-    path: /boot/firmware/config.txt
-    regexp: '^dtparam=audio'
-    line: 'dtparam=audio=off'
-  notify: restart pi after config change
   tags:
     - kill_audio

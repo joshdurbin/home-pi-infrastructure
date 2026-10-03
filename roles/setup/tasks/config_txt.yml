@@ -1,0 +1,23 @@
+---
+# The whole of /boot/firmware/config.txt is rendered from one template, per
+# board_model (group_vars/{pi3,pi4,pi5}/main.yaml), so each board only gets
+# the settings that apply to it - no [pi5]/[cm4]/[cm5] filter sections, no
+# lineinfile appends. Replaces the former per-setting tasks (radios, onboard
+# audio, cgroups, GPU memory, HAT/HDMI disables, Pi 5 overclock).
+# Overclock rationale: README.md "Overclocking".
+# A reboot is required for any change to take effect. The handler below only
+# flags the host (sets pi_config_reboot_required); the drain -> reboot ->
+# uncordon sequence runs in a separate serial:1 play in site.yml ("Reboot nodes
+# with pending config.txt changes"), which is what guarantees only one node is
+# ever down at a time.
+- name: render /boot/firmware/config.txt for this board
+  ansible.builtin.template:
+    src: config.txt.j2
+    dest: /boot/firmware/config.txt
+    backup: true
+  notify: restart pi after config change
+  tags:
+    - kill_radios
+    - kill_audio
+    - enable_cgroups
+    - k3s_optimization

@@ -1,0 +1,37 @@
+# {{ ansible_managed }}
+# Rendered per board_model ({{ board_model }}) by roles/setup/tasks/config_txt.yml.
+# Only settings that apply to this board are present - no [pi4]/[pi5]/[cm*]
+# filter sections. Edit the template, not the file on the node.
+
+# Stock Raspberry Pi OS base
+camera_auto_detect=1
+display_auto_detect=1
+auto_initramfs=1
+dtoverlay=vc4-kms-v3d
+max_framebuffers=2
+disable_fw_kms_setup=1
+arm_64bit=1
+disable_overscan=1
+
+# Disable what a headless k3s node doesn't use
+dtparam=audio=off
+dtoverlay=disable-bt
+dtoverlay=disable-wifi
+dtoverlay=disable-hdmi
+dtparam=camera=off
+dtparam=i2c_arm=off
+dtparam=spi=off
+dtparam=1wire=off
+gpu_mem=16
+cgroup_memory=1 cgroup_enable=memory
+{% if board_model == 'pi5' %}
+
+# Pi 5 only
+dtoverlay=nospi10
+# Mild overclock (stock 2400MHz), no voltage change - see roles/setup/README.md
+arm_freq=2600
+{% elif board_model == 'pi4' %}
+
+# Pi 4 (rev 1.1): no overclock. arm_boost has no effect on these boards - see
+# roles/setup/README.md.
+{% endif %}

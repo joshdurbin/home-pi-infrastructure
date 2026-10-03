@@ -1,15 +1,12 @@
 ---
+- name: include config.txt (per-board boot config) tasks
+  ansible.builtin.include_tasks: config_txt.yml
+
 - name: include kill radios tasks
   ansible.builtin.include_tasks: kill_radios.yml
 
 - name: include kill audio tasks
   ansible.builtin.include_tasks: kill_audio.yml
-
-- name: include enable cgroups tasks
-  ansible.builtin.include_tasks: enable_cgroups.yml
-
-- name: include k3s hardware optimization tasks
-  ansible.builtin.include_tasks: k3s_hardware_optimization.yml
 
 - name: include kernel module blacklisting tasks
   ansible.builtin.include_tasks: blacklist_modules.yml
