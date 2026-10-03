@@ -89,9 +89,11 @@ hostname — see `templates/config.txt.j2`, rendered by `tasks/config_txt.yml`):
   lacks the regulator headroom for it (verified via `scaling_max_freq` after a real reboot). The template
   doesn't emit `arm_boost`. Whether 1900 holds without a voltage bump on rev 1.1 is **unverified** - check
   `scaling_max_freq` and `vcgencmd get_throttled` under load after the first node reboots.
-- **Pi 5**: `arm_freq=2600` (stock 2400MHz), no `over_voltage_delta`. Community-tested stable at this
-  frequency without a voltage bump; the Pi 5's own DVFS supplies the needed voltage automatically.
-  Confirmed live at 2600MHz on all 3 Pi 5 nodes after reboot.
+- **Pi 5**: `arm_freq=2800` (stock 2400MHz), no `over_voltage_delta`. 2600MHz was confirmed live on all
+  Pi 5 nodes; 2800 is **unverified** here and is further past what's commonly stable without a voltage bump
+  (the Pi 5's DVFS supplies voltage per its stock curve). Check `scaling_max_freq` and
+  `vcgencmd get_throttled` under load after the first node reboots; if unstable, add `over_voltage_delta=`
+  (microvolts, e.g. `50000`) or step back to 2600.
 
 To check a real board's revision before assuming any documented overclock step applies to it:
 `cat /proc/cpuinfo | grep Revision` (cross-reference against the
