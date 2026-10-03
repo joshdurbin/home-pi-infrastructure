@@ -110,7 +110,7 @@ configMaps:
                 description: Alert routing
                 icon: mdi-bell-alert-outline
             - VictoriaMetrics:
-                href: https://victoriametrics.{{ $d }}
+                href: https://victoriametrics.{{ $d }}/vmui/
                 description: Metrics backend
                 icon: mdi-chart-line
 
