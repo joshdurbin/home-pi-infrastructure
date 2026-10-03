@@ -52,13 +52,22 @@ operator:
 # bigger initial memory spike than the idle steady-state footprint this was
 # originally sized for. Doubled rather than nudged, same reasoning this
 # repo uses elsewhere for a live-confirmed OOM (e.g. vmsingle's own).
+# Raised again 512Mi -> 1Gi after live-confirmed OOMKills (exitCode 137, restart
+# loop) with the operator sitting at ~510Mi: it caches every workload and report
+# in the cluster, and the cluster has grown (more apps, 8 nodes).
 resources:
   requests:
     cpu: 50m
-    memory: 128Mi
+    memory: 384Mi
   limits:
     cpu: 200m
-    memory: 512Mi
+    memory: 1Gi
+
+# The audio node (host_vars/rpi-3bplus-1.yaml) is tainted so nothing but its
+# three allowed pods runs there; its node-collector Job could never schedule
+# (Pending forever), and a toleration would put a fourth pod on a 1GB node.
+nodeCollector:
+  excludeNodes: audio_output=true
 
 # Per scan-Job resources (one Job per distinct image scanned, up to
 # scanJobsConcurrentLimit at once) - left at the chart's own defaults.
