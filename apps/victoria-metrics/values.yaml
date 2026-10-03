@@ -270,6 +270,13 @@ vmcluster:
         # The two vmagents scrape the same targets, so every sample arrives
         # twice with slightly different timestamps; keep one per 30s interval.
         dedup.minScrapeInterval: 30s
+        # Default is 60% of the memory limit. At 2Gi that is ~1.2GB of caches,
+        # which on a 4GB Pi 4B (which also runs ~25 other pods) pushed the node
+        # into swap/page-cache thrashing - load average 70, kswapd pegged, every
+        # probe on the node timing out. 35% keeps caches ~700MB (what 1Gi at
+        # 60% gave, which was fine for steady state) and leaves the rest of the
+        # 2Gi as headroom for merges/catch-up, the thing that actually OOMed.
+        memory.allowedPercent: "35"
       # 2Gi, not 1Gi: confirmed live (both replicas OOMKilled, exit 137, 15+
       # restarts, CrashLoopBackOff) while catching up after an outage. The
       # store opens with ~12M blocks for ~15M rows (tiny parts written during
@@ -296,6 +303,16 @@ vmcluster:
               requests:
                 storage: 10Gi
       affinity:
+        # Soft preference only: Pi 5s (8GB) first, but the Pi 4Bs stay eligible
+        # so they are still used when the Pi 5s are full or one is drained.
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: pi5
+                    operator: In
+                    values: ["true"]
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             - labelSelector:
