@@ -6,7 +6,7 @@ rpi-5-1  ansible_host=192.168.1.30
 rpi-5-2  ansible_host=192.168.1.41
 rpi-5-3  ansible_host=192.168.1.28
 rpi-5-4  ansible_host=192.168.1.83
-rpi-3b-1 ansible_host=192.168.1.15
+rpi-3bplus-1 ansible_host=192.168.1.15
 
 [all:vars]
 ansible_user=ansible
@@ -20,7 +20,7 @@ rpi-4b-2
 rpi-4b-3
 
 [pi3]
-rpi-3b-1
+rpi-3bplus-1
 
 [pi5]
 rpi-5-1
@@ -64,15 +64,15 @@ rpi-4b-1
 rpi-4b-2
 rpi-4b-3
 rpi-5-4
-rpi-3b-1
+rpi-3bplus-1
 
 # Dedicated audio-output node (Pi 3B+, 1GB RAM, SD card): a k3s agent that
 # runs ONLY the node base set (node-exporter) plus shairport-sync. Kept off
 # everything else by a NoSchedule taint set when the agent first registers
-# (host_vars/rpi-3b-1.yaml). Also an [agent] member below - this group exists
+# (host_vars/rpi-3bplus-1.yaml). Also an [agent] member below - this group exists
 # so playbooks can single it out (e.g. no Longhorn host packages on an SD card).
 [audio]
-rpi-3b-1
+rpi-3bplus-1
 
 [k3s_cluster:children]
 server

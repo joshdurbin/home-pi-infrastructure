@@ -169,7 +169,7 @@
 # the Tailscale Kubernetes Operator (apps/tailscale-operator/) that exposes
 # in-cluster UIs - see "Exposing UIs via Tailscale Operator" in README.md.
 - name: Deploy Tailscale
-  hosts: pi4,pi5
+  hosts: pi4,pi5,pi3
   roles:
     - tailscale
   become: yes

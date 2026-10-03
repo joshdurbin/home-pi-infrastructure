@@ -12,6 +12,8 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
   disks proved too slow for etcd; see `inventory.dist`'s `[server]` group comment)
 - Workers: 3x Raspberry Pi 4B (`rpi-4b-1`, `rpi-4b-2`, `rpi-4b-3`) + 1x Raspberry Pi 5 (`rpi-5-4`, a
   general-purpose worker)
+- Audio node: 1x Raspberry Pi 3B+ (`rpi-3bplus-1`, 1GB RAM, SD card) - tainted so it runs only node-exporter,
+  Vector and shairport-sync (AirPlay to a USB audio device)
 
 ## Setup (one time)
 

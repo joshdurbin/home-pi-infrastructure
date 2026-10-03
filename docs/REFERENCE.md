@@ -1416,26 +1416,26 @@ bandwidth to censored Tor users. Image `thetorproject/snowflake-proxy:v2.14.1` (
 
 ## Audio node and shairport-sync
 
-`rpi-3b-1` (192.168.1.15) is a Pi 3B+ with 1GB RAM and an SD card - much slower and smaller than every other node - so it
+`rpi-3bplus-1` (192.168.1.15) is a Pi 3B+ with 1GB RAM and an SD card - much slower and smaller than every other node - so it
 is dedicated to one job: an AirPlay receiver playing to a USB audio device (`apps/shairport-sync/`, namespace
 `shairport-sync`, `mikebrady/shairport-sync` classic/AirPlay 1).
 
 How it is kept to that job:
-- **Label** `audio_output=true` (`host_vars/rpi-3b-1.yaml`, applied by the `k8s_labels` role) says what the node is for;
+- **Label** `audio_output=true` (`host_vars/rpi-3bplus-1.yaml`, applied by the `k8s_labels` role) says what the node is for;
   shairport-sync selects on it.
 - **Taint** `dedicated=audio:NoSchedule` is what keeps everything else off. It is set with `--node-taint` when the k3s
-  agent first registers, so there is no window for other pods to land first. It also blocks DaemonSets, so Longhorn,
-  Vector and servicelb never run there. The only things that tolerate it are node-exporter
-  (`apps/victoria-metrics/values.yaml`) and shairport-sync.
+  agent first registers, so there is no window for other pods to land first. It also blocks DaemonSets, so Longhorn
+  and servicelb never run there. The only things that tolerate it are node-exporter
+  (`apps/victoria-metrics/values.yaml`), Vector (`apps/opensearch/values-vector.yaml`) and shairport-sync.
 - k3s's own pieces (kubelet, containerd, kube-proxy, Flannel) are part of the agent process, not pods, so the base set is
-  agent + node-exporter + shairport-sync. No Longhorn host packages (`site.yml` skips `[audio]`), and no Tailscale (that
-  play only targets `pi4,pi5`).
+  agent + node-exporter + Vector + shairport-sync. No Longhorn host packages (`site.yml` skips `[audio]`).
 - To change the taint on an already-joined node, use `kubectl taint`; `--node-taint` only applies at registration.
 
 shairport-sync runs `hostNetwork` (mDNS discovery and the stream come straight from the sender), `Recreate` strategy
-(one USB device, one owner), privileged for `/dev/snd`. It outputs to ALSA `hw:0`: the Pi's onboard audio is disabled
-(`roles/setup/tasks/kill_audio.yml`), so the USB device should be card 0 - confirm with `aplay -l` on the node. Logs are
-`kubectl logs` only (Vector is excluded from this node).
+(one USB device, one owner), privileged for `/dev/snd`. It outputs to ALSA `hw:CARD=AUDIO` (the USB DAC, by name, since its card number changes once the onboard audio is
+disabled). Vector tolerates the taint, so logs ship to OpenSearch and VictoriaLogs like everywhere else; its 256Mi
+request is the heaviest item on the 1GB node besides the k3s agent. Tailscale is installed on the host (the `[pi3]`
+group is in that play).
 
 ## Availability and node maintenance
 

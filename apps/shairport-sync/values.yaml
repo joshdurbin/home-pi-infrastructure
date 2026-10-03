@@ -1,7 +1,7 @@
 # shairport-sync (https://github.com/mikebrady/shairport-sync): an AirPlay
-# receiver that plays to a USB audio device on rpi-3b-1, the dedicated audio
+# receiver that plays to a USB audio device on rpi-3bplus-1, the dedicated audio
 # node (label audio_output=true, taint dedicated=audio:NoSchedule - see
-# host_vars/rpi-3b-1.yaml). This and node-exporter are the only things that
+# host_vars/rpi-3bplus-1.yaml). This and node-exporter are the only things that
 # run there.
 #
 # `-classic` image = AirPlay 1 only: no NQPTP/PTP daemon and a much smaller
@@ -31,16 +31,18 @@ controllers:
           repository: mikebrady/shairport-sync
           tag: 5.5.2-classic
         # Args go to shairport-sync: name it, then `--` passes the rest to the
-        # ALSA backend. hw:0 is the first sound card - with the Pi's onboard
-        # audio disabled (roles/setup/tasks/kill_audio.yml), the USB device is
-        # card 0. Confirm with `aplay -l` on the node; set the mixer with
-        # `-c <control>` if volume control is wanted (see `amixer -c 0`).
+        # ALSA backend. The USB DAC is addressed by card NAME (`aplay -l`:
+        # "AUDIO [HIFI USB AUDIO]"), not number: it is card 1 today but becomes
+        # card 0 once the onboard audio is disabled and the card order shifts
+        # (roles/setup/tasks/kill_audio.yml, blacklist_modules.yml), and a
+        # name survives either. Add `-c <control>` for hardware volume (see
+        # `amixer -c AUDIO`).
         args:
           - -a
           - "Pi Audio"
           - --
           - -d
-          - hw:0
+          - hw:CARD=AUDIO
         securityContext:
           # /dev/snd access + real-time scheduling for glitch-free audio. A
           # device plugin would be tidier but would be another container on a

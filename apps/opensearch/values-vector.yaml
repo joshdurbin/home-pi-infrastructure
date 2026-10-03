@@ -33,6 +33,14 @@ role: Agent
 # wait and a load average of ~25 and starving everything else scheduled there
 # (Grafana's start-up, Longhorn, ...). Memory is requested == limited so it's
 # reserved, not overcommitted.
+# Tolerates the audio node's taint (host_vars/rpi-3bplus-1.yaml) so its logs
+# ship too; the node has almost no workloads, so Vector's real use is small.
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: audio
+    effect: NoSchedule
+
 resources:
   limits:
     memory: 256Mi
