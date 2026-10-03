@@ -15,3 +15,12 @@
 - name: restart pi after config change
   ansible.builtin.set_fact:
     pi_config_reboot_required: true
+
+# The per-host schedule for automatic upgrades (tasks/unattended_upgrades.yml).
+# Changing a timer drop-in needs a daemon-reload before the timer picks it up.
+- name: reload systemd and restart apt-daily-upgrade timer
+  ansible.builtin.systemd:
+    name: apt-daily-upgrade.timer
+    daemon_reload: true
+    enabled: true
+    state: restarted

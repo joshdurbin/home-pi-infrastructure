@@ -46,10 +46,8 @@
     update_cache: true
     upgrade: dist
 
-- name: remove unattended-upgrades
-  ansible.builtin.apt:
-    name: unattended-upgrades
-    state: absent
+- name: include unattended-upgrades (automatic package updates) tasks
+  ansible.builtin.include_tasks: unattended_upgrades.yml
 
 - name: install basic set of packages
   ansible.builtin.apt:

@@ -1,0 +1,37 @@
+// Managed by Ansible (roles/setup/templates). Loaded after the package's own
+// 50unattended-upgrades, so these settings win. Origins-Pattern entries ADD to
+// the package default list (security) rather than replace it.
+
+Unattended-Upgrade::Origins-Pattern {
+        // Debian point releases, security, and stable-updates ...
+        "origin=Debian,codename=${distro_codename},label=Debian";
+        "origin=Debian,codename=${distro_codename}-security,label=Debian-Security";
+        "origin=Debian,codename=${distro_codename}-updates,label=Debian";
+        // ... and the Raspberry Pi archive (kernel, firmware, Pi tooling).
+        // Third-party repos (Tailscale, Helm) are deliberately NOT listed, so
+        // they are never upgraded unattended.
+        "origin=Raspberry Pi Foundation,codename=${distro_codename}";
+};
+
+// Held back from unattended upgrades (see roles/setup/defaults/main.yml).
+Unattended-Upgrade::Package-Blacklist {
+{% for pkg in unattended_upgrades_blacklist %}
+        "{{ pkg }}";
+{% endfor %}
+};
+
+// NEVER reboot by itself. Nodes are drained and rebooted by hand, one at a
+// time (docs/REFERENCE.md, "Node Maintenance"); a surprise reboot of a node
+// that hasn't been drained, or of two nodes at once, is exactly what that
+// procedure exists to prevent. A pending reboot is flagged in
+// /var/run/reboot-required.
+Unattended-Upgrade::Automatic-Reboot "false";
+Unattended-Upgrade::Automatic-Reboot-WithUsers "false";
+
+// Upgrade in small steps so an interrupted run can resume cleanly.
+Unattended-Upgrade::MinimalSteps "true";
+Unattended-Upgrade::Remove-Unused-Dependencies "false";
+
+// Log to the journal (journalctl -t unattended-upgrade) as well as
+// /var/log/unattended-upgrades/.
+Unattended-Upgrade::SyslogEnable "true";

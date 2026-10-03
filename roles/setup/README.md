@@ -28,6 +28,7 @@ See `group_vars/all/main.yaml`:
 - `k3s_optimization` - GPU/camera/HAT optimizations only
 - `blacklist_modules` - Kernel module blacklisting only
 - `remove_services` - Remove unnecessary services only
+- `unattended_upgrades` - Automatic package updates only
 
 ## Dependencies
 
@@ -46,7 +47,30 @@ Frees approximately 200-400MB of RAM per node by disabling:
 - GPU memory (reduced from 128MB to 16MB)
 - mpris-proxy
 - avahi-daemon
-- unattended-upgrades
+
+## Automatic Package Updates
+
+`tasks/unattended_upgrades.yml` turns on `unattended-upgrades` on every node (it was previously removed along
+with the other stock-image extras). What it does, and doesn't:
+
+- **Updates** Debian (point releases, security, stable-updates) and the Raspberry Pi archive (kernel,
+  firmware). Third-party repos (Tailscale, Helm) are not listed, so they are never upgraded unattended.
+- **Never reboots.** `Automatic-Reboot` is off: nodes are drained and rebooted by hand, one at a time
+  (see "Node Maintenance" in `docs/REFERENCE.md`). A pending reboot (e.g. after a new kernel) is flagged in
+  `/var/run/reboot-required`.
+- **Holds back** `open-iscsi` and `nfs-common` (`unattended_upgrades_blacklist` in `defaults/main.yml`):
+  Longhorn's host dependencies, whose upgrade restarts `iscsid` under live volumes. Upgrade them by hand while
+  a node is drained: `sudo apt install --only-upgrade open-iscsi nfs-common`.
+- **Staggered.** Each host upgrades at its own time, 30 minutes after the previous host in inventory order
+  (02:00 for the first, up to 05:00 for the seventh), so the nodes - and especially the three control-plane
+  nodes - never upgrade together. Timing is set by `unattended_upgrades_first_run_minutes` and
+  `unattended_upgrades_spacing_minutes`, applied as a systemd drop-in on `apt-daily-upgrade.timer`.
+
+Check on a node: `systemctl list-timers apt-daily-upgrade.timer`, `sudo unattended-upgrade --dry-run -d`,
+`journalctl -t unattended-upgrade`, `ls /var/run/reboot-required`, `/var/log/unattended-upgrades/`.
+
+Note: the `setup` role also runs a full `apt dist-upgrade` whenever it is applied (`make deploy-system`),
+which is separate from, and not limited by, the blacklist above.
 
 ## Overclocking
 

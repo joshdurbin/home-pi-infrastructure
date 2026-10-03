@@ -1,0 +1,9 @@
+# Managed by Ansible (roles/setup/templates). Runs the unattended upgrade at a
+# fixed per-host time so the nodes upgrade one after another, never together.
+{% set minutes = unattended_upgrades_first_run_minutes + (groups['all'].index(inventory_hostname) * unattended_upgrades_spacing_minutes) %}
+[Timer]
+# An empty OnCalendar= clears the package's default (06:00) before setting ours.
+OnCalendar=
+OnCalendar=*-*-* {{ '%02d:%02d' % ((minutes // 60) % 24, minutes % 60) }}
+# Small jitter only; the stagger above is deliberate and shouldn't be smeared.
+RandomizedDelaySec=5min

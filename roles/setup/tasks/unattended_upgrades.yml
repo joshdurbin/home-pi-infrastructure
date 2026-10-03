@@ -1,0 +1,77 @@
+---
+# Automatic package updates (unattended-upgrades). Replaces the earlier
+# "remove unattended-upgrades" step, which was part of trimming the stock Pi
+# image. Never reboots: see the template for why.
+- name: install unattended-upgrades
+  ansible.builtin.apt:
+    name: unattended-upgrades
+    state: present
+  tags:
+    - unattended_upgrades
+
+# Turns the daily update + upgrade timers on.
+- name: enable automatic package list updates and unattended upgrades
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      // Managed by Ansible (roles/setup/tasks/unattended_upgrades.yml).
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+      APT::Periodic::AutocleanInterval "7";
+  tags:
+    - unattended_upgrades
+
+- name: configure which packages are upgraded and that it never reboots
+  ansible.builtin.template:
+    src: 52unattended-upgrades-local.j2
+    dest: /etc/apt/apt.conf.d/52unattended-upgrades-local
+    owner: root
+    group: root
+    mode: '0644'
+  tags:
+    - unattended_upgrades
+
+- name: create the apt-daily-upgrade timer drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/apt-daily-upgrade.timer.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  tags:
+    - unattended_upgrades
+
+- name: stagger the upgrade time per host
+  ansible.builtin.template:
+    src: apt-daily-upgrade-stagger.conf.j2
+    dest: /etc/systemd/system/apt-daily-upgrade.timer.d/10-stagger.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: reload systemd and restart apt-daily-upgrade timer
+  tags:
+    - unattended_upgrades
+
+- name: ensure the apt timers are enabled and running
+  ansible.builtin.systemd:
+    name: '{{ item }}'
+    enabled: true
+    state: started
+  loop:
+    - apt-daily.timer
+    - apt-daily-upgrade.timer
+  tags:
+    - unattended_upgrades
+
+# Fails the play now, rather than silently at 02:00, if the config is invalid.
+# --dry-run makes no changes.
+- name: validate the unattended-upgrades configuration
+  ansible.builtin.command: unattended-upgrade --dry-run
+  register: unattended_upgrades_check
+  changed_when: false
+  failed_when: unattended_upgrades_check.rc != 0
+  tags:
+    - unattended_upgrades

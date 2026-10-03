@@ -236,9 +236,12 @@ This setup disables the following to maximize available memory and CPU:
 - GPU memory (reduced to 16MB)
 - mpris-proxy (media player service)
 - avahi-daemon (mDNS discovery)
-- unattended-upgrades (automatic patching daemon)
 
 **Result**: ~200-400MB additional available RAM per node for k3s workloads
+
+Automatic package updates (`unattended-upgrades`) are **on**: staggered overnight per node, security, point-release,
+stable-updates and Raspberry Pi archive packages, never rebooting, and holding back Longhorn's `open-iscsi`/
+`nfs-common` - see `roles/setup/README.md`.
 
 ## User Management
 
@@ -395,7 +398,11 @@ fails over to the replica, and the old primary is recreated on another node. Sin
 they reschedule - see [Availability and node maintenance](#availability-and-node-maintenance) for the gaps.
 The drain returns when the node is empty of everything except DaemonSet pods.
 
-**3. Patch / reboot the node yourself**, e.g. `ssh ansible@<node> sudo reboot`.
+**3. Patch / reboot the node yourself**, e.g. `ssh ansible@<node> sudo reboot`. Packages are already updated
+automatically (`unattended-upgrades`, one node at a time overnight, never rebooting), so a reboot is mostly
+about picking up a new kernel: check `ls /var/run/reboot-required` on the node. While it's drained, also apply
+the packages the automatic updates deliberately hold back (Longhorn's host dependencies):
+`sudo apt install --only-upgrade open-iscsi nfs-common`.
 
 **4. Bring it back**:
 ```bash

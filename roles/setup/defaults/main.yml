@@ -1,0 +1,17 @@
+---
+# Packages unattended-upgrades must never touch (entries are regexes anchored
+# at the start of the package name). Upgrade these by hand during a node's
+# maintenance window instead, with the node drained.
+#
+# open-iscsi / nfs-common: Longhorn's host dependencies. An upgrade restarts
+# iscsid while Longhorn volumes are attached, which can disturb live volumes.
+unattended_upgrades_blacklist:
+  - open-iscsi
+  - nfs-common
+
+# Nodes upgrade one after another, not all at once: the first host in the
+# inventory runs at this time (minutes after midnight) and each following host
+# this many minutes later. Order is inventory order, so the three control-plane
+# nodes (rpi-5-1/2/3) end up 30+ minutes apart.
+unattended_upgrades_first_run_minutes: 120    # 02:00
+unattended_upgrades_spacing_minutes: 30
