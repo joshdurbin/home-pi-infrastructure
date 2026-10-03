@@ -20,6 +20,26 @@ spec:
                 port:
                   number: 80
 ---
+# The VM operator's own Alertmanager Service is headless (ClusterIP: None), which
+# a Tailscale Ingress rejects ("invalid ClusterIP" - the tailnet URL 404s), so
+# this ordinary ClusterIP Service in front of the same pod is what the Ingress
+# below targets. Same selector as the operator's Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager-ui
+  namespace: monitoring
+spec:
+  selector:
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/instance: vmks-victoria-metrics-k8s-stack
+    app.kubernetes.io/name: vmalertmanager
+    managed-by: vm-operator
+  ports:
+    - name: http
+      port: 9093
+      targetPort: 9093
+---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -38,7 +58,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: vmalertmanager-vmks-victoria-metrics-k8s-stack
+                name: alertmanager-ui
                 port:
                   number: 9093
 ---
