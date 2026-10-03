@@ -1,0 +1,26 @@
+# Headlamp - Kubernetes web UI. One stateless pod; no PVC, no database.
+replicaCount: 1
+
+config:
+  inCluster: true
+  # Login is with a bearer token the *user* supplies (see
+  # manifests/rbac.yaml), not the pod's own ServiceAccount token
+  # (unsafeUseServiceAccountToken stays false). So the pod itself needs no
+  # cluster-wide permissions.
+  sessionTTL: 28800
+
+# The chart's default binds its own ServiceAccount to cluster-admin. Not
+# needed with token login, so off - the one admin binding is the explicit
+# headlamp-admin ServiceAccount in manifests/rbac.yaml, whose tokens are
+# minted short-lived on demand.
+clusterRoleBinding:
+  create: false
+
+# Small Go backend + static frontend. Requests near real use so the scheduler
+# counts it honestly; runs on any node, including the Pi 4Bs.
+resources:
+  requests:
+    cpu: 25m
+    memory: 96Mi
+  limits:
+    memory: 256Mi

@@ -1,0 +1,44 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: headlamp
+  namespace: argocd
+  # Cascade-delete on removal: stateless, no PVC, no CRDs.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    # Stateless, no dependencies of its own: wave 2 like every other app.
+    # Its Ingress (apps/tailscale-operator/manifests/ingresses.yaml) is a
+    # one-way read at wave 4.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: headlamp
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  sources:
+    - repoURL: https://kubernetes-sigs.github.io/headlamp/
+      chart: headlamp
+      targetRevision: 0.45.0
+      helm:
+        releaseName: headlamp
+        valueFiles:
+          - $values/apps/headlamp/values.yaml
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      ref: values
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      path: apps/headlamp/manifests

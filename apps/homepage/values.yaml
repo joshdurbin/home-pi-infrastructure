@@ -120,6 +120,12 @@ configMaps:
                 description: Log search and visualization
                 icon: mdi-text-search
 
+        - Kubernetes:
+            - Headlamp:
+                href: https://headlamp.{{ $d }}
+                description: Kubernetes web UI (token login)
+                icon: mdi-kubernetes
+
         - Storage:
             - Longhorn:
                 href: https://longhorn.{{ $d }}

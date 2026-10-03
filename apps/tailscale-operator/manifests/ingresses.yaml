@@ -385,4 +385,27 @@ spec:
                 name: go-feature-flag
                 port:
                   number: 1031
-
+---
+# Headlamp (Kubernetes web UI). Chart's Service is named after the release.
+# Login needs a token - see apps/headlamp/manifests/rbac.yaml.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: headlamp
+  namespace: headlamp
+  annotations:
+    tailscale.com/proxy-group: ingress-proxies
+spec:
+  ingressClassName: tailscale
+  tls:
+    - hosts: [headlamp]
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: headlamp
+                port:
+                  number: 80

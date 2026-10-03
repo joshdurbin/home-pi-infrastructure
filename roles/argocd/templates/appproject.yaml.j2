@@ -22,6 +22,7 @@ spec:
     - https://kubernetes-sigs.github.io/descheduler/
     - https://aquasecurity.github.io/helm-charts/
     - https://helm.openwebui.com/
+    - https://kubernetes-sigs.github.io/headlamp/
     - ghcr.io/berriai
     - '{{ argocd_vars.gitops.repo_url }}'
   # Scoped to the namespaces these apps actually use.
@@ -78,6 +79,8 @@ spec:
     - namespace: trivy-system
       server: https://kubernetes.default.svc
     - namespace: open-webui
+      server: https://kubernetes.default.svc
+    - namespace: headlamp
       server: https://kubernetes.default.svc
     # victoria-metrics-k8s-stack creates a few VMServiceScrapes directly in
     # kube-system (matching upstream kube-prometheus-stack convention) to
