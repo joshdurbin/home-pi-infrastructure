@@ -84,7 +84,7 @@
           when: pi_reboot_drain.rc == 0
           changed_when: true
   tags:
-    - k3s_optimization
+    - performance_optimization
 
 - name: K3S cluster deployment
   hosts: k3s_cluster

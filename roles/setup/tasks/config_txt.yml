@@ -27,7 +27,7 @@
     - kill_radios
     - kill_audio
     - enable_cgroups
-    - k3s_optimization
+    - performance_optimization
 
 - name: render /boot/firmware/config.txt for this board
   ansible.builtin.template:
@@ -38,4 +38,4 @@
     - kill_radios
     - kill_audio
     - enable_cgroups
-    - k3s_optimization
+    - performance_optimization

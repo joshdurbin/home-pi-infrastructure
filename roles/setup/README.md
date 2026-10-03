@@ -25,7 +25,7 @@ See `group_vars/all/main.yaml`:
 - `kill_radios` - Disable Bluetooth/WiFi only
 - `kill_audio` - Disable audio only
 - `enable_cgroups` - Enable kernel cgroups only
-- `k3s_optimization` - GPU/camera/HAT optimizations only
+- `performance_optimization` - boot config (config.txt) rendering and the reboot play
 - `blacklist_modules` - Kernel module blacklisting only
 - `remove_services` - Remove unnecessary services only
 - `unattended_upgrades` - Automatic package updates only
