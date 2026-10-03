@@ -1,0 +1,84 @@
+# Tor Snowflake proxy (https://snowflake.torproject.org): lends bandwidth to
+# censored Tor users. It is NOT a Tor relay or exit node - it only forwards a
+# user's WebRTC connection to the Tor project's Snowflake bridge, so no traffic
+# ever exits from here to the open internet, and it never joins the relay
+# consensus. It needs NO inbound ports: WebRTC NAT traversal is outbound-only,
+# so nothing is forwarded on the router.
+#
+# Bandwidth: the proxy has no rate limit flag, only -capacity (max concurrent
+# clients per pod). 2 pods x 4 clients bounds it; typical Snowflake clients use
+# well under 1 Mb/s each, so this lands around the ~5 Mb/s target. This is a
+# soft bound, not a hard shaper (k3s's Flannel CNI doesn't honour
+# kubernetes.io/*-bandwidth annotations).
+controllers:
+  main:
+    replicas: 2
+    strategy: RollingUpdate
+    rollingUpdate:
+      unavailable: 0
+      surge: 1
+    pod:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: snowflake
+                topologyKey: kubernetes.io/hostname
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+    containers:
+      main:
+        image:
+          repository: thetorproject/snowflake-proxy
+          tag: v2.14.1
+        args:
+          - -capacity
+          - "4"
+          # Defaults to localhost, which vmagent couldn't reach.
+          - -metrics
+          - -metrics-address
+          - 0.0.0.0
+          - -metrics-port
+          - "9999"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+        # Minimal image (no shell/wget): TCP probes only.
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              tcpSocket:
+                port: 9999
+              periodSeconds: 20
+              failureThreshold: 6
+          readiness:
+            enabled: true
+            custom: true
+            spec:
+              tcpSocket:
+                port: 9999
+              periodSeconds: 10
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            memory: 128Mi
+
+service:
+  main:
+    controller: main
+    ports:
+      monitoring:
+        port: 9999

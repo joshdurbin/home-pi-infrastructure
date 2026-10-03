@@ -1,0 +1,33 @@
+# Egress-only: DNS, plus the public internet (STUN, the Tor broker, and the
+# WebRTC peers - arbitrary public IPs and ports). RFC1918/CGNAT/Tailscale ranges
+# are excluded, so a remote "client" can never be used to reach the LAN, the
+# cluster or the tailnet through this pod. Ingress is unaffected (vmagent scrapes).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: snowflake-egress
+  namespace: snowflake
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 100.64.0.0/10
+              - 169.254.0.0/16

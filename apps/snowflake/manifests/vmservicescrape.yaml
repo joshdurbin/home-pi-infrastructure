@@ -1,0 +1,15 @@
+# Snowflake's Prometheus metrics (connections served, bytes in/out, by country)
+# live at /internal/metrics on the -metrics-port (9999).
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: snowflake
+  namespace: snowflake
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/service: snowflake
+  endpoints:
+    - port: monitoring
+      path: /internal/metrics
+      scheme: http

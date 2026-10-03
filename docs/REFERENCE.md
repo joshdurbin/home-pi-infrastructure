@@ -31,6 +31,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [Open WebUI](#open-webui)
 - [LiteLLM](#litellm)
 - [GO Feature Flag](#go-feature-flag)
+- [Snowflake (Tor)](#snowflake-tor)
 - [Availability and node maintenance](#availability-and-node-maintenance)
 - [Exposing UIs via Tailscale Operator](#exposing-uis-via-tailscale-operator)
 - [Tailscale Integration (Optional)](#tailscale-integration-optional)
@@ -1394,6 +1395,23 @@ is on the tailnet at `https://flags.<tailnet>.ts.net`.
 
 **First-time order**: add the three Vault variables -> `make deploy-secrets` -> `make deploy-argocd` (allows the new
 namespace in the Argo CD project) -> push. The Argo CD app then creates the table and starts the relay proxy.
+
+## Snowflake (Tor)
+
+A [Tor Snowflake](https://snowflake.torproject.org) proxy (`apps/snowflake/`, namespace `snowflake`) that lends a little
+bandwidth to censored Tor users. Image `thetorproject/snowflake-proxy:v2.14.1` (ARM64) via `app-template`.
+
+- **Not a relay or exit node.** It only forwards a user's WebRTC connection to the Tor project's own Snowflake bridge; no
+  user traffic exits from here and it never appears in the relay consensus.
+- **No inbound ports.** WebRTC NAT traversal is outbound-only, so nothing is forwarded on the router. (A classic obfs4
+  bridge was rejected for exactly that reason - it needs an open port.)
+- **Bandwidth is a soft bound**: the proxy has no rate flag, only `-capacity` (4 concurrent clients per pod, 2 pods).
+  Flannel doesn't honour `kubernetes.io/*-bandwidth` annotations, so there is no hard 5 Mb/s shaper; watch the metrics
+  and lower `-capacity` in `apps/snowflake/values.yaml` if it uses more than you want.
+- **Egress-only NetworkPolicy**: DNS + the public internet, with RFC1918, CGNAT/Tailscale and link-local ranges excluded
+  so it can't be used to reach the LAN, cluster or tailnet.
+- **Metrics**: `/internal/metrics` on port 9999, scraped by a `VMServiceScrape` (connections, bytes in/out, by country).
+- 2 replicas (soft anti-affinity) + PDB; no state, no secrets, no Vault vars.
 
 ## Availability and node maintenance
 
