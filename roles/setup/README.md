@@ -25,7 +25,7 @@ See `group_vars/all/main.yaml`:
 - `kill_radios` - Disable Bluetooth/WiFi only
 - `kill_audio` - Disable audio only
 - `enable_cgroups` - Enable kernel cgroups only
-- `performance_optimization` - boot config (config.txt) rendering and the reboot play
+- `performance_optimization` - boot config (config.txt) rendering only
 - `blacklist_modules` - Kernel module blacklisting only
 - `remove_services` - Remove unnecessary services only
 - `unattended_upgrades` - Automatic package updates only
@@ -99,27 +99,17 @@ To check a real board's revision before assuming any documented overclock step a
 `cat /proc/cpuinfo | grep Revision` (cross-reference against the
 [official revision codes](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#raspberry-pi-revision-codes)).
 
-## Automatic Reboot Handling
+## Reboots are manual
 
-Every task that writes to `/boot/firmware/config.txt` (including the overclock tasks above) notifies the
-`restart pi after config change` handler (`handlers/main.yml`). That handler only *sets a fact*
-(`pi_config_reboot_required`) — the actual reboot happens in a **separate, dedicated play** in `site.yml`
-("Reboot nodes with pending config.txt changes"), with `serial: 1`. This distinction matters: with the
-default `linear` strategy, doing the reboot directly in this role's own play would mean every host gets
-*drained* before any of them reboots (since Ansible runs one task across all hosts before the next task),
-leaving the whole cluster cordoned at once for a while. The separate `serial: 1` play instead takes one
-node fully through drain → reboot → wait-for-Ready → uncordon before starting the next — never more than
-one node down at a time, which also protects etcd quorum on the three control-plane nodes.
-
-The drain step excludes Longhorn's `instance-manager` pods (`--pod-selector
-'longhorn.io/component!=instance-manager'`) — those have their own permanently-blocking PodDisruptionBudget
-by Longhorn's own design (they're pinned to local disk and can't be rescheduled elsewhere anyway; the
-reboot kills them regardless of whether they're "evicted" first, and Longhorn respawns a fresh one once
-the node is back).
+Every task that writes to `/boot/firmware/config.txt` notifies the `restart pi after config change` handler
+(`handlers/main.yml`), which only prints a notice that the host needs a reboot. **Nothing reboots, drains or
+cordons a node automatically.** Reboot by hand, one node at a time, following
+[Node Maintenance](../../docs/REFERENCE.md#node-maintenance) (drain with
+`--pod-selector 'longhorn.io/component!=instance-manager'`, reboot, wait for Ready, uncordon).
 
 ## Notes
 
 - Idempotent - safe to run multiple times
 - No data loss - only disables hardware and services
-- Config-file changes trigger an automatic, safe, one-at-a-time reboot (see above) - not a manual step
+- Config-file changes never reboot a node; the play prints a notice and you reboot by hand (see above)
 - The ansible user is NOT managed by this role

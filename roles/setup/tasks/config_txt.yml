@@ -5,11 +5,9 @@
 # lineinfile appends. Replaces the former per-setting tasks (radios, onboard
 # audio, cgroups, GPU memory, HAT/HDMI disables, Pi 5 overclock).
 # Overclock rationale: README.md "Overclocking".
-# A reboot is required for any change to take effect. The handler below only
-# flags the host (sets pi_config_reboot_required); the drain -> reboot ->
-# uncordon sequence runs in a separate serial:1 play in site.yml ("Reboot nodes
-# with pending config.txt changes"), which is what guarantees only one node is
-# ever down at a time.
+# A reboot is required for any change to take effect. Nothing here reboots: the
+# handler below only prints a notice, and reboots are done by hand (drain one
+# node at a time - docs/REFERENCE.md "Node Maintenance").
 # /boot/firmware is FAT, so the template module's own backup: true fails there
 # (its timestamped name contains ':' and '@', invalid on FAT). Keep one copy of
 # the pre-Ansible file on the root filesystem instead; force: false means it is
