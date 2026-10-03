@@ -8,12 +8,62 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
 
 ## Hardware
 
-- Control plane: 3x Raspberry Pi 5 — `rpi-5-1`, `rpi-5-2`, `rpi-5-3` (moved here from the 4Bs - their
-  disks proved too slow for etcd; see `inventory.dist`'s `[server]` group comment)
-- Workers: 3x Raspberry Pi 4B (`rpi-4b-1`, `rpi-4b-2`, `rpi-4b-3`) + 1x Raspberry Pi 5 (`rpi-5-4`, a
-  general-purpose worker)
-- Audio node: 1x Raspberry Pi 3B+ (`rpi-3bplus-1`, 1GB RAM, SD card) - tainted so it runs only node-exporter,
-  Vector and shairport-sync (AirPlay to a USB audio device)
+| Node | IP | Board | Role | Notes |
+|---|---|---|---|---|
+| `rpi-5-1` | 192.168.1.30 | Pi 5 | control plane (etcd + API) | `pi5=true` |
+| `rpi-5-2` | 192.168.1.41 | Pi 5 | control plane | `pi5=true`, `storage=true` (Longhorn replicas) |
+| `rpi-5-3` | 192.168.1.28 | Pi 5 | control plane | `pi5=true`, `storage=true` (Longhorn replicas) |
+| `rpi-5-4` | 192.168.1.83 | Pi 5 | worker | `pi5=true` |
+| `rpi-4b-1` | 192.168.1.13 | Pi 4B | worker | |
+| `rpi-4b-2` | 192.168.1.14 | Pi 4B | worker | |
+| `rpi-4b-3` | 192.168.1.18 | Pi 4B | worker | |
+| `rpi-3bplus-1` | 192.168.1.15 | Pi 3B+ (1GB, SD card) | audio node | `audio_output=true`, tainted: runs only node-exporter, Vector and shairport-sync |
+
+Pi 4B and 3B+ disks are too slow for etcd and heavy storage, so the control plane and the Longhorn replicas live on
+Pi 5s. The IPs and groups are defined in `inventory.dist`.
+
+```mermaid
+flowchart TB
+  subgraph cp["Control plane - k3s server (etcd quorum of 3)"]
+    n1["rpi-5-1<br/>Pi 5"]
+    n2["rpi-5-2<br/>Pi 5 - Longhorn"]
+    n3["rpi-5-3<br/>Pi 5 - Longhorn"]
+  end
+  subgraph wk["Workers - k3s agent"]
+    n4["rpi-5-4<br/>Pi 5"]
+    b1["rpi-4b-1<br/>Pi 4B"]
+    b2["rpi-4b-2<br/>Pi 4B"]
+    b3["rpi-4b-3<br/>Pi 4B"]
+  end
+  subgraph au["Audio node (tainted)"]
+    a1["rpi-3bplus-1<br/>Pi 3B+<br/>shairport-sync + USB DAC"]
+  end
+  cp -- "API / scheduling" --> wk
+  cp -- "API / scheduling" --> au
+  user(["You (kubectl, Tailscale)"]) -. "ssh + kubectl on a control-plane node" .-> cp
+```
+
+How changes reach the cluster:
+
+```mermaid
+flowchart LR
+  git[("This repo<br/>(GitHub)")]
+  vault[["Ansible Vault<br/>group_vars/all/main.yaml"]]
+  ans["Ansible<br/>make deploy"]
+  nodes["Pi OS + k3s<br/>(system, k3s, users, tailscale)"]
+  sec["Cluster Secrets<br/>(k8s_secrets role)"]
+  argo["Argo CD<br/>(app-of-apps)"]
+  apps["Apps in apps/<br/>(Longhorn, Postgres, Grafana, ...)"]
+  vault --> ans
+  ans --> nodes
+  ans --> sec
+  ans -- "bootstraps" --> argo
+  git -- "watches master" --> argo
+  argo --> apps
+  sec -. "referenced by" .-> apps
+```
+
+Ansible owns the machines and the secrets; Argo CD owns everything that runs in the cluster, straight from `apps/`.
 
 ## Setup (one time)
 
@@ -65,7 +115,7 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
    openwebui_secret_key: "<output of: openssl rand -hex 32>"
    openwebui_db_password: "<output of: openssl rand -hex 32>"
    grafana_db_password: "<output of: openssl rand -hex 32>"
-   pgadmin_db_password: "<output of: openssl rand -hex 32>"
+   pgadmin_db_password: "<output of: openssl rand -hex 32>"   # the WhoDB Postgres login (name kept from an earlier tool)
    litellm_master_key: "sk-<output of: openssl rand -hex 24>"   # must start with sk-
    litellm_salt_key: "sk-<output of: openssl rand -hex 24>"     # never change once set
    litellm_db_password: "<output of: openssl rand -hex 32>"
@@ -92,10 +142,9 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
 From there, Longhorn (storage), VictoriaMetrics/Grafana (metrics), OpenSearch/OpenSearch
 Dashboards + VictoriaLogs (logs, dual-shipped to both), Blocky (DNS), SearXNG (search), the redis-operator
 (Blocky's and SearXNG's own small caching clusters), WhoDB (a UI for browsing Postgres, OpenSearch and those caches),
-CloudNativePG (a two-instance Postgres cluster on Longhorn volumes, free to schedule anywhere, behind PgBouncer poolers), LiteLLM (an LLM gateway backed by Postgres and its own Redis cache), Temporal (a
-workflow orchestration platform, backed by that same Postgres cluster), Homepage (a dashboard linking out
-to every other UI below), Open WebUI (a chat UI for LLMs - no backend wired up, add one via its own
-Settings UI), the descheduler (periodically rebalances pods across nodes), Trivy Operator (continuous
+CloudNativePG (a two-instance Postgres cluster on Longhorn volumes, free to schedule anywhere, behind PgBouncer poolers), LiteLLM (an LLM gateway backed by Postgres and its own Redis cache), GO Feature Flag (a feature-flag service stored in that Postgres), Temporal (a
+workflow orchestration platform, backed by that same Postgres cluster), shairport-sync on the dedicated audio node (AirPlay to a USB DAC), a Tor Snowflake proxy (committed, scaled to 0), Homepage (a dashboard linking out
+to every other UI below), Open WebUI (a chat UI for LLMs, backed by LiteLLM), the descheduler (periodically rebalances pods across nodes), Trivy Operator (continuous
 vulnerability scanning), and the Tailscale Operator all come up on their own — Argo CD manages them from
 this repo's `apps/` directory. See [docs/REFERENCE.md](docs/REFERENCE.md) for what each one does.
 
@@ -118,8 +167,81 @@ this repo's `apps/` directory. See [docs/REFERENCE.md](docs/REFERENCE.md) for wh
 | `make clean` | Remove local temp files |
 | `make help` | Show this list |
 
-To patch or reboot a node, follow **Node Maintenance** in [docs/REFERENCE.md](docs/REFERENCE.md#node-maintenance) -
-a manual `kubectl drain` / `uncordon` from a control-plane node, one node at a time.
+## Common operations
+
+### Take a node out for maintenance (drain, reboot, return)
+
+Do **one node at a time**, from a **control-plane node** (`rpi-5-1`, `rpi-5-2` or `rpi-5-3`). Agent nodes have no
+kubeconfig. If the target is itself a control-plane node, run these from a *different* one.
+
+```bash
+# 1. connect to a control-plane node (not the one you are about to drain)
+ssh ansible@192.168.1.30            # rpi-5-1
+
+# 2. make sure the cluster is healthy first
+sudo kubectl get nodes
+sudo kubectl -n longhorn get volumes.longhorn.io     # attached volumes: healthy
+sudo kubectl -n postgres get cluster postgres        # healthy, 2 instances
+
+# 3. cordon the target (no new pods land on it)
+sudo kubectl cordon rpi-4b-2
+
+# 4. drain it (evict its pods; DaemonSet pods and emptyDir data are expected)
+sudo kubectl drain rpi-4b-2 --ignore-daemonsets --delete-emptydir-data
+
+# 5. reboot the target
+ssh ansible@192.168.1.14 sudo reboot
+
+# 6. wait for it to come back Ready, then uncordon
+sudo kubectl get node rpi-4b-2 -w
+sudo kubectl uncordon rpi-4b-2
+
+# 7. wait for Longhorn/Postgres to be healthy again before the next node
+sudo kubectl -n longhorn get volumes.longhorn.io
+sudo kubectl -n postgres get cluster postgres
+```
+
+(`kubectl drain` cordons the node itself, so step 3 is optional - it is listed so you can hold a node out of
+rotation before draining.) Details, what to expect for each app, and what to do if a drain hangs are in
+[Node Maintenance](docs/REFERENCE.md#node-maintenance).
+
+### Get secrets out of the cluster
+
+Secrets are created from the Ansible Vault by `make deploy-secrets`. To read one back, use `kubectl` from a
+control-plane node (or your own machine with `KUBECONFIG` set) and decode it:
+
+```bash
+# one key of one secret
+kubectl -n <namespace> get secret <name> -o jsonpath='{.data.<key>}' | base64 -d; echo
+
+# every key of a secret, decoded
+kubectl -n <namespace> get secret <name> -o json | jq -r '.data | map_values(@base64d)'
+
+# list the secrets in a namespace / see a secret's key names without values
+kubectl -n <namespace> get secrets
+kubectl -n <namespace> get secret <name> -o json | jq -r '.data | keys[]'
+```
+
+Common ones:
+
+| What | Namespace / secret | Key |
+|---|---|---|
+| Grafana admin | `monitoring` / `vmks-credentials` | `admin-user`, `admin-password` |
+| OpenSearch admin | `opensearch` / `opensearch-admin-credentials` | `username`, `password` |
+| LiteLLM master key | `litellm` / `litellm-masterkey` | `masterkey` |
+| LiteLLM provider keys + salt | `litellm` / `litellm-env` | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `LITELLM_SALT_KEY` |
+| Postgres app user (full connection info) | `postgres` / `postgres-app` | `password`, `uri`, `jdbc-uri`, `pgpass` ... |
+| A database role's password (e.g. Grafana) | `postgres` / `<name>-db-credentials` (`grafana-`, `litellm-`, `goff-`, `whodb-`, `temporal-`, `open-webui-`) | `username`, `password` |
+| GO Feature Flag config (API keys, DB URI) | `go-feature-flag` / `goff-config` | `goff-proxy.yaml` |
+| Open WebUI -> LiteLLM key | `open-webui` / `open-webui-litellm-key` | `api-key` |
+
+The source of truth for the values *you* chose is the Vault, not the cluster:
+```bash
+ansible-vault view group_vars/all/main.yaml       # read
+ansible-vault edit group_vars/all/main.yaml       # change, then: make deploy-secrets
+```
+Changing a secret in the Vault and running `make deploy-secrets` overwrites the in-cluster copy; editing the Secret
+with `kubectl` directly gets overwritten the next time that runs.
 
 ## Accessing things
 

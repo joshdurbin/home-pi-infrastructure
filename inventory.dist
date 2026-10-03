@@ -1,11 +1,11 @@
 [all]
-rpi-4b-1 ansible_host=192.168.1.13
-rpi-4b-2 ansible_host=192.168.1.14
-rpi-4b-3 ansible_host=192.168.1.18
-rpi-5-1  ansible_host=192.168.1.30
-rpi-5-2  ansible_host=192.168.1.41
-rpi-5-3  ansible_host=192.168.1.28
-rpi-5-4  ansible_host=192.168.1.83
+rpi-5-1      ansible_host=192.168.1.30
+rpi-5-2      ansible_host=192.168.1.41
+rpi-5-3      ansible_host=192.168.1.28
+rpi-5-4      ansible_host=192.168.1.83
+rpi-4b-1     ansible_host=192.168.1.13
+rpi-4b-2     ansible_host=192.168.1.14
+rpi-4b-3     ansible_host=192.168.1.18
 rpi-3bplus-1 ansible_host=192.168.1.15
 
 [all:vars]
@@ -13,6 +13,14 @@ ansible_user=ansible
 ansible_python_interpreter=/usr/bin/python3
 ansible_password=ansible
 ansible_become_password=ansible
+
+# Hardware classes. These pick board-specific settings (group_vars/pi*/); they
+# say nothing about a node's role in the cluster - that is [server]/[agent].
+[pi5]
+rpi-5-1
+rpi-5-2
+rpi-5-3
+rpi-5-4
 
 [pi4]
 rpi-4b-1
@@ -22,43 +30,20 @@ rpi-4b-3
 [pi3]
 rpi-3bplus-1
 
-[pi5]
-rpi-5-1
-rpi-5-2
-rpi-5-3
-rpi-5-4
-# Deliberately NOT [server] (see that group's own comment) - [pi5] is a
-# hardware-class group, [server] is a control-plane-membership group, and
-# the two are no longer the same set now that rpi-5-4 exists.
-
-# Control plane (etcd + API server) - explicitly enumerated rather than
-# aliased to [pi5], and deliberately kept that way: etcd quorum needs a
-# fixed, deliberately-chosen odd-numbered membership. rpi-5-4 joins [pi5],
-# and [agent] below, never this group - a 4th etcd
-# member would be strictly worse for fault tolerance than 3 (still only
-# tolerates 1 node failure, but now needs 3 of 4 to agree instead of 2 of
-# 3), not better. Previously the pi4 nodes - moved here because etcd is
-# extremely sensitive to disk fsync latency, and the pi4 nodes' disks
-# proved too slow/inconsistent for it, causing real, confirmed API server
-# instability (intermittent 503s, TLS handshake timeouts, connection
-# resets) under normal cluster load. The pi5 nodes also carry this
-# cluster's disk-heavy workloads (Longhorn's storage=true nodes, OpenSearch's
-# pi5=true nodes) - accepted deliberately, not overlooked: if their disks can't
-# keep up with etcd *and* those workloads together, revisit then, but
-# don't pre-split them without evidence it's actually needed.
+# Control plane (k3s server: etcd + API server). Exactly three, deliberately:
+# etcd needs an odd-sized quorum, and a fourth member would tolerate no more
+# failures than three while needing more votes. etcd is very sensitive to disk
+# fsync latency, so these are Pi 5s. They also carry disk-heavy workloads
+# (Longhorn replicas on the storage=true nodes, OpenSearch on pi5=true nodes).
 [server]
 rpi-5-1
 rpi-5-2
 rpi-5-3
 
-# Workers - previously only the pi4 nodes. Compute/network-bound workloads
-# by default now that the pi4 nodes' disks are known to struggle - nothing
-# with heavy disk activity should be pinned here via a node label. rpi-5-4
-# is the one exception, deliberately: its own disk hasn't shown the pi4
-# nodes' fsync problems (it's a Pi 5, same class as [server]), which is
-# exactly why Postgres's optional `local` mode pins to it (see
-# apps/postgres/cluster/components/local) instead of it being held to the
-# same "no heavy disk" rule as the pi4 agents.
+# Workers (k3s agent). The Pi 4B disks are slow, so nothing with heavy disk
+# activity is pinned to them. rpi-5-4 is a Pi 5 and is the exception: it is the
+# node Postgres's optional `local` mode pins to
+# (apps/postgres/cluster/components/local).
 [agent]
 rpi-4b-1
 rpi-4b-2
@@ -66,11 +51,10 @@ rpi-4b-3
 rpi-5-4
 rpi-3bplus-1
 
-# Dedicated audio-output node (Pi 3B+, 1GB RAM, SD card): a k3s agent that
-# runs ONLY the node base set (node-exporter) plus shairport-sync. Kept off
-# everything else by a NoSchedule taint set when the agent first registers
-# (host_vars/rpi-3bplus-1.yaml). Also an [agent] member below - this group exists
-# so playbooks can single it out (e.g. no Longhorn host packages on an SD card).
+# Dedicated audio-output node (Pi 3B+, 1GB RAM, SD card). It is also an [agent];
+# this group exists so playbooks can single it out. A NoSchedule taint
+# (host_vars/rpi-3bplus-1.yaml) keeps everything off it except node-exporter,
+# Vector and shairport-sync.
 [audio]
 rpi-3bplus-1
 

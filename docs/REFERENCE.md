@@ -4,7 +4,7 @@
 > architecture rationale, every config option, and troubleshooting. Everything here is optional reading;
 > the main README is all you need to get the cluster running.
 
-A comprehensive Ansible-based infrastructure automation for Raspberry Pi clusters running k3s Kubernetes. This project configures Raspberry Pi instances (Pi 4, Pi 5) as a lightweight k3s Kubernetes cluster, optimized for minimal resource usage by disabling unnecessary hardware features (Bluetooth, audio, camera, HAT interfaces, etc.).
+A comprehensive Ansible-based infrastructure automation for Raspberry Pi clusters running k3s Kubernetes. This project configures Raspberry Pi instances (Pi 3B+, Pi 4B, Pi 5) as a lightweight k3s Kubernetes cluster, optimized for minimal resource usage by disabling unnecessary hardware features (Bluetooth, audio, camera, HAT interfaces, etc.).
 
 **Table of Contents:**
 - [Hardware Setup](#hardware-setup)
@@ -42,39 +42,35 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 
 ## Hardware Setup
 
-- **Control Plane**: 3x Raspberry Pi 5 (8GB RAM) — `rpi-5-1`, `rpi-5-2`, `rpi-5-3`
-- **Worker Nodes**: 3x Raspberry Pi 4B (4GB RAM, 128GB SSD) — `rpi-4b-1`, `rpi-4b-2`, `rpi-4b-3` — plus a
-  4th Raspberry Pi 5 (`rpi-5-4`, worker only, see below)
+| Node | IP | Board | Role | Labels / notes |
+|---|---|---|---|---|
+| `rpi-5-1` | 192.168.1.30 | Pi 5 (8GB) | control plane | `pi5=true` |
+| `rpi-5-2` | 192.168.1.41 | Pi 5 (8GB) | control plane | `pi5=true`, `storage=true` |
+| `rpi-5-3` | 192.168.1.28 | Pi 5 (8GB) | control plane | `pi5=true`, `storage=true` |
+| `rpi-5-4` | 192.168.1.83 | Pi 5 (8GB) | worker | `pi5=true` |
+| `rpi-4b-1` | 192.168.1.13 | Pi 4B (4GB, 128GB SSD) | worker | |
+| `rpi-4b-2` | 192.168.1.14 | Pi 4B (4GB, 128GB SSD) | worker | |
+| `rpi-4b-3` | 192.168.1.18 | Pi 4B (4GB, 128GB SSD) | worker | |
+| `rpi-3bplus-1` | 192.168.1.15 | Pi 3B+ (1GB, SD card) | audio node | `audio_output=true`, taint `dedicated=audio:NoSchedule` |
 
-Control plane moved to the Pi 5s deliberately, not by original design - confirmed live that the Pi 4B
-nodes' disks were too slow/inconsistent for etcd's fsync latency sensitivity, causing real API server
-instability (intermittent 503s, TLS handshake timeouts, connection resets) under normal cluster load. See
-`inventory.dist`'s own `[server]` group comment for the full reasoning, including why `rpi-5-4` joins
-`[pi5]`/`[agent]` and never `[server]` - etcd quorum needs a fixed, deliberately-sized
-odd-numbered membership, not "however many Pi 5s happen to exist."
+- **Control plane** (`[server]`): the three Pi 5s are the etcd members. etcd is very sensitive to disk fsync
+  latency, and the Pi 4B disks are too slow for it, so only Pi 5s are control plane. The membership is
+  deliberately fixed at three (an odd-sized quorum; a fourth member would tolerate no more failures than three).
+  `rpi-5-4` is a Pi 5 that is a worker only (`[pi5]`/`[agent]`, never `[server]`).
+- **Pi 5 nodes** also carry the disk-heavy workloads (Longhorn replicas, VictoriaMetrics, OpenSearch, Postgres
+  by default), alongside etcd. Revisit if their disks don't keep up with both.
+- **Longhorn**: `rpi-5-2` and `rpi-5-3` carry `storage=true` and hold every volume's replica *data*; the volumes
+  attach over the network to pods on any node.
+- **`pi5=true`** marks the Pi 5s; OpenSearch requires it (its Amazon Linux images won't run on a Pi 4B).
+- **Audio node** (`[audio]`): see [Audio node and shairport-sync](#audio-node-and-shairport-sync). It runs only the
+  k3s agent, node-exporter, Vector and shairport-sync.
+- Everything else, including VictoriaMetrics, VictoriaLogs and (by default) Postgres, is unpinned and can schedule
+  on any node with capacity. Size container memory limits for the smallest node that can run them: the Pi 4Bs
+  report ~3.9GiB (`kubectl get nodes -o jsonpath='{.status.capacity.memory}'`).
 
-The Pi 5 nodes also carry this cluster's disk-heavy workloads (Longhorn, VictoriaMetrics, OpenSearch,
-Postgres - see each `host_vars/rpi-5-*.yaml`'s labels) - accepted deliberately alongside etcd, not
-overlooked; revisit if the Pi 5 disks turn out not to keep up with both together, but that hasn't been
-observed. `rpi-5-4` is a worker (`[agent]`), not control plane, so it doesn't carry etcd's own fsync
-sensitivity at all.
+See also [Logging](#logging-opensearch), [Storage (Longhorn)](#storage-longhorn) and
+[Monitoring](#monitoring-victoriametrics-grafana).
 
-(RAM figures confirmed live via `kubectl get nodes -o jsonpath='{.status.capacity.memory}'` - the 4B nodes
-report ~3.9GiB, i.e. 4GB boards; this matters for anything sizing container `resources.limits.memory`
-against the smaller of the two node classes.)
-
-Two of the Pi 5 nodes (`rpi-5-2`, `rpi-5-3`) carry a `storage=true` Kubernetes node label and back Longhorn's
-distributed storage (their disks hold every Longhorn volume's replica *data*; the volumes themselves attach
-over the network to pods on any node). `pi5=true` marks the Pi 5s, required by OpenSearch (its Amazon Linux images won't run on a Pi 4B). Everything
-else - including VictoriaMetrics, VictoriaLogs and, by default, Postgres - is unpinned and can schedule on any
-node with capacity. See [Logging](#logging-opensearch) below. See also
-[Storage (Longhorn)](#storage-longhorn) and [Monitoring](#monitoring-victoriametrics-grafana).
-
-Each node has:
-- 64-bit Raspberry Pi OS (Lite)
-- SSH access enabled
-- Static IP configuration
-- Python 3 installed
 
 ## Project Structure
 
@@ -82,34 +78,38 @@ Each node has:
 home-pi-infrastructure/
 ├── site.yml                      # PRIMARY: Unified infrastructure configuration
 ├── Makefile                      # Convenient commands (make deploy, make verify, etc.)
-├── inventory.dist                # Ansible inventory with node groups
+├── inventory.dist                # Ansible inventory: nodes, IPs and groups
 ├── requirements.yaml             # Ansible collections
 ├── ansible.cfg                   # Ansible configuration
 ├── apps/                         # Argo CD's half of this repo - see GitOps (Argo CD) below.
 │   │                              # Ansible never reads this directory; Argo CD never reads
 │   │                              # anything outside it. Same repo, two independent consumers.
-│   ├── longhorn/{application.yaml, values.yaml}
-│   ├── victoria-metrics/{application.yaml, values.yaml}
-│   ├── opensearch/{application.yaml, values-*.yaml, manifests/, README.md}
-│   ├── redis-operator/{application.yaml, values.yaml}   # manages Blocky's/SearXNG's own redis clusters
-│   ├── blocky/{application.yaml, values.yaml, manifests/}          # manifests/ includes blocky-cache's
-│   │                                                                # RedisReplication/RedisSentinel CRs
-│   ├── searxng/{application.yaml, values.yaml, manifests/}         # manifests/ includes searxng-cache's
-│   │                                                                # RedisReplication/RedisSentinel CRs
-│   └── tailscale-operator/{application.yaml, values.yaml, manifests/}
+│   │                              # One directory per app: application.yaml, values.yaml, and
+│   │                              # (where needed) manifests/.
+│   ├── longhorn, victoria-metrics, victoria-logs, opensearch, argocd-metrics
+│   ├── cloudnative-pg, postgres, temporal
+│   ├── redis-operator, redis-operator-metrics
+│   ├── blocky, searxng, homepage, whodb
+│   ├── litellm, open-webui, go-feature-flag
+│   ├── shairport-sync, snowflake
+│   ├── descheduler, trivy-operator
+│   └── tailscale-operator
 ├── group_vars/                   # Group-based variables
-│   ├── all/                      # Variables for all hosts
-│   └── k3s_cluster/              # Shared server+agent config (k3s version, cluster API facts)
+│   ├── all/                      # All hosts (Vault secrets, cluster_secrets.yaml)
+│   ├── k3s_cluster/              # Shared server+agent config (k3s version, cluster API facts)
+│   └── pi3/ pi4/ pi5/            # board_model per hardware class
+├── host_vars/                    # Per-node k8s_labels (and the audio node's taint)
 ├── roles/                        # Custom Ansible roles
-│   ├── setup/                    # System optimization & packages
+│   ├── setup/                    # System optimization, packages, unattended-upgrades
 │   ├── user_management/          # User & SSH key management
 │   ├── helm/                     # Helm binary install (apt + official GPG key)
-│   ├── k8s_labels/                # Applies node labels declared in host_vars (k8s_labels var)
+│   ├── k8s_labels/               # Applies node labels declared in host_vars (k8s_labels var)
 │   ├── argocd/                   # Bootstraps Argo CD + the root Application (see GitOps section)
-│   ├── k8s_secrets/               # Seeds every Secret/ConfigMap apps/ can't (see GitOps section)
+│   ├── k8s_secrets/              # Seeds every Secret/ConfigMap apps/ can't (see GitOps section)
 │   ├── helm_drift_check/         # Post-install verification that Helm's manifest matches live state
-│   ├── longhorn_prereqs/         # Host prereqs only now (open-iscsi/nfs-common) - chart is Argo CD's job
-│   └── tailscale/                # Tailscale VPN client on each node (optional)
+│   ├── grafana_dashboards/       # Imports community Grafana dashboards
+│   ├── longhorn_prereqs/         # Host prereqs (open-iscsi/nfs-common); skipped on the audio node
+│   └── tailscale/                # Tailscale VPN client on each node
 └── k3s-ansible/                  # k3s-ansible submodule
 ```
 
@@ -137,10 +137,14 @@ Edit `inventory.dist` with your node IPs:
 
 ```ini
 [all]
-rpi-4b-1 ansible_host=192.168.1.13
-rpi-4b-2 ansible_host=192.168.1.14
-rpi-4b-3 ansible_host=192.168.1.18
-rpi-5-1  ansible_host=192.168.1.30
+rpi-5-1      ansible_host=192.168.1.30
+rpi-5-2      ansible_host=192.168.1.41
+rpi-5-3      ansible_host=192.168.1.28
+rpi-5-4      ansible_host=192.168.1.83
+rpi-4b-1     ansible_host=192.168.1.13
+rpi-4b-2     ansible_host=192.168.1.14
+rpi-4b-3     ansible_host=192.168.1.18
+rpi-3bplus-1 ansible_host=192.168.1.15
 
 [all:vars]
 ansible_user=ansible
@@ -148,6 +152,10 @@ ansible_python_interpreter=/usr/bin/python3
 ansible_password=ansible
 ansible_become_password=ansible
 ```
+
+The rest of the file defines the groups: `[pi5]`, `[pi4]`, `[pi3]` (hardware class), `[server]` (the three
+control-plane nodes), `[agent]` (all workers, including the audio node), `[audio]` (the audio node) and
+`[k3s_cluster]` (server + agent).
 
 ### 3. Install Ansible Collections
 
@@ -379,7 +387,7 @@ How to take a node out for patching or a reboot. There's no tooling for it: you 
 time** (the cluster doesn't have the capacity for two out at once), from a **control-plane node**.
 
 **Where to run `kubectl`**: SSH to a control-plane node - `rpi-5-1`, `rpi-5-2` or `rpi-5-3` - and use
-`sudo kubectl`. Agent nodes (`rpi-4b-*`, `rpi-5-4`) run no API server and have no kubeconfig, so `kubectl` there
+`sudo kubectl`. Agent nodes (`rpi-4b-*`, `rpi-5-4`, `rpi-3bplus-1`) run no API server and have no kubeconfig, so `kubectl` there
 fails with `connection refused` on `localhost:8080`. If you are maintaining a control-plane node, run the
 commands from a *different* control-plane node.
 
@@ -392,10 +400,12 @@ sudo kubectl get pods -A | grep -v -E 'Running|Completed'   # nothing unexpected
 ```
 Don't start if another node is already cordoned or a Longhorn volume is rebuilding (see step 5).
 
-**2. Drain the node**:
+**2. Cordon, then drain the node**:
 ```bash
+sudo kubectl cordon <node>          # no new pods land on it
 sudo kubectl drain <node> --ignore-daemonsets --delete-emptydir-data
 ```
+(`drain` cordons too, so the first line is optional - it just holds the node out of rotation before you start.)
 What to expect: its pods are evicted and rescheduled elsewhere. The Postgres primary (if it's on this node)
 fails over to the replica, and the old primary is recreated on another node. Single-replica apps are down while
 they reschedule - see [Availability and node maintenance](#availability-and-node-maintenance) for the gaps.
@@ -426,6 +436,8 @@ sudo kubectl -n postgres get cluster postgres         # 2 instances, healthy
 - **Storage nodes** (`rpi-5-2`, `rpi-5-3`) hold the Longhorn replica data. While one is out, every volume runs
   on a single replica; Longhorn itself refuses to drain a node that holds the *last* healthy copy of a volume.
 - OpenSearch must run on a Pi 5 (`pi5=true`); with four Pi 5s there is always somewhere for it to go.
+- **The audio node** (`rpi-3bplus-1`) is the only place shairport-sync can run, so draining it stops AirPlay until it
+  is uncordoned. Nothing else is affected.
 
 **If the drain hangs**
 - It is almost always Longhorn or a PodDisruptionBudget. Look at what's still there:
@@ -546,10 +558,7 @@ role, **`k8s_secrets`**, applies the resulting `Secret`/`ConfigMap` objects dire
 decoupled from git
 entirely.
 
-This one role replaced what used to be three separate roles (`victoria-metrics`, `adguard_home`,
-`tailscale_operator`), each named after an app it no longer actually manages — misleading, since none of
-them touch the app itself anymore, only a credential it needs. `k8s_secrets` is deliberately generic and
-data-driven instead: it's a two-task loop (`roles/k8s_secrets/tasks/main.yaml`) over a single list,
+`k8s_secrets` is deliberately generic and data-driven: it's a two-task loop (`roles/k8s_secrets/tasks/main.yaml`) over a single list,
 **`k8s_secrets`**, defined in `group_vars/all/cluster_secrets.yaml` — one file that's the complete answer
 to "what gets seeded into the cluster and why." Adding another one later means adding a list entry there,
 not writing a new role.
@@ -561,6 +570,16 @@ Application's first sync:
 ```bash
 ansible-playbook site.yml -i inventory.dist -t secrets --ask-vault-pass
 ```
+
+**Reading a secret back out of the cluster** (from a control-plane node, or anywhere with a kubeconfig):
+```bash
+kubectl -n <namespace> get secret <name> -o jsonpath='{.data.<key>}' | base64 -d; echo
+kubectl -n <namespace> get secret <name> -o json | jq -r '.data | map_values(@base64d)'   # every key
+kubectl -n <namespace> get secret <name> -o json | jq -r '.data | keys[]'                  # key names only
+```
+The commonly wanted ones are tabled in the main [README](../README.md#get-secrets-out-of-the-cluster). The values
+you chose yourself live in the Vault (`ansible-vault view group_vars/all/main.yaml`), which is the source of
+truth: editing a Secret with `kubectl` is overwritten by the next `make deploy-secrets`.
 
 ## Storage (Longhorn)
 
@@ -632,8 +651,8 @@ kubectl -n monitoring port-forward svc/vmks-grafana 3000:80
 Visit `http://localhost:3000` — no login required.
 
 Pre-configured datasources (all provisioned automatically): **VictoriaMetrics** (x2 — Prometheus-compatible
-and native) and **Alertmanager**. See [Logging](#logging-opensearch) below for logs — no longer a Grafana
-datasource, since logs moved from VictoriaLogs to OpenSearch.
+and native), **Alertmanager** and **VictoriaLogs** (logs are dual-shipped to VictoriaLogs and OpenSearch; see
+[Logging](#logging-opensearch) below).
 
 Dashboards can be imported from grafana.com via `roles/grafana_dashboards/` (`ansible-playbook site.yml -i
 inventory.dist --tags grafana`) — see that role's own README for what's included and why, and for the
@@ -750,10 +769,9 @@ both get every log line, and either can be used to cross-check the other.
   (OpenSearch)](#logging-opensearch) above) so both backends hold a comparable, honestly-equal window of
   the same dual-shipped data.
 - **Placement**: unpinned, same as `vmsingle` - the PVC is a Longhorn volume, so the pod can run on any node.
-- **Grafana datasource**: `victoriametrics-logs-datasource` (`apps/victoria-metrics/values.yaml`'s
-  `grafana.plugins`) was explicitly removed when this app was removed the first time - restored now,
-  alongside a `grafana-datasource-configmap.yaml` using the same sidecar-provisioning mechanism
-  (`grafana_datasource: "1"` label) already used for the metrics datasource.
+- **Grafana datasource**: the `victoriametrics-logs-datasource` plugin (`apps/victoria-metrics/values.yaml`'s
+  `grafana.plugins`) plus a `grafana-datasource-configmap.yaml` using the same sidecar-provisioning mechanism
+  (`grafana_datasource: "1"` label) as the metrics datasource.
 - **Unconfirmed**: the server's `512Mi` memory limit is carried over from this app's prior incarnation,
   not re-verified against today's actual (dual-shipped) log volume - worth a `kubectl top pod`/OOMKilled
   check after deploy, same as every other live-confirmed resize in this repo (e.g. `vmsingle`'s own).
@@ -774,12 +792,6 @@ the `apps/` directory** (`apps/blocky/`, see [GitOps (Argo CD)](#gitops-argo-cd)
 continuously. Unlike every other app here, **this one needs nothing from Ansible at all**: Blocky has no
 admin login, so its entire config is non-secret and lives as a plain git-managed manifest.
 
-(Previously AdGuard Home + a separate `adguard-exporter` sidecar. Replaced because Blocky ships native
-Prometheus metrics — no exporter needed — and its config is a single static YAML file with no setup wizard
-and no self-rewriting state, which is a meaningfully simpler deployment than AdGuard's install-wizard/
-ConfigMap-seeding dance. Config schema below was verified directly against
-`ghcr.io/0xerr0r/blocky:v0.35.0` — a real `docker run` against a candidate config, not assumed from docs.)
-
 - **Chart**: `bjw-s-labs/app-template` (the same generic "common" chart used for every non-vendor-chart app
   here) running the `ghcr.io/0xerr0r/blocky` image directly — one container, no sidecar.
 - **Config**: `apps/blocky/manifests/configmap.yaml`, mounted **read-only** at `/app/config.yml`. No
@@ -796,9 +808,7 @@ ConfigMap-seeding dance. Config schema below was verified directly against
   `VMServiceScrape` (`apps/blocky/manifests/vmservicescrape.yaml`) — verified this actually gets scraped
   (`vmagent`'s `serviceScrapeSelector` is `selectAllByDefault: true` in this chart, confirmed against the
   real `victoria-metrics-k8s-stack` chart templates). Worth calling out: the old adguard-exporter never
-  actually had this wiring despite the docs here previously claiming it was "scraped automatically" — no
-  `VMServiceScrape`/`ServiceMonitor` for it ever existed, so it was never really being scraped. Not
-  repeating that mistake for Blocky.
+  has no exporter at all - it is scraped directly through that `VMServiceScrape`.
 - **Services**: two dedicated `LoadBalancer` Services (via k3s's built-in ServiceLB, same mechanism as
   Traefik) — `blocky-dns` (53/tcp+udp, for LAN clients) and `blocky-http` (4000/tcp, metrics + the
   DNS-over-HTTPS endpoint — Blocky has no admin dashboard to expose, unlike AdGuard, but this is still
@@ -905,7 +915,7 @@ Ansible except SearXNG's `valkey.url` setting (part of its seeded `settings.yml`
   `RedisReplication`) — these are small caches, not a source of truth. Each redis container gets a 192Mi
   memory limit — `maxmemory` plus headroom for redis's own process overhead, client buffers and
   replication backlog, not `maxmemory` itself. Sized for the smaller of this cluster's two node classes
-  (the 4B control-plane nodes are 4GB boards, not 8GB — see [Hardware Setup](#hardware-setup)).
+  (the Pi 4B nodes are 4GB boards, not 8GB — see [Hardware Setup](#hardware-setup)).
 - **Metrics**: a `redis_exporter` sidecar on every replication pod (port 9121), scraped by a `VMPodScrape`
   (not a `VMServiceScrape` like Blocky's own — the operator doesn't document a stable Service port *name*
   for the exporter, only the container port number) in each cache namespace.
@@ -1210,10 +1220,10 @@ kubectl get vulnerabilityreport -n <namespace> -l trivy-operator.resource.name=<
 ## Open WebUI
 
 A self-hosted chat UI for LLMs ([open-webui/open-webui](https://github.com/open-webui/open-webui),
-`apps/open-webui/`, namespace `open-webui`). Deliberately deployed with **no LLM backend configured** -
-no Ollama, no OpenAI/Anthropic API key, nothing baked into git. Which provider to use is a runtime
-choice made through Open WebUI's own Settings UI once it's running (it adds OpenAI-compatible endpoints
-directly, no redeploy needed) - not something this repo should decide on your behalf.
+`apps/open-webui/`, namespace `open-webui`). Its LLM backend is the in-cluster
+[LiteLLM](#litellm) gateway (`http://litellm.litellm.svc.cluster.local:4000/v1`), using a LiteLLM *virtual key*
+(Vault var `openwebui_litellm_key`, seeded as the `open-webui-litellm-key` Secret). Provider keys and spend limits
+live in LiteLLM, not here; there is no Ollama and nothing credential-bearing in git.
 
 - **Chart**: the official `open-webui/open-webui` chart (`helm.openwebui.com`) - unlike Homepage/SearXNG/
   WhoDB, this project does publish and maintain its own chart, so no `bjw-s-labs/app-template`
@@ -1467,6 +1477,7 @@ does **not** have the spare capacity for more than one node out at a time, so th
 | Tailscale ingress proxies | 2, required anti-affinity + PDB |
 | Redis caches (3 clusters) | master/replica and the 3 sentinels each on different nodes, PDB `maxUnavailable: 1` (keeps sentinel quorum) |
 | GO Feature Flag relay proxy | 2 replicas on different nodes + PDB + readiness probe; rolling update starts the new pod first |
+| shairport-sync (audio node) | 1 replica, only schedulable on `rpi-3bplus-1`; a drain of that node stops AirPlay until it returns |
 | LiteLLM, Grafana, Homepage | 1 replica each (stateless - state is in Postgres/Redis); a drain reschedules them, gaps of roughly 1-2 min, 30-90s and 10-30s (Pi start-up, plus an image pull on a node that hasn't run them) |
 
 **Accepted blips** (single replica by design; recover when the pod reschedules, typically under a minute or two):
@@ -1666,8 +1677,8 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass --tags tailscale
 
 Or just run `make deploy` — it's part of the full playbook now.
 
-**Deployed to:** Pi4 and Pi5 instances (`hosts: pi4,pi5` in `site.yml`) - every node in this cluster's
-inventory.
+**Deployed to:** Pi 3B+, Pi 4B and Pi 5 instances (`hosts: pi4,pi5,pi3` in `site.yml`) - every node in this
+cluster's inventory.
 
 ### Configuration
 
@@ -1756,8 +1767,7 @@ sudo tailscale logout
 
 ### K3S Version
 
-Edit `group_vars/k3s_cluster/k3s.yaml` (shared by every server + agent node — was previously duplicated
-identically in separate `group_vars/server/k3s.yaml` and `group_vars/agent/k3s.yaml` files):
+Edit `group_vars/k3s_cluster/k3s.yaml` (shared by every server + agent node):
 
 ```yaml
 k3s_version: v1.36.4+k3s1
