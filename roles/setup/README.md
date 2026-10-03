@@ -76,7 +76,8 @@ which is separate from, and not limited by, the blacklist above.
 
 The whole file is rendered from `templates/config.txt.j2` per `board_model`, so each board only carries
 settings that apply to it: no `[pi5]`/`[cm4]`/`[cm5]` filter sections and no per-setting `lineinfile`
-appends. A timestamped backup of the previous file is kept beside it on each change.
+appends. The original pre-Ansible file is kept once at `/var/backups/config.txt.pre-ansible` (the boot partition is FAT, so
+the template module's own `backup: true` can't be used there).
 
 ## Overclocking
 

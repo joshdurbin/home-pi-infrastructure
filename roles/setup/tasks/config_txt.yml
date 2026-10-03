@@ -10,11 +10,29 @@
 # uncordon sequence runs in a separate serial:1 play in site.yml ("Reboot nodes
 # with pending config.txt changes"), which is what guarantees only one node is
 # ever down at a time.
+# /boot/firmware is FAT, so the template module's own backup: true fails there
+# (its timestamped name contains ':' and '@', invalid on FAT). Keep one copy of
+# the pre-Ansible file on the root filesystem instead; force: false means it is
+# written once and never overwritten, so it is always the original stock file.
+- name: keep a copy of the original config.txt
+  ansible.builtin.copy:
+    src: /boot/firmware/config.txt
+    dest: /var/backups/config.txt.pre-ansible
+    remote_src: true
+    force: false
+    owner: root
+    group: root
+    mode: '0644'
+  tags:
+    - kill_radios
+    - kill_audio
+    - enable_cgroups
+    - k3s_optimization
+
 - name: render /boot/firmware/config.txt for this board
   ansible.builtin.template:
     src: config.txt.j2
     dest: /boot/firmware/config.txt
-    backup: true
   notify: restart pi after config change
   tags:
     - kill_radios
