@@ -34,6 +34,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [Snowflake (Tor)](#snowflake-tor)
 - [Audio node and shairport-sync](#audio-node-and-shairport-sync)
 - [Availability and node maintenance](#availability-and-node-maintenance)
+- [Testing failover (Postgres, Redis)](#testing-failover-postgres-redis)
 - [Exposing UIs via Tailscale Operator](#exposing-uis-via-tailscale-operator)
 - [Tailscale Integration (Optional)](#tailscale-integration-optional)
 - [Cluster Configuration](#cluster-configuration)
@@ -1512,6 +1513,46 @@ operators. None are on a path that other workloads need to keep running.
 - Control plane: `rpi-5-1/2/3` are the etcd members; one at a time keeps quorum (2 of 3).
 - **Not yet verified on the live cluster**: the real write-outage time when the primary's node is drained. Test:
   run a write loop through `postgres-pooler-rw`, drain the primary's node, and measure the gap.
+
+## Testing failover (Postgres, Redis)
+
+Both fail over on their own (CloudNativePG for Postgres, Sentinel for the three Redis caches). These commands trigger
+it on purpose, to rehearse or to check the apps ride through. Do one at a time and confirm health before the next.
+
+**Postgres** (needs the `kubectl cnpg` plugin; the cluster is `postgres` in namespace `postgres`):
+```bash
+kubectl cnpg status postgres -n postgres                  # who is primary, replication state
+
+# Planned switchover: clean, no data loss, the old primary becomes the replica
+kubectl cnpg promote postgres <replica-instance> -n postgres        # e.g. postgres-2
+
+# Crash simulation: kill the primary and let CNPG fail over
+kubectl -n postgres delete pod <primary-instance>                   # add --grace-period=0 --force for a hard kill
+kubectl cnpg status postgres -n postgres -w 2>/dev/null || watch kubectl cnpg status postgres -n postgres
+```
+Done when `status` shows a healthy primary and a streaming replica again. The `postgres-rw` Service and the
+`postgres-pooler-rw` PgBouncer follow the new primary on their own; apps reconnect without config changes. A failover
+takes a few seconds to tens of seconds (`failoverDelay: 0`); a planned `promote` is quicker.
+
+**Redis** (Sentinel; the clusters are `blocky-cache`, `searxng-cache` and `litellm-cache`, each in its own namespace,
+and each Sentinel master group is named after its cluster):
+```bash
+NS=blocky-cache                                           # or searxng-cache / litellm-cache
+
+# Which pod is master now (the redis-role label is maintained by the operator)
+kubectl -n $NS get pods -l redis-role=master
+kubectl -n $NS exec ${NS}-sentinel-sentinel-0 -- redis-cli -p 26379 sentinel get-master-addr-by-name $NS
+
+# Ask Sentinel to fail over to the replica
+kubectl -n $NS exec ${NS}-sentinel-sentinel-0 -- redis-cli -p 26379 sentinel failover $NS
+
+# Crash simulation instead: delete the master pod
+kubectl -n $NS delete pod $(kubectl -n $NS get pods -l redis-role=master -o name | cut -d/ -f2)
+```
+After a few seconds the `redis-role=master` label and `get-master-addr-by-name` point at the other pod. Blocky and
+SearXNG discover the new master through Sentinel; LiteLLM and the others use the operator-maintained `<name>-master`
+Service. They need no change. Check `sentinel master $NS` shows `num-slaves 1` once the old master has rejoined as the
+replica.
 
 ## Exposing UIs via Tailscale Operator
 
