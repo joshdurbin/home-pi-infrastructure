@@ -1,0 +1,25 @@
+# Headlamp runs with no login, as a read-only ServiceAccount (values.yaml), so
+# network reachability IS its access control. Ingress is allowed only from the
+# Tailscale ingress proxy pods (tailscale namespace, label
+# tailscale.com/managed=true) to Headlamp's container port; every other pod in
+# the cluster is denied. Egress is left open (it needs the API server).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: headlamp-ingress
+  namespace: headlamp
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tailscale
+          podSelector:
+            matchLabels:
+              tailscale.com/managed: "true"
+      ports:
+        - protocol: TCP
+          port: 4466

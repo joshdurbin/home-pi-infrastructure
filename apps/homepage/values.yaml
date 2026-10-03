@@ -123,7 +123,7 @@ configMaps:
         - Kubernetes:
             - Headlamp:
                 href: https://headlamp.{{ $d }}
-                description: Kubernetes web UI (token login)
+                description: Kubernetes web UI (read-only)
                 icon: mdi-kubernetes
 
         - Storage:

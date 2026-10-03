@@ -387,7 +387,8 @@ spec:
                   number: 1031
 ---
 # Headlamp (Kubernetes web UI). Chart's Service is named after the release.
-# Login needs a token - see apps/headlamp/manifests/rbac.yaml.
+# Read-only, no login: the pod only accepts traffic from these Tailscale proxies
+# (apps/headlamp/manifests/networkpolicy.yaml).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

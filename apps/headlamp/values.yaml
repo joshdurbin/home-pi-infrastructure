@@ -1,20 +1,21 @@
-# Headlamp - Kubernetes web UI. One stateless pod; no PVC, no database.
+# Headlamp - Kubernetes web UI (read-only, no login). One stateless pod; no
+# PVC, no database.
 replicaCount: 1
 
 config:
   inCluster: true
-  # Login is with a bearer token the *user* supplies (see
-  # manifests/rbac.yaml), not the pod's own ServiceAccount token
-  # (unsafeUseServiceAccountToken stays false). So the pod itself needs no
-  # cluster-wide permissions.
-  sessionTTL: 28800
+  # No login: every visitor is the pod's own ServiceAccount, which is bound
+  # read-only (clusterRoleBinding below). Safe here only because the pod is
+  # reachable from nothing but the Tailscale proxies - see
+  # manifests/networkpolicy.yaml - and `view` excludes Secrets and all writes.
+  unsafeUseServiceAccountToken: true
 
-# The chart's default binds its own ServiceAccount to cluster-admin. Not
-# needed with token login, so off - the one admin binding is the explicit
-# headlamp-admin ServiceAccount in manifests/rbac.yaml, whose tokens are
-# minted short-lived on demand.
+# Built-in `view`: read-only on most namespaced resources, no Secrets, no
+# writes. Use kubectl for changes. Changing this to anything broader makes the
+# unauthenticated UI broader too.
 clusterRoleBinding:
-  create: false
+  create: true
+  clusterRoleName: view
 
 # Small Go backend + static frontend. Requests near real use so the scheduler
 # counts it honestly; runs on any node, including the Pi 4Bs.
