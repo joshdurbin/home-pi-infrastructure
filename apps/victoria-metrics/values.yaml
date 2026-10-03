@@ -268,12 +268,19 @@ vmcluster:
         # The two vmagents scrape the same targets, so every sample arrives
         # twice with slightly different timestamps; keep one per 30s interval.
         dedup.minScrapeInterval: 30s
+      # 2Gi, not 1Gi: confirmed live (both replicas OOMKilled, exit 137, 15+
+      # restarts, CrashLoopBackOff) while catching up after an outage. The
+      # store opens with ~12M blocks for ~15M rows (tiny parts written during
+      # the backlog replay), and merging them plus the in-memory caches
+      # (-memory.allowedPercent=60 of the limit) blew past 1Gi. Each OOM kill
+      # leaves an unclean shutdown, which makes the next start slower and the
+      # backlog bigger - a loop only more headroom breaks.
       resources:
         limits:
-          memory: 1Gi
+          memory: 2Gi
         requests:
           cpu: 50m
-          memory: 1Gi
+          memory: 2Gi
       # Each vmstorage's data is its own Longhorn volume (default 2 Longhorn
       # replicas, deliberately NOT 1: with 1, draining the storage=true node
       # that holds it would be blocked by Longhorn's last-replica drain policy).
