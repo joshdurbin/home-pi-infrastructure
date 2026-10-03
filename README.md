@@ -105,16 +105,16 @@ this repo's `apps/` directory. See [docs/REFERENCE.md](docs/REFERENCE.md) for wh
 | `make deploy-users` | User/SSH management only |
 | `make deploy-secrets` | Seed cluster Secrets/ConfigMaps only |
 | `make deploy-argocd` | Bootstrap Argo CD only |
-| `make deploy-maintenance` | Deploy the k3s-maintenance script only |
 | `make verify` | Node health + Argo CD Application status |
 | `make status` | Node status + Argo CD Application status |
 | `make logs` | Tail k3s logs from the first server |
-| `make drain NODE=<name>` | Drain a node before maintenance |
-| `make uncordon NODE=<name>` | Return a node to service |
 | `make syntax-check` | Validate playbook syntax |
 | `make lint` | Run `ansible-lint` |
 | `make clean` | Remove local temp files |
 | `make help` | Show this list |
+
+To patch or reboot a node, follow **Node Maintenance** in [docs/REFERENCE.md](docs/REFERENCE.md#node-maintenance) -
+a manual `kubectl drain` / `uncordon` from a control-plane node, one node at a time.
 
 ## Accessing things
 

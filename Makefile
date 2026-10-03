@@ -1,4 +1,4 @@
-.PHONY: help install deploy deploy-system deploy-k3s deploy-users deploy-secrets deploy-argocd deploy-maintenance verify logs clean status drain uncordon syntax-check lint
+.PHONY: help install deploy deploy-system deploy-k3s deploy-users deploy-secrets deploy-argocd verify logs clean status syntax-check lint
 
 INVENTORY := inventory.dist
 VAULT_PASS := --ask-vault-pass
@@ -17,16 +17,11 @@ help:
 	@echo "  make deploy-users         Deploy only user management"
 	@echo "  make deploy-secrets       Seed cluster Secrets/ConfigMaps only"
 	@echo "  make deploy-argocd        Bootstrap Argo CD only"
-	@echo "  make deploy-maintenance   Deploy only maintenance tools"
 	@echo ""
 	@echo "Verification & Monitoring:"
 	@echo "  make verify               Verify cluster health"
 	@echo "  make logs                 Show k3s logs on first server"
 	@echo "  make status               Show k3s cluster status"
-	@echo ""
-	@echo "Maintenance:"
-	@echo "  make drain NODE=rpi-4b-1  Drain node for maintenance"
-	@echo "  make uncordon NODE=rpi-4b-1  Return node to service"
 	@echo ""
 	@echo "Development:"
 	@echo "  make syntax-check         Check playbook syntax"
@@ -62,10 +57,6 @@ deploy-argocd:
 	@echo "Bootstrapping Argo CD only..."
 	ansible-playbook site.yml -i $(INVENTORY) $(VAULT_PASS) --tags helm,argocd
 
-deploy-maintenance:
-	@echo "Deploying maintenance tools only..."
-	ansible-playbook site.yml -i $(INVENTORY) $(VAULT_PASS) --tags maintenance
-
 verify:
 	@echo "Verifying cluster health..."
 	ansible $(FIRST_SERVER) -i $(INVENTORY) -m command -a "sudo kubectl get nodes && echo '---' && sudo kubectl get pods -A | grep -E 'coredns|metrics-server|local-path' && echo '---' && sudo kubectl get applications -n argocd"
@@ -77,22 +68,6 @@ status:
 logs:
 	@echo "Tailing k3s logs from first server..."
 	ansible $(FIRST_SERVER) -i $(INVENTORY) -m command -a "sudo journalctl -u k3s -f"
-
-drain:
-	@if [ -z "$(NODE)" ]; then \
-		echo "Error: NODE not specified. Usage: make drain NODE=rpi-4b-1"; \
-		exit 1; \
-	fi
-	@echo "Draining node $(NODE)..."
-	ansible $(FIRST_SERVER) -i $(INVENTORY) -m command -a "sudo kubectl drain $(NODE) --ignore-daemonsets --delete-emptydir-data --timeout=5m"
-
-uncordon:
-	@if [ -z "$(NODE)" ]; then \
-		echo "Error: NODE not specified. Usage: make uncordon NODE=rpi-4b-1"; \
-		exit 1; \
-	fi
-	@echo "Uncordoning node $(NODE)..."
-	ansible $(FIRST_SERVER) -i $(INVENTORY) -m command -a "sudo kubectl uncordon $(NODE)"
 
 syntax-check:
 	@echo "Checking playbook syntax..."

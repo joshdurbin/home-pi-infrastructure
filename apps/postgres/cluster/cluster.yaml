@@ -35,7 +35,7 @@ spec:
   # interruption, connections cut) rather than a clean switchover - and so is
   # any other voluntary eviction of the primary. The postgres namespace is
   # excluded from the descheduler (apps/descheduler/values.yaml) for that
-  # reason. (`k3s-maintenance -e` still does a clean switchover first.)
+  # reason. (For a smoother planned switchover first: `kubectl cnpg promote`.)
   enablePDB: false
 
   # When the primary's pod is evicted, Postgres first does a "smart" shutdown:

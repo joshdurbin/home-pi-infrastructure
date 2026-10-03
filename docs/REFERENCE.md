@@ -13,7 +13,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [System Optimizations](#system-optimizations)
 - [User Management](#user-management)
 - [K3S Verification](#k3s-verification)
-- [K3S Maintenance](#k3s-maintenance)
+- [Node Maintenance](#node-maintenance)
 - [kubectl Access From Your Machine](#kubectl-access-from-your-machine)
 - [GitOps (Argo CD)](#gitops-argo-cd)
 - [Storage (Longhorn)](#storage-longhorn)
@@ -100,7 +100,6 @@ home-pi-infrastructure/
 ├── roles/                        # Custom Ansible roles
 │   ├── setup/                    # System optimization & packages
 │   ├── user_management/          # User & SSH key management
-│   ├── k3s_maintenance/          # k3s maintenance script deployment
 │   ├── helm/                     # Helm binary install (apt + official GPG key)
 │   ├── k8s_labels/                # Applies node labels declared in host_vars (k8s_labels var)
 │   ├── argocd/                   # Bootstraps Argo CD + the root Application (see GitOps section)
@@ -110,9 +109,6 @@ home-pi-infrastructure/
 │   └── tailscale/                # Tailscale VPN client on each node (optional)
 └── k3s-ansible/                  # k3s-ansible submodule
 ```
-
-(`roles/k3s_maintenance/files/k3s-maintenance` is the actual maintenance script - it's a role file, not a
-repo-root file.)
 
 
 ## Prerequisites
@@ -178,7 +174,6 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass
 - **System Prep**: Disables Bluetooth, WiFi, audio; reduces GPU memory; enables cgroups
 - **User Management**: Creates jdurbin user with SSH key and passwordless sudo
 - **K3S Deployment**: Installs and configures k3s cluster (servers + agents)
-- **Maintenance Tools**: Deploys k3s-maintenance script to all nodes
 - **Argo CD Bootstrap**: Installs Argo CD and its root Application, which then continuously syncs
   Longhorn, VictoriaMetrics, OpenSearch, Blocky, SearXNG, the redis-operator (Blocky's and SearXNG's own
   cache clusters), WhoDB, CloudNativePG (Postgres), and the Tailscale Operator from this repo's own
@@ -201,16 +196,11 @@ make deploy-k3s                 # Deploy only k3s cluster
 make deploy-users               # Deploy only user management
 make deploy-secrets             # Seed cluster Secrets/ConfigMaps only
 make deploy-argocd              # Bootstrap Argo CD only
-make deploy-maintenance         # Deploy only maintenance tools
 
 # Verification & Monitoring
 make verify                     # Check cluster health
 make status                     # Show k3s cluster node status
 make logs                       # Tail k3s logs from first server
-
-# Maintenance
-make drain NODE=rpi-4b-1        # Drain node for maintenance
-make uncordon NODE=rpi-4b-1     # Return node to service
 
 # Development
 make syntax-check               # Verify playbook syntax
@@ -377,158 +367,71 @@ sudo kubectl delete pod test-pod
 See [kubectl Access From Your Machine](#kubectl-access-from-your-machine) below for the full setup
 (the kubeconfig file is root-owned, so a plain `scp` won't work — it needs to be read via `ssh ... sudo cat`).
 
-## K3S Maintenance
+## Node Maintenance
 
-### Installation
+How to take a node out for patching or a reboot. There's no tooling for it: you do it by hand, **one node at a
+time** (the cluster doesn't have the capacity for two out at once), from a **control-plane node**.
 
-The k3s-maintenance script is automatically deployed to all k3s nodes via `site.yml`. Manual deployment:
+**Where to run `kubectl`**: SSH to a control-plane node - `rpi-5-1`, `rpi-5-2` or `rpi-5-3` - and use
+`sudo kubectl`. Agent nodes (`rpi-4b-*`, `rpi-5-4`) run no API server and have no kubeconfig, so `kubectl` there
+fails with `connection refused` on `localhost:8080`. If you are maintaining a control-plane node, run the
+commands from a *different* control-plane node.
 
+**1. Check the cluster is healthy first** (from a control-plane node):
 ```bash
-make deploy-maintenance
+sudo kubectl get nodes                                # all Ready, none SchedulingDisabled
+sudo kubectl -n longhorn get volumes.longhorn.io      # attached volumes: ROBUSTNESS healthy
+sudo kubectl -n postgres get cluster postgres         # "Cluster in healthy state", 2 instances
+sudo kubectl get pods -A | grep -v -E 'Running|Completed'   # nothing unexpected
 ```
+Don't start if another node is already cordoned or a Longhorn volume is rebuilding (see step 5).
 
-Or:
-
+**2. Drain the node**:
 ```bash
-ansible-playbook site.yml -i inventory.dist --ask-vault-pass --tags maintenance
+sudo kubectl drain <node> --ignore-daemonsets --delete-emptydir-data
 ```
+What to expect: its pods are evicted and rescheduled elsewhere. The Postgres primary (if it's on this node)
+fails over to the replica, and the old primary is recreated on another node. Single-replica apps are down while
+they reschedule - see [Availability and node maintenance](#availability-and-node-maintenance) for the gaps.
+The drain returns when the node is empty of everything except DaemonSet pods.
 
-### Enable Maintenance Mode (Before Reboot)
+**3. Patch / reboot the node yourself**, e.g. `ssh ansible@<node> sudo reboot`.
 
-`k3s-maintenance` self-targets the node it's run on via a local `kubectl` call, so this simple form only
-works on a **server** node (the only class with a working local kubeconfig - see
-[K3S Maintenance](#k3s-maintenance)'s own role README for why). To drain an **agent** node instead, see the
-reboot workflow below, which uses `make drain`/`make uncordon` (Ansible-delegated from a server) instead of
-this self-targeting form.
-
+**4. Bring it back**:
 ```bash
-ssh ansible@rpi-5-1
-sudo k3s-maintenance -e
+sudo kubectl get node <node>          # wait until Ready
+sudo kubectl uncordon <node>
 ```
 
-**What it does:**
-1. Drains the node (evicts all pods except DaemonSets)
-2. Saves maintenance state with timestamp
-3. Marks node as cordoned (no new pods scheduled)
-
-**Safe to do after this:**
-- Reboot the node
-- Update the OS
-- Replace hardware
-- Perform maintenance
-
-### Disable Maintenance Mode (After Reboot)
-
-Same server-node caveat as above.
-
+**5. Wait before doing the next node.** Longhorn rebuilds the replicas that were on a node while it was out, and
+until that finishes a volume has a single healthy copy:
 ```bash
-ssh ansible@rpi-5-1
-sudo k3s-maintenance -d
+sudo kubectl -n longhorn get volumes.longhorn.io      # wait for every attached volume to be healthy again
+sudo kubectl -n postgres get cluster postgres         # 2 instances, healthy
 ```
 
-**What it does:**
-1. Uncordons the node
-2. Returns node to service
-3. Pods automatically re-schedule to the node
+**Notes**
+- **Control-plane nodes** (`rpi-5-1/2/3`) are the three etcd members. Never have two out at once or etcd loses
+  quorum and the API goes away.
+- **Storage nodes** (`rpi-5-2`, `rpi-5-3`) hold the Longhorn replica data. While one is out, every volume runs
+  on a single replica; Longhorn itself refuses to drain a node that holds the *last* healthy copy of a volume.
+- OpenSearch must run on a Pi 5 (`pi5=true`); with four Pi 5s there is always somewhere for it to go.
 
-### Check Maintenance Status
+**If the drain hangs**
+- It is almost always Longhorn or a PodDisruptionBudget. Look at what's still there:
+  `sudo kubectl get pods -A -o wide --field-selector spec.nodeName=<node>`.
+- Longhorn blocks (via its `instance-manager` PodDisruptionBudget) when the node holds a volume's last healthy
+  replica. Wait for the volumes to be healthy (step 5) and the drain proceeds.
+- A pod with no controller would need `--force` (none exist today).
+- To abort: Ctrl-C, then `sudo kubectl uncordon <node>`.
 
-```bash
-sudo k3s-maintenance -s
-```
-
-Output:
-```
-[INFO] Node: rpi-5-1
-[INFO] Status: IN SERVICE
-[INFO] Enabled at: 2026-09-17T14:30:00
-[INFO] Disabled at: 2026-09-17T14:45:00
-```
-
-### Complete Reboot Workflow
-
-**For a server node** (self-targeting `k3s-maintenance` works - it has its own kubeconfig):
-```bash
-# 1. Enter maintenance mode
-ssh ansible@rpi-5-2
-sudo k3s-maintenance -e
-# Wait for drain to complete
-
-# 2. Verify pods are evicted (from any server)
-ssh ansible@rpi-5-1
-kubectl get pods -A | grep rpi-5-2
-# Should be empty
-
-# 3. Reboot the node
-ssh ansible@rpi-5-2
-sudo reboot
-# Wait for node to come back up
-
-# 4. Verify node is ready
-ssh ansible@rpi-5-1
-kubectl get nodes
-# Wait for rpi-5-2 to show "Ready"
-
-# 5. Return to service
-ssh ansible@rpi-5-2
-sudo k3s-maintenance -d
-
-# 6. Verify workloads re-scheduled
-ssh ansible@rpi-5-1
-kubectl get pods -A | grep rpi-5-2
-```
-Note: rebooting more than one server node at a time risks etcd quorum - the automated
-`site.yml` reboot play (below) handles this by going one node at a time; do the same by hand here.
-
-**For an agent node** (e.g. `rpi-4b-1`) - `k3s-maintenance` self-targeting doesn't work, it has no local
-kubeconfig (see [K3S Maintenance](#k3s-maintenance) above). Use `make drain`/`make uncordon` instead, which
-delegate to a server via Ansible rather than running on the node itself:
-```bash
-make drain NODE=rpi-4b-1
-ssh ansible@rpi-4b-1 sudo reboot
-# Wait for node to come back up
-make uncordon NODE=rpi-4b-1
-# Should see pods running again
-```
-
-### State File
-
-The script maintains state in `/var/lib/k3s-maintenance.state`:
-
-```json
-{
-  "in_maintenance": false,
-  "enabled_at": "2026-09-17T14:30:00.123456",
-  "disabled_at": "2026-09-17T14:45:00.654321",
-  "node_name": "rpi-4b-2"
-}
-```
-
-### Troubleshooting k3s-maintenance
-
-**Script can't find kubectl:**
-```bash
-which kubectl
-/usr/local/bin/kubectl
-```
-
-**Drain times out:**
-Edit the script to increase timeout:
-```python
-DEFAULT_DRAIN_TIMEOUT = 600  # 10 minutes
-```
-
-**Node won't uncordon:**
-```bash
-kubectl describe node rpi-4b-2
-kubectl get pods -A --field-selector=status.phase!=Running
-```
-
-**State file stuck:**
-```bash
-sudo rm /var/lib/k3s-maintenance.state
-sudo k3s-maintenance -s
-```
+**After the node is back, if something is off**
+- **Temporal**: if `temporal-history` crash-loops with `failed to start ringpop`, restart all four services
+  together: `sudo kubectl -n temporal rollout restart deploy/temporal-frontend deploy/temporal-matching
+  deploy/temporal-worker deploy/temporal-history`.
+- **OpenSearch**: it is a single data node, so it is unavailable while that pod moves; it should recover on its
+  own. Its client and data nodes are cluster-manager-eligible and on persistent volumes, so evicting either keeps
+  its identity. (See `apps/opensearch/manifests/cluster.yaml` for why that matters.)
 
 ## kubectl Access From Your Machine
 
@@ -1425,7 +1328,7 @@ only seed Open WebUI's connection on first start; afterwards edit it in Admin Se
 **Goal**: mirror a managed cloud cluster. Any *one* node can be drained and rebooted with a plain
 `kubectl drain --ignore-daemonsets --delete-emptydir-data <node>` and nothing user-visible drops. The cluster
 does **not** have the spare capacity for more than one node out at a time, so the model assumes exactly one.
-(`k3s-maintenance -e` / `-d` wraps this with safety checks; see its role README.)
+(See [Node Maintenance](#node-maintenance) for the procedure.)
 
 **Rules the definitions follow** (apply them to anything new):
 - Anything on a request path that is stateless (or whose state is in Postgres/Redis) runs **2 replicas**, with
@@ -1463,7 +1366,7 @@ operators. None are on a path that other workloads need to keep running.
 - **Traefik** (k3s default) is a single replica and unused (every Ingress is Tailscale). Disabling it
   (`--disable traefik`) removes it and its per-node load balancers.
 - **API endpoint**: agents, the Ansible-installed agent kubeconfig, and your laptop's kubeconfig point at the first
-  server (`rpi-5-1`). While it is down, `kubectl` from those places fails, and `make drain` delegates to it.
+  server (`rpi-5-1`). While it is down, `kubectl` from those places fails - run it from another control-plane node.
   A stable endpoint (kube-vip / a DNS name over all three servers) would fix this.
 - **LAN DNS clients** should be given at least two node IPs: Blocky is reachable on every node IP, and a rebooting
   node's IP stops answering.
