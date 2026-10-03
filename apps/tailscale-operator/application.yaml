@@ -10,8 +10,9 @@ metadata:
     # but syncing last avoids that transient state on a fresh bootstrap.
     # Confirmed by a real failure on the namespace an earlier-wave app hadn't
     # created yet: "namespaces \"blocky\" not found". Must stay strictly
-    # after blocky (wave 2).
-    argocd.argoproj.io/sync-wave: "3"
+    # after blocky (wave 2) and temporal (wave 3, which also has an Ingress
+    # here) - same-wave Applications are not ordered against each other.
+    argocd.argoproj.io/sync-wave: "4"
 spec:
   project: home-pi
   destination:
