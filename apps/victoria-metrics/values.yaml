@@ -90,12 +90,43 @@ grafana:
   # than a single dashboard being viewed (`kubectl top pod` showed ~201Mi at
   # idle, right after a restart). Doubled, matching this repo's other
   # "give it real headroom rather than nudge it" sizing (e.g. vmagent).
+  #
+  # Re-sized again after running it on Pi 4B nodes (confirmed live): it sat at
+  # 414-555Mi against this 512Mi limit, and with only a 10m CPU request it got
+  # almost no CPU share on a busy node (requests set the share under
+  # contention, and the scheduler's view of how big the pod is). Start-up on a
+  # Pi 4B burns ~1 core for several minutes. 500m CPU makes it a fair
+  # contender and tells the scheduler the truth; 768Mi/1Gi gives memory room.
   resources:
     limits:
-      memory: 512Mi
+      memory: 1Gi
     requests:
-      cpu: 10m
-      memory: 512Mi
+      cpu: 500m
+      memory: 768Mi
+  # Grafana 13's start-up (dashboard/unified-storage maintenance calling its
+  # own API on 127.0.0.1:3000) takes a few minutes on a Pi 4B, during which
+  # /api/health is slow or 503. The chart's default liveness probe (60s delay,
+  # then 10 x 10s failures = ~160s) killed it mid-start, every time, restarting
+  # the whole expensive start-up. The chart has no startupProbe for the main
+  # container, so push the liveness probe's first check well past start-up
+  # (~7 min) and keep a long tolerance after it.
+  livenessProbe:
+    httpGet:
+      path: /api/health
+      port: grafana
+    initialDelaySeconds: 420
+    periodSeconds: 10
+    timeoutSeconds: 30
+    failureThreshold: 10
+  # Readiness only gates traffic (it never restarts the pod). The default 1s
+  # timeout flaps out of the Service on any brief CPU stall on a slow node.
+  readinessProbe:
+    httpGet:
+      path: /api/health
+      port: grafana
+    periodSeconds: 10
+    timeoutSeconds: 10
+    failureThreshold: 6
 kube-state-metrics:
   replicas: 1
   resources:

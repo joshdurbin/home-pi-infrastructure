@@ -24,12 +24,21 @@
 # own default hostPath mounts for the Agent role).
 role: Agent
 
+# 256Mi, not 128Mi. At 128Mi every Vector pod sat pinned at its memory limit
+# (peak working set ~133MB on all 7 nodes, confirmed from cAdvisor) and was
+# OOMKilled over and over (3-57 restarts each). A container held against its
+# limit continually evicts and re-reads its own file pages, so the node's disk
+# is hammered with READS and no writes: on rpi-4b-1 (the busiest logs, a Pi 4B
+# with a USB SSD) Vector read ~7.4 TB in 8 hours, driving the node to ~86% I/O
+# wait and a load average of ~25 and starving everything else scheduled there
+# (Grafana's start-up, Longhorn, ...). Memory is requested == limited so it's
+# reserved, not overcommitted.
 resources:
   limits:
-    memory: 128Mi
+    memory: 256Mi
   requests:
     cpu: 10m
-    memory: 128Mi
+    memory: 256Mi
 
 # Confirmed live previously: the chart's default image (distroless) has no
 # shell and no journalctl binary, and Vector's journald source works by
