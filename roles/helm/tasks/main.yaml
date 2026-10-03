@@ -11,14 +11,20 @@
         state: present
         update_cache: true
 
+    # Armored key kept as-is: apt accepts .asc files in signed-by, so no
+    # gpg --dearmor step is needed.
     - name: Download Helm GPG key
-      ansible.builtin.shell: |
-        curl -fsSL https://packages.buildkite.com/helm-linux/helm-debian/gpgkey > /tmp/helm.gpg
-      changed_when: false
+      ansible.builtin.get_url:
+        url: https://packages.buildkite.com/helm-linux/helm-debian/gpgkey
+        dest: /usr/share/keyrings/helm.asc
+        mode: '0644'
 
-    - name: Verify Helm GPG key fingerprint
+    - name: Read Helm GPG key fingerprint
       ansible.builtin.shell: |
-        gpg --show-keys --with-colons /tmp/helm.gpg | awk -F: '$1 == "fpr" {print $10}' | head -n 1
+        set -o pipefail
+        gpg --show-keys --with-colons /usr/share/keyrings/helm.asc | awk -F: '$1 == "fpr" {print $10}' | head -n 1
+      args:
+        executable: /bin/bash
       register: helm_key_fingerprint
       changed_when: false
 
@@ -28,15 +34,16 @@
           - helm_key_fingerprint.stdout == 'DDF78C3E6EBB2D2CC223C95C62BA89D07698DBC6'
         fail_msg: "Helm GPG key fingerprint does not match expected value"
 
-    - name: Convert and install Helm GPG key
-      ansible.builtin.shell: |
-        gpg --dearmor < /tmp/helm.gpg | tee /usr/share/keyrings/helm.gpg >/dev/null
-      changed_when: true
-
     - name: Add Helm repository
-      ansible.builtin.shell: |
-        echo "deb [signed-by=/usr/share/keyrings/helm.gpg] https://packages.buildkite.com/helm-linux/helm-debian/any/ any main" | tee /etc/apt/sources.list.d/helm-stable-debian.list
-      changed_when: true
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/helm.asc] https://packages.buildkite.com/helm-linux/helm-debian/any/ any main"
+        filename: helm-stable-debian
+        update_cache: false
+
+    - name: Remove legacy dearmored Helm key
+      ansible.builtin.file:
+        path: /usr/share/keyrings/helm.gpg
+        state: absent
 
     - name: Update apt cache
       ansible.builtin.apt:
@@ -56,8 +63,3 @@
     - name: Display Helm version
       ansible.builtin.debug:
         msg: "Helm installed: {{ helm_verify.stdout }}"
-
-    - name: Clean up temporary files
-      ansible.builtin.file:
-        path: /tmp/helm.gpg
-        state: absent

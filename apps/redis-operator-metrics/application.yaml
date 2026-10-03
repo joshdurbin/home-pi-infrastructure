@@ -3,6 +3,12 @@ kind: Application
 metadata:
   name: redis-operator-metrics
   namespace: argocd
+  # Cascade-delete this app's resources if the Application is removed. Only on
+  # stateless apps: stateful ones (Longhorn, Postgres, OpenSearch, Redis PVCs,
+  # operators owning CRDs) are deliberately left without it so removing an
+  # Application file can never delete data.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
   annotations:
     # Split out from apps/redis-operator/ deliberately, same pattern as
     # apps/argocd-metrics/ and apps/opensearch/'s own operator+cluster

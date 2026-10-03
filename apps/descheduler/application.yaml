@@ -3,6 +3,12 @@ kind: Application
 metadata:
   name: descheduler
   namespace: argocd
+  # Cascade-delete this app's resources if the Application is removed. Only on
+  # stateless apps: stateful ones (Longhorn, Postgres, OpenSearch, Redis PVCs,
+  # operators owning CRDs) are deliberately left without it so removing an
+  # Application file can never delete data.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
   annotations:
     # No CRDs, no PVC, nothing else in apps/ depends on it - it only reads
     # Node/Pod state and evicts, cluster-wide, via the chart's own

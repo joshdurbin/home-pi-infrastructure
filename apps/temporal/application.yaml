@@ -3,6 +3,12 @@ kind: Application
 metadata:
   name: temporal
   namespace: argocd
+  # Cascade-delete this app's resources if the Application is removed. Only on
+  # stateless apps: stateful ones (Longhorn, Postgres, OpenSearch, Redis PVCs,
+  # operators owning CRDs) are deliberately left without it so removing an
+  # Application file can never delete data.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
   annotations:
     # Needs apps/postgres/'s temporal-database.yaml (DatabaseRole + two
     # Databases) to have already been applied AND reconciled into real
