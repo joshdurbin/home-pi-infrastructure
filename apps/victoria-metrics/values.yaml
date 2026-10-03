@@ -161,7 +161,21 @@ victoria-metrics-operator:
       memory: 128Mi
 vmagent:
   spec:
-    replicaCount: 1
+    # Two vmagents scrape every target independently, so draining either one's
+    # node loses nothing: the other keeps scraping. Both write to vminsert and
+    # the identical samples are de-duplicated (dedup.minScrapeInterval on
+    # vmstorage/vmselect below), so they must add no replica-specific external
+    # label. Required anti-affinity keeps them on different nodes.
+    replicaCount: 2
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: vmagent
+            topologyKey: kubernetes.io/hostname
+    podDisruptionBudget:
+      maxUnavailable: 1
     resources:
       limits:
         memory: 512Mi
@@ -175,8 +189,7 @@ vmagent:
     # sync failure: ".spec.storage: field not declared in schema"). The
     # closest field, statefulStorage, switches vmagent from a Deployment to
     # a StatefulSet, which is a bigger behavioral change than intended just
-    # to cap ephemeral disk use - not worth it for this workload, so this is
-    # dropped rather than guess-substituted.
+    # to cap ephemeral disk use - not worth it for this workload.
 vmalert:
   spec:
     replicaCount: 1
@@ -186,37 +199,97 @@ vmalert:
       requests:
         cpu: 10m
         memory: 128Mi
+# Metrics storage runs in cluster mode so that losing any one node loses no
+# data and never stops ingestion or queries:
+#   vminsert (x2, stateless)  receives writes from both vmagents and replicates
+#                             each sample to both vmstorage pods
+#   vmstorage (x2, own PVCs)  holds the data (replicationFactor 2: each holds
+#                             a full copy)
+#   vmselect (x2, stateless)  answers queries (Grafana, vmalert, the UI) from
+#                             whichever vmstorage pods are up
+# Every component has required anti-affinity (one per node) and a PDB, so a
+# drain evicts one at a time. None is pinned to a node class: all can run on
+# the Pi 4Bs as well as the Pi 5s.
 vmsingle:
+  enabled: false
+vmcluster:
+  enabled: true
   spec:
-    extraArgs:
-      dedup.minScrapeInterval: 30s
-    # No nodeSelector: the PVC is Longhorn-backed (network-attached from any
-    # node), so vmsingle can schedule anywhere capacity allows. Longhorn
-    # replica *data* stays on the storage=true nodes regardless.
-    replicaCount: 1
-    # 1024Mi was fine for months, but confirmed live (OOMKilled, exitCode
-    # 137) it's no longer enough now that vmagent scrapes meaningfully more
-    # series than it used to - Longhorn's 59 metrics x 6 nodes and 4 redis
-    # exporters (blocky-cache/searxng-cache x2 pods each), all added the
-    # same day this started OOMKilling. Sized for an 8GB Pi 5; a 4GB
-    # Pi 4B can still fit it (requests == limits, so it's only placed where the
-    # full 2Gi is free), doubled rather than nudged.
-    resources:
-      limits:
-        memory: 2048Mi
-      requests:
-        cpu: 10m
-        memory: 2048Mi
-    # 48h -> 7d: confirmed live headroom before bumping (`kubectl exec
-    # deploy/vmsingle-... -- df -h`) - only ~1GB used of the 10Gi PVC after
-    # a full 48h retention window, and the storage=true nodes have ~227GB
-    # free each (`kubectl -n longhorn get nodes.longhorn.io`), so 7d (~3.5x
-    # the data) fits with ample room to spare - no PVC resize needed.
+    # The chart default is 1 month; the old single-node instance kept 7d.
     retentionPeriod: 7d
-    storage:
-      accessModes:
-        - ReadWriteOnce
+    replicationFactor: 2
+    vminsert:
+      replicaCount: 2
       resources:
+        limits:
+          memory: 256Mi
         requests:
-          storage: 10Gi
-      storageClassName: longhorn
+          cpu: 10m
+          memory: 256Mi
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: vminsert
+              topologyKey: kubernetes.io/hostname
+      podDisruptionBudget:
+        maxUnavailable: 1
+    vmselect:
+      replicaCount: 2
+      extraArgs:
+        # Same as vmstorage: collapses the two vmagents' duplicate samples.
+        dedup.minScrapeInterval: 30s
+      resources:
+        limits:
+          memory: 512Mi
+        requests:
+          cpu: 10m
+          memory: 512Mi
+      # The query cache is disposable, so no PVC (the chart default is a 2Gi
+      # one): a PVC would only make vmselect harder to move on a drain.
+      storage:
+        volumeClaimTemplate: null
+        emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: vmselect
+              topologyKey: kubernetes.io/hostname
+      podDisruptionBudget:
+        maxUnavailable: 1
+    vmstorage:
+      replicaCount: 2
+      extraArgs:
+        # The two vmagents scrape the same targets, so every sample arrives
+        # twice with slightly different timestamps; keep one per 30s interval.
+        dedup.minScrapeInterval: 30s
+      resources:
+        limits:
+          memory: 1Gi
+        requests:
+          cpu: 50m
+          memory: 1Gi
+      # Each vmstorage's data is its own Longhorn volume (default 2 Longhorn
+      # replicas, deliberately NOT 1: with 1, draining the storage=true node
+      # that holds it would be blocked by Longhorn's last-replica drain policy).
+      storage:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: longhorn
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 10Gi
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: vmstorage
+              topologyKey: kubernetes.io/hostname
+      podDisruptionBudget:
+        maxUnavailable: 1

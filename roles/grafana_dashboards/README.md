@@ -9,7 +9,7 @@ For each entry in `grafana_community_dashboards` (see `defaults/main.yml`):
 1. Downloads that dashboard's JSON from `https://grafana.com/api/dashboards/<id>/revisions/latest/download`.
 2. Substitutes its `${DS_XXX}` datasource placeholder(s) for this cluster's actual default datasource UID
    (looked up live via `GET /api/datasources` — currently `VictoriaMetrics`, the Prometheus-compatible
-   datasource pointed at `vmsingle`).
+   datasource pointed at `vmselect`).
 3. Posts the result to this Grafana's `POST /api/dashboards/db`, `overwrite: true` — safe to re-run, it just
    updates the same dashboards to whatever grafana.com currently serves for that ID.
 

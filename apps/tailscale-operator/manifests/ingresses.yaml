@@ -62,6 +62,26 @@ spec:
                 port:
                   number: 9093
 ---
+# The VM operator's vmselect Service is headless (ClusterIP: None), which a
+# Tailscale Ingress rejects, so this ordinary ClusterIP Service in front of
+# the same pods is what the Ingress below targets (same as alertmanager-ui).
+# The UI is at /select/0/vmui/ (Homepage links there).
+apiVersion: v1
+kind: Service
+metadata:
+  name: vmselect-ui
+  namespace: monitoring
+spec:
+  selector:
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/instance: vmks-victoria-metrics-k8s-stack
+    app.kubernetes.io/name: vmselect
+    managed-by: vm-operator
+  ports:
+    - name: http
+      port: 8481
+      targetPort: 8481
+---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -80,9 +100,9 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: vmsingle-vmks-victoria-metrics-k8s-stack
+                name: vmselect-ui
                 port:
-                  number: 8428
+                  number: 8481
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress

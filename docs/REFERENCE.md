@@ -626,12 +626,22 @@ Metrics for the whole cluster, retained for **7 days**. Namespace: `monitoring`.
 remaining job here is seeding the Grafana admin credentials Secret via the generic `k8s_secrets` role (see
 [Secrets bridge](#gitops-argo-cd) above for why that can't live in git).
 
-- **Metrics**: `victoria-metrics-k8s-stack` Helm chart — bundles the VictoriaMetrics operator, `vmsingle`
-  (metrics storage), `vmagent` (scraper, cluster-wide), `vmalert`, Alertmanager, kube-state-metrics,
+- **Metrics**: `victoria-metrics-k8s-stack` Helm chart — bundles the VictoriaMetrics operator, a
+  `vmcluster` (metrics storage, below), `vmagent` (scraper, cluster-wide), `vmalert`, Alertmanager, kube-state-metrics,
   node-exporter, and **Grafana** (bundled as part of this chart — there's no separate Grafana role).
-- Nothing here is pinned to a node. `vmsingle`'s 10Gi PVC is a Longhorn volume (network-attached, so the pod
-  can land on any node - on a 4GB Pi 4B too, since its 2Gi memory request is only satisfied where that much
-  is free), and Grafana, vmagent, vmalert, kube-state-metrics and node-exporter were never pinned.
+- **Cluster-mode storage** (so a node in maintenance never stops ingestion or queries): **2 `vminsert`**
+  (stateless, receive writes), **2 `vmstorage`** (each with its own 10Gi Longhorn PVC; `replicationFactor: 2`, so each
+  holds a full copy) and **2 `vmselect`** (stateless, serve queries; cache in an emptyDir), all behind a `VMCluster`
+  CR (`vmcluster` in `apps/victoria-metrics/values.yaml`; the single-node `vmsingle` is off). **2 `vmagent`s** scrape
+  every target independently; the duplicate samples are collapsed by `dedup.minScrapeInterval: 30s` on vmstorage and
+  vmselect. Every component has required anti-affinity (one per node) and a PDB (`maxUnavailable: 1`), so a drain
+  evicts one at a time and the other keeps serving. Retention is 7d. The `vmstorage` Longhorn volumes keep Longhorn's
+  default of 2 replicas on purpose: with 1, draining the `storage=true` node holding one would be blocked by
+  Longhorn's last-replica drain policy.
+- Nothing here is pinned to a node. Everything - including vmstorage, with its PVCs on Longhorn - can schedule on
+  a 4GB Pi 4B as well as a Pi 5 (vmstorage requests 1Gi, vmselect 512Mi, vminsert 256Mi, vmagent 512Mi, all of which
+  are only placed where that much is free), and Grafana, vmalert, kube-state-metrics and node-exporter were never
+  pinned.
 - **Grafana auth**: anonymous Admin access is enabled (`disable_login_form: true`) — visiting the UI drops
   you straight in with no login prompt. Reasonable for a single-user homelab already gated by kubeconfig
   access; the admin/password secret still exists underneath if you ever want to re-enable the login form.
@@ -662,9 +672,10 @@ etcd, Node Exporter Full, and all four VictoriaMetrics dashboards).
 ### Accessing Metrics Directly (optional)
 
 ```bash
-kubectl -n monitoring port-forward svc/vmsingle-vmks-victoria-metrics-k8s-stack 8428:8428
+kubectl -n monitoring port-forward svc/vmselect-vmks-victoria-metrics-k8s-stack 8481:8481
 ```
-VictoriaMetrics' own UI is at `http://localhost:8428/vmui/`; the raw PromQL-compatible API is at `/api/v1/query`.
+VictoriaMetrics' own UI is at `http://localhost:8481/select/0/vmui/`; the raw PromQL-compatible API is at
+`/select/0/prometheus/api/v1/query`. (Over Tailscale: `https://victoriametrics.<tailnet>.ts.net/select/0/vmui/`.)
 
 ## Logging (OpenSearch)
 
@@ -1474,6 +1485,7 @@ does **not** have the spare capacity for more than one node out at a time, so th
 | PgBouncer poolers (rw, ro) | 2 each on different nodes + PDB |
 | Longhorn | `nodeDrainPolicy: block-if-contains-last-replica`: a node can be drained while every volume has a second healthy replica; Longhorn refuses a second concurrent node. CSI controllers run 2 replicas |
 | Blocky (LAN DNS) | 1 replica: a drain reschedules it, ~10-30s gap in which LAN DNS is down (accepted; flip to 2 replicas with anti-affinity + a PDB to remove it). Updates start the new pod first (`RollingUpdate`, surge 1) and it is readiness-gated |
+| VictoriaMetrics (vminsert, vmstorage, vmselect, vmagent) | 2 of each on different nodes + PDBs; vmstorage holds a full copy per pod (`replicationFactor: 2`), vmagents scrape independently and are de-duplicated. Ingestion and queries continue with either node out |
 | Tailscale ingress proxies | 2, required anti-affinity + PDB |
 | Redis caches (3 clusters) | master/replica and the 3 sentinels each on different nodes, PDB `maxUnavailable: 1` (keeps sentinel quorum) |
 | GO Feature Flag relay proxy | 2 replicas on different nodes + PDB + readiness probe; rolling update starts the new pod first |
@@ -1482,7 +1494,7 @@ does **not** have the spare capacity for more than one node out at a time, so th
 
 **Accepted blips** (single replica by design; recover when the pod reschedules, typically under a minute or two):
 Blocky, LiteLLM, Grafana and Homepage, Open WebUI and WhoDB (RWO volume), SearXNG, Temporal (all services), OpenSearch and its Dashboards,
-VictoriaMetrics/VictoriaLogs/Alertmanager (vmagent and Vector buffer or retry), Argo CD, and the other
+VictoriaLogs/Alertmanager (Vector buffers or retries), vmalert, Argo CD, and the other
 operators. None are on a path that other workloads need to keep running.
 
 **Known gaps** (not yet addressed):
@@ -1579,7 +1591,7 @@ hostname shown there):
 | Homepage (links to everything below) | `https://home.<tailnet>.ts.net` |
 | Grafana | `https://grafana.<tailnet>.ts.net` |
 | Alertmanager | `https://alertmanager.<tailnet>.ts.net` |
-| VictoriaMetrics | `https://victoriametrics.<tailnet>.ts.net` |
+| VictoriaMetrics | `https://victoriametrics.<tailnet>.ts.net/select/0/vmui/` |
 | OpenSearch Dashboards | `https://opensearch.<tailnet>.ts.net` |
 | Longhorn | `https://longhorn.<tailnet>.ts.net` |
 | Blocky (`/metrics`) | `https://blocky.<tailnet>.ts.net` |

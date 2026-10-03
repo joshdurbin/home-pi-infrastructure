@@ -253,7 +253,7 @@ Once Tailscale is set up and synced:
 | Argo CD | `https://argocd.<tailnet>.ts.net` |
 | Grafana | `https://grafana.<tailnet>.ts.net` |
 | Alertmanager | `https://alertmanager.<tailnet>.ts.net` |
-| VictoriaMetrics | `https://victoriametrics.<tailnet>.ts.net` |
+| VictoriaMetrics | `https://victoriametrics.<tailnet>.ts.net/select/0/vmui/` |
 | OpenSearch Dashboards | `https://opensearch.<tailnet>.ts.net` |
 | Longhorn | `https://longhorn.<tailnet>.ts.net` |
 | SearXNG | `https://search.<tailnet>.ts.net` |
