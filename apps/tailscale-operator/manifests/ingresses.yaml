@@ -316,3 +316,33 @@ spec:
                 name: litellm
                 port:
                   number: 4000
+---
+# GO Feature Flag relay proxy - https://flags.<tailnet>.ts.net. The Swagger UI
+# (an evaluation test console) is at /swagger/index.html; the whole API is
+# reachable on the tailnet and every call still needs an X-API-Key. Other
+# services use the in-cluster Service instead
+# (go-feature-flag.go-feature-flag.svc.cluster.local:1031). Service name
+# "go-feature-flag" and port 1031 confirmed via a local `helm template` render
+# of apps/go-feature-flag.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: flags
+  namespace: go-feature-flag
+  annotations:
+    tailscale.com/proxy-group: ingress-proxies
+spec:
+  ingressClassName: tailscale
+  tls:
+    - hosts: [flags]
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: go-feature-flag
+                port:
+                  number: 1031
+

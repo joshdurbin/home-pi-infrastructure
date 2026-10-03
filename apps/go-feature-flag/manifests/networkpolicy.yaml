@@ -1,0 +1,30 @@
+# Egress-only (ingress - Tailscale, other services, vmagent - is unaffected and
+# allowed by default): DNS, and Postgres (the rw pooler, 5432) in the postgres
+# namespace. Nothing else: the relay proxy talks to no external service.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: go-feature-flag-egress
+  namespace: go-feature-flag
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: postgres
+      ports:
+        - protocol: TCP
+          port: 5432

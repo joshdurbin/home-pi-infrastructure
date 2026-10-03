@@ -1,0 +1,37 @@
+# GO Feature Flag's own Postgres user and database (apps/go-feature-flag/),
+# via CloudNativePG's DatabaseRole/Database CRDs - same pattern as
+# open-webui-database.yaml and litellm-database.yaml beside this file.
+#
+# The role owns its database, which it needs: the relay proxy reads the
+# go_feature_flag table, a schema Job creates that table (it is not
+# auto-created), and WhoDB connects as this role through the rw pooler so
+# flags can be edited in a UI.
+#
+# The password Secret (goff-db-credentials) is seeded by the k8s_secrets Ansible
+# role from the Vault-encrypted goff_db_password - here in basic-auth shape for
+# CNPG, and again in the go-feature-flag namespace (Secrets are namespace-scoped).
+apiVersion: postgresql.cnpg.io/v1
+kind: DatabaseRole
+metadata:
+  name: goff
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  name: goff
+  ensure: present
+  login: true
+  passwordSecret:
+    name: goff-db-credentials
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: go-feature-flag
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  name: go_feature_flag
+  owner: goff
+  ensure: present

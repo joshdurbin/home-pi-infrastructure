@@ -67,6 +67,9 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
    litellm_master_key: "sk-<output of: openssl rand -hex 24>"   # must start with sk-
    litellm_salt_key: "sk-<output of: openssl rand -hex 24>"     # never change once set
    litellm_db_password: "<output of: openssl rand -hex 32>"
+   goff_db_password: "<output of: openssl rand -hex 32>"
+   goff_admin_api_key: "<output of: openssl rand -hex 32>"
+   goff_evaluation_api_key: "<output of: openssl rand -hex 32>"
    openwebui_litellm_key: "sk-<output of: openssl rand -hex 24>"  # a LiteLLM virtual key, see docs/REFERENCE.md#litellm
    # optional - LLM provider keys for LiteLLM:
    # anthropic_api_key: "sk-ant-..."
@@ -135,6 +138,7 @@ Once Tailscale is set up and synced:
 | Open WebUI | `https://chat.<tailnet>.ts.net` |
 | WhoDB | `https://whodb.<tailnet>.ts.net` |
 | LiteLLM | `https://litellm.<tailnet>.ts.net/ui` |
+| GO Feature Flag (Swagger) | `https://flags.<tailnet>.ts.net/swagger/index.html` |
 
 (Replace `<tailnet>` with your tailnet's `.ts.net` domain — run `tailscale status` on any connected device
 to find it.)

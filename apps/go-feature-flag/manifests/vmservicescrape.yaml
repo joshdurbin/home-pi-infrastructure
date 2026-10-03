@@ -1,0 +1,19 @@
+# Scrapes the relay proxy's Prometheus metrics (evaluations, latency, flag
+# changes ...), served at /metrics on the monitoring port (1032, set by
+# server.monitoringPort in roles/k8s_secrets/templates/go-feature-flag-config.yaml.j2)
+# - separate from the API port, so no API key is needed. Matched on the
+# Service's app-template label, same as apps/searxng/manifests/vmservicescrape.yaml.
+# Each of the 2 replicas is scraped as its own target.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: go-feature-flag
+  namespace: go-feature-flag
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/service: go-feature-flag
+  endpoints:
+    - port: monitoring
+      path: /metrics
+      scheme: http

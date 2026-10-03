@@ -1,0 +1,12 @@
+# Keep at least one relay proxy answering through a drain (values.yaml: 2
+# replicas on different nodes, readiness-gated).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: go-feature-flag
+  namespace: go-feature-flag
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: go-feature-flag

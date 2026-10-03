@@ -30,6 +30,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [Vulnerability Scanning (Trivy Operator)](#vulnerability-scanning-trivy-operator)
 - [Open WebUI](#open-webui)
 - [LiteLLM](#litellm)
+- [GO Feature Flag](#go-feature-flag)
 - [Availability and node maintenance](#availability-and-node-maintenance)
 - [Exposing UIs via Tailscale Operator](#exposing-uis-via-tailscale-operator)
 - [Tailscale Integration (Optional)](#tailscale-integration-optional)
@@ -1330,6 +1331,70 @@ only seed Open WebUI's connection on first start; afterwards edit it in Admin Se
 
 **Access it**: `https://litellm.<tailnet>.ts.net/ui`.
 
+## GO Feature Flag
+
+[GO Feature Flag](https://github.com/thomaspoignant/go-feature-flag) relay proxy (`apps/go-feature-flag/`, namespace
+`go-feature-flag`): an HTTP API that evaluates feature flags, so other services ask it instead of embedding flag logic.
+Image `gofeatureflag/go-feature-flag:v1.56.0` (ARM64), run through the generic `bjw-s-labs/app-template` chart rather
+than the official `relay-proxy` chart: that chart builds its config from a ConfigMap, but this config embeds the
+database password and API keys, so it is rendered by Ansible into a Secret and mounted instead
+(`roles/k8s_secrets/templates/go-feature-flag-config.yaml.j2`). Env-var overrides for flag sets/retrievers are undocumented,
+so the chart can't carry the secrets any other way.
+
+- **Storage**: Postgres. Database `go_feature_flag`, role `goff` (`apps/postgres/manifests/go-feature-flag-database.yaml`),
+  reached through `postgres-pooler-rw`. Flags are rows in the `go_feature_flag` table (`flag_name`, `flagset`, `config`
+  JSONB). The relay proxy reads but doesn't create the table, so a PreSync Job (`manifests/schema-job.yaml`) creates it
+  (idempotent). The relay proxy polls every 10 s, so an edited row is live within that long;
+  `POST /admin/v1/retriever/refresh` (admin key) forces an immediate re-poll.
+- **No Redis**: GO Feature Flag has no cache feature (Redis is only supported as a flag-storage *retriever*), and flags are
+  in Postgres, so a Redis cache would have nothing to attach to. None is provisioned.
+- **Availability**: 2 replicas on different nodes with a PDB (a tiny Go service others will depend on); updates start the
+  new pod first. Flip `replicas` to 1 in `values.yaml` if memory ever matters more.
+- **Logs**: nothing to configure. The relay proxy logs JSON to stdout (`logFormat: json`), and Vector tails every pod, so it
+  lands in both OpenSearch and VictoriaLogs like everything else. Evaluation events are also emitted as log lines (the `log`
+  exporter is on by default).
+- **Metrics**: Prometheus `/metrics` on the monitoring port (1032), scraped by a `VMServiceScrape`
+  (`manifests/vmservicescrape.yaml`). No API key needed on that port.
+- **Egress NetworkPolicy**: DNS and Postgres (5432) only.
+
+**Secrets** (Vault variables in `group_vars/all/main.yaml`, seeded by `k8s_secrets` via `make deploy-secrets`):
+| Variable | Used for |
+|---|---|
+| `goff_db_password` | the `goff` Postgres role (also the writable WhoDB connection) |
+| `goff_admin_api_key` | `X-API-Key` for `/admin/v1/*` (retriever refresh) |
+| `goff_evaluation_api_key` | `X-API-Key` that consumers send to evaluate flags in flag set `main` |
+
+Generate each with `openssl rand -hex 32`.
+
+**Using it from another service** (none exist yet). In-cluster, no hostname or TLS needed:
+`http://go-feature-flag.go-feature-flag.svc.cluster.local:1031`. Ingress to the namespace is open (the cluster's
+NetworkPolicies are egress-only); the API key is the gate, and the consuming namespace's own egress policy has to allow
+port 1031 to `go-feature-flag`. Evaluate a flag:
+```bash
+curl -s -X POST http://go-feature-flag.go-feature-flag.svc.cluster.local:1031/v1/feature/new-checkout/eval \
+  -H "X-API-Key: <goff_evaluation_api_key>" -H 'Content-Type: application/json' \
+  -d '{"evaluationContext":{"key":"user-1"},"defaultValue":false}'
+```
+The API also speaks [OFREP](https://openfeature.dev/specification/appendix-c) (`/ofrep/v1/evaluate/flags`) for OpenFeature
+clients. A service that needs its own isolated flags gets its own flag set (and key) added in the config template.
+
+**Authoring flags.** In this release (v1.56.0) the relay proxy has **no flag create/update/delete API** (the PR adding one is
+still unmerged), and the "UI" is Swagger - an evaluation console only. Flags are edited as rows in Postgres. WhoDB has a
+writable **`go_feature_flag (writable)`** connection (the `goff` role through the primary): open the `go_feature_flag`
+table and add or edit rows, with `flagset` = `main` and `config` = the flag's JSON. Or with SQL:
+```sql
+INSERT INTO go_feature_flag (flag_name, flagset, config) VALUES
+  ('new-checkout', 'main', '{"variations":{"on":true,"off":false},"defaultRule":{"variation":"off"}}');
+```
+`config` is the flag object from GO Feature Flag's [flag format](https://gofeatureflag.org/docs/configure_flag/flag_format)
+(variations, targeting, defaultRule, ...). Test a flag in the Swagger UI, then check it in the metrics.
+
+**Access**: `https://flags.<tailnet>.ts.net/swagger/index.html` (Swagger / evaluation console; also on Homepage). The whole API
+is on the tailnet at `https://flags.<tailnet>.ts.net`.
+
+**First-time order**: add the three Vault variables -> `make deploy-secrets` -> `make deploy-argocd` (allows the new
+namespace in the Argo CD project) -> push. The Argo CD app then creates the table and starts the relay proxy.
+
 ## Availability and node maintenance
 
 **Goal**: mirror a managed cloud cluster. Any *one* node can be drained and rebooted with a plain
@@ -1359,6 +1424,7 @@ does **not** have the spare capacity for more than one node out at a time, so th
 | Blocky (LAN DNS) | 1 replica: a drain reschedules it, ~10-30s gap in which LAN DNS is down (accepted; flip to 2 replicas with anti-affinity + a PDB to remove it). Updates start the new pod first (`RollingUpdate`, surge 1) and it is readiness-gated |
 | Tailscale ingress proxies | 2, required anti-affinity + PDB |
 | Redis caches (3 clusters) | master/replica and the 3 sentinels each on different nodes, PDB `maxUnavailable: 1` (keeps sentinel quorum) |
+| GO Feature Flag relay proxy | 2 replicas on different nodes + PDB + readiness probe; rolling update starts the new pod first |
 | LiteLLM, Grafana, Homepage | 1 replica each (stateless - state is in Postgres/Redis); a drain reschedules them, gaps of roughly 1-2 min, 30-90s and 10-30s (Pi start-up, plus an image pull on a node that hasn't run them) |
 
 **Accepted blips** (single replica by design; recover when the pod reschedules, typically under a minute or two):
@@ -1470,6 +1536,7 @@ hostname shown there):
 | Open WebUI | `https://chat.<tailnet>.ts.net` |
 | WhoDB | `https://whodb.<tailnet>.ts.net` |
 | LiteLLM | `https://litellm.<tailnet>.ts.net/ui` |
+| GO Feature Flag (Swagger) | `https://flags.<tailnet>.ts.net/swagger/index.html` |
 
 Confirmed working from a phone with the Tailscale app active. If you test from a **Mac terminal or
 Safari** and it doesn't resolve, see the Troubleshooting note below before assuming the deployment is

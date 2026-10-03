@@ -1,0 +1,111 @@
+# GO Feature Flag relay proxy (https://github.com/thomaspoignant/go-feature-flag):
+# an HTTP API that evaluates feature flags, so other services ask it instead of
+# each embedding flag logic. Flags are rows in Postgres (the `go_feature_flag`
+# table, database go_feature_flag - see apps/postgres/manifests/
+# go-feature-flag-database.yaml), polled by the relay proxy.
+#
+# Other services reach it in-cluster at
+#   http://go-feature-flag.go-feature-flag.svc.cluster.local:1031
+# (ingress to this namespace is open; every request needs an `X-API-Key`).
+#
+# No Redis: GO Feature Flag has no cache feature (Redis is only a flag-storage
+# *retriever*), so a cache would have nothing to attach to.
+controllers:
+  main:
+    # Other services will depend on this, and it is tiny (a Go binary, ~30-60Mi),
+    # so run 2 on different nodes: a drain takes one away while the other keeps
+    # answering. Flip to 1 if memory ever matters more than that.
+    replicas: 2
+    # app-template defaults to Recreate (stop the old pod, then start the new
+    # one), which would drop flag evaluation on every update. Start the new pod
+    # first and only then stop the old one.
+    strategy: RollingUpdate
+    rollingUpdate:
+      unavailable: 0
+      surge: 1
+    pod:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: go-feature-flag
+              topologyKey: kubernetes.io/hostname
+      # The image is distroless/static and runs fine as non-root (65532);
+      # fsGroup makes the mounted config Secret readable by it.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+    containers:
+      main:
+        image:
+          repository: gofeatureflag/go-feature-flag
+          tag: v1.56.0
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+        # Distroless: no shell, so HTTP probes only. /health is served on the
+        # monitoring port (server.monitoringPort in the config template).
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /health
+                port: 1032
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 6
+          readiness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /health
+                port: 1032
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 3
+          startup:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /health
+                port: 1032
+              periodSeconds: 5
+              failureThreshold: 30
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            memory: 128Mi
+
+service:
+  main:
+    controller: main
+    ports:
+      http:
+        port: 1031
+      monitoring:
+        port: 1032
+
+persistence:
+  # goff-proxy.yaml, rendered by Ansible into this Secret (it holds the DB
+  # password and API keys) - see roles/k8s_secrets/templates/
+  # go-feature-flag-config.yaml.j2 and group_vars/all/cluster_secrets.yaml.
+  config:
+    enabled: true
+    type: secret
+    name: goff-config
+    globalMounts:
+      - path: /goff
+        readOnly: true

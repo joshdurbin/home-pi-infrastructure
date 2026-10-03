@@ -1,0 +1,61 @@
+# GO Feature Flag relay-proxy config (apps/go-feature-flag/), rendered by
+# Ansible into the `goff-config` Secret and mounted at /goff/goff-proxy.yaml
+# (one of the three default locations the relay proxy searches). Rendered
+# here, not in apps/, because it carries the database password and the API
+# keys; and rendered as a whole file because env-var overrides for arrays of
+# objects (flagSets, retrievers) are undocumented - same reasoning as
+# searxng-config.yaml.j2.
+server:
+  mode: http
+  port: 1031
+  # Health and /metrics are served on their own port, so liveness/readiness
+  # probes and the Prometheus scrape never need an API key and API traffic
+  # (1031) and monitoring traffic stay separate.
+  monitoringPort: 1032
+
+# json (the default) - one JSON object per line, which Vector's parser
+# remap picks up and ships to OpenSearch and VictoriaLogs like every other app.
+logLevel: info
+logFormat: json
+
+# Milliseconds. Flags live in Postgres and are polled, so an edit to a row is
+# live within this long. POST /admin/v1/retriever/refresh (admin key) forces
+# an immediate re-poll.
+pollingInterval: 10000
+
+# Fail fast (and crash-loop, visibly) if Postgres can't be read at start-up
+# instead of serving an empty flag set that makes every consumer fall back to
+# its defaults without anyone noticing.
+startWithRetrieverError: false
+
+# Swagger UI at /swagger/index.html. In this release it is an EVALUATION test
+# console (/v1/feature/{flag}/eval, /v1/allflags ...) - there is no flag
+# create/update/delete API (that PR is unmerged), so flags are authored by
+# editing rows in the go_feature_flag table (see docs/REFERENCE.md).
+swagger:
+  enabled: true
+
+# Needed for /admin/v1/* (retriever refresh). Leaving it empty would make
+# those endpoints unreachable.
+authorizedKeys:
+  admin:
+    - "{{ goff_admin_api_key }}"
+
+# Flag-set mode: each API key is bound to a flag set, and the Postgres
+# retriever filters the table's `flagset` column by this name - so the rows'
+# `flagset` value must be exactly "main". A consumer service that needs its own
+# isolated flags gets its own flag set here, with its own key.
+flagSets:
+  - name: main
+    apiKeys:
+      - "{{ goff_evaluation_api_key }}"
+    retrievers:
+      - kind: postgresql
+        # The primary, through the PgBouncer rw pooler (session mode), as the
+        # `goff` role that owns this database. The password is embedded in a URI,
+        # so it is percent-encoded - including `/`, which the urlencode filter
+        # leaves alone but which would end the userinfo part of the URI.
+        uri: "postgres://goff:{{ goff_db_password | urlencode | replace('/', '%2F') }}@postgres-pooler-rw.postgres.svc.cluster.local:5432/go_feature_flag?sslmode=require"
+        table: go_feature_flag
+    # (The `log` exporter - evaluation events as JSON log lines - is on by
+    # default in the relay proxy, so nothing is configured for it here.)

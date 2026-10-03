@@ -1,0 +1,47 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: go-feature-flag
+  namespace: argocd
+  annotations:
+    # Reads flags from the Postgres cluster (its Database/DatabaseRole are CRs
+    # in apps/postgres, wave 2) and its PreSync schema Job retries until they
+    # exist. No PVC or CRDs of its own, so wave 2 like every other app.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: go-feature-flag
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  sources:
+    # The generic app-template chart rather than the official relay-proxy chart
+    # (charts.gofeatureflag.org): that chart takes its config from a ConfigMap
+    # built from values, and this config embeds the database password and API
+    # keys, so it has to come from an Ansible-rendered Secret mounted instead.
+    # Env-var overrides for flagSets/retrievers are undocumented, so the chart
+    # can't carry the secrets any other way. Same trade-off as SearXNG.
+    - repoURL: https://bjw-s-labs.github.io/helm-charts
+      chart: app-template
+      targetRevision: 5.2.1
+      helm:
+        releaseName: go-feature-flag
+        valueFiles:
+          - $values/apps/go-feature-flag/values.yaml
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      ref: values
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      path: apps/go-feature-flag/manifests
