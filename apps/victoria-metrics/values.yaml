@@ -220,12 +220,14 @@ vmcluster:
     replicationFactor: 2
     vminsert:
       replicaCount: 2
+      # 256Mi was OOMKilled (exitCode 137) right after the first deploy, while
+      # the two vmagents flushed their buffered backlog (~10MB batches) at it.
       resources:
         limits:
-          memory: 256Mi
+          memory: 512Mi
         requests:
           cpu: 10m
-          memory: 256Mi
+          memory: 512Mi
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:

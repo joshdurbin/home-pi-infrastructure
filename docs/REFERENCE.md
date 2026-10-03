@@ -639,7 +639,7 @@ remaining job here is seeding the Grafana admin credentials Secret via the gener
   default of 2 replicas on purpose: with 1, draining the `storage=true` node holding one would be blocked by
   Longhorn's last-replica drain policy.
 - Nothing here is pinned to a node. Everything - including vmstorage, with its PVCs on Longhorn - can schedule on
-  a 4GB Pi 4B as well as a Pi 5 (vmstorage requests 1Gi, vmselect 512Mi, vminsert 256Mi, vmagent 512Mi, all of which
+  a 4GB Pi 4B as well as a Pi 5 (vmstorage requests 1Gi, vmselect 512Mi, vminsert 512Mi, vmagent 512Mi, all of which
   are only placed where that much is free), and Grafana, vmalert, kube-state-metrics and node-exporter were never
   pinned.
 - **Grafana auth**: anonymous Admin access is enabled (`disable_login_form: true`) — visiting the UI drops
