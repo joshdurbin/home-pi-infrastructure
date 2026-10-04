@@ -1,18 +1,34 @@
 ---
-- name: Find apt source lists with Helm Buildkite repository
+# The Helm role used to install /usr/share/keyrings/helm.gpg; it now uses
+# helm.asc. Any apt source still naming helm.gpg breaks every apt call
+# ("Conflicting values set for option Signed-By" next to the helm.asc entry, or
+# a missing-keyring error on its own), so strip them before anything uses apt.
+- name: Find apt source files that still reference helm.gpg
   ansible.builtin.find:
     paths: /etc/apt/sources.list.d
-    patterns: '*.list'
-    contains: 'packages\.buildkite\.com/helm-linux/helm-debian/any/'
-  register: helm_buildkite_source_lists
+    patterns:
+      - '*.list'
+      - '*.sources'
+    # find's `contains` is anchored at the start of each line (re.match), so
+    # the pattern needs the leading .*
+    contains: '.*helm\.gpg.*'
+  register: helm_gpg_source_files
   changed_when: false
 
-- name: Remove legacy Helm apt source entries using dearmored key
+- name: Remove helm.gpg entries from one-line .list sources
   ansible.builtin.lineinfile:
     path: "{{ item.path }}"
-    regexp: '^deb\s+\[.*signed-by=/usr/share/keyrings/helm\.gpg.*\]\s+https://packages\.buildkite\.com/helm-linux/helm-debian/any/\s+any\s+main\s*$'
+    regexp: 'helm\.gpg'
     state: absent
-  loop: "{{ helm_buildkite_source_lists.files }}"
+  loop: "{{ helm_gpg_source_files.files | selectattr('path', 'search', '\\.list$') | list }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Remove deb822 .sources files that reference helm.gpg
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ helm_gpg_source_files.files | selectattr('path', 'search', '\\.sources$') | list }}"
   loop_control:
     label: "{{ item.path }}"
 
@@ -20,3 +36,9 @@
   ansible.builtin.file:
     path: /usr/share/keyrings/helm.gpg
     state: absent
+
+- name: Fail early, with the file names, if apt still references helm.gpg
+  ansible.builtin.command: grep -rls 'helm\.gpg' /etc/apt
+  register: helm_gpg_leftover
+  changed_when: false
+  failed_when: helm_gpg_leftover.stdout | length > 0

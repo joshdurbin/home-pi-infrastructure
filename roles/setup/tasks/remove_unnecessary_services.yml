@@ -6,11 +6,20 @@
   tags:
     - remove_services
 
+- name: gather service facts
+  ansible.builtin.service_facts:
+  tags:
+    - remove_services
+
 - name: disable avahi-daemon
   ansible.builtin.systemd:
     name: avahi-daemon.service
     state: stopped
     enabled: false
-  ignore_errors: true
+  when:
+    - "'avahi-daemon.service' in ansible_facts.services"
+    - >-
+      ansible_facts.services['avahi-daemon.service'].state == 'running'
+      or ansible_facts.services['avahi-daemon.service'].status == 'enabled'
   tags:
     - remove_services

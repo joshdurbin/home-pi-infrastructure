@@ -1,25 +1,24 @@
 ---
-- name: disable wpa supplicant
-  ansible.builtin.systemd:
-    name: wpa_supplicant
-    state: stopped
-    enabled: false
+# Only touch units that exist and are running or enabled, so absent units
+# (hciuart is not present on Debian trixie) neither fail nor report "changed".
+- name: gather service facts
+  ansible.builtin.service_facts:
   tags:
     - kill_radios
 
-- name: disable bluetooth
+- name: disable radio services
   ansible.builtin.systemd:
-    name: bluetooth
+    name: "{{ item }}.service"
     state: stopped
     enabled: false
-  tags:
-    - kill_radios
-
-- name: disable hciuart
-  ansible.builtin.systemd:
-    name: hciuart
-    state: stopped
-    enabled: false
-  ignore_errors: true
+  loop:
+    - wpa_supplicant
+    - bluetooth
+    - hciuart
+  when:
+    - (item ~ '.service') in ansible_facts.services
+    - >-
+      ansible_facts.services[item ~ '.service'].state == 'running'
+      or ansible_facts.services[item ~ '.service'].status == 'enabled'
   tags:
     - kill_radios
