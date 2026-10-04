@@ -28,6 +28,8 @@ cgroup_memory=1 cgroup_enable=memory
 
 # Pi 5 only
 dtoverlay=nospi10
+# PCIe x1 link at Gen 3 (8GT/s); the Pi 5 default is Gen 2 (officially unsupported, but widely stable)
+dtparam=pciex1_gen=3
 # Overclock (stock 2400MHz), no voltage change - see roles/setup/README.md
 arm_freq=2800
 {% elif board_model == 'pi4' %}

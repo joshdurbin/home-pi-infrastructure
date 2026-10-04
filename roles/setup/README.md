@@ -95,6 +95,10 @@ hostname — see `templates/config.txt.j2`, rendered by `tasks/config_txt.yml`):
   `vcgencmd get_throttled` under load after the first node reboots; if unstable, add `over_voltage_delta=`
   (microvolts, e.g. `50000`) or step back to 2600.
 
+- **Pi 5 PCIe**: `dtparam=pciex1_gen=3` (default is Gen 2). Gen 3 is outside the official spec, so check
+  `dmesg | grep -i pcie` and `lspci -vv` (LnkSta) after the first node reboots, and watch the NVMe/HAT for errors;
+  remove the line if the link is unstable.
+
 To check a real board's revision before assuming any documented overclock step applies to it:
 `cat /proc/cpuinfo | grep Revision` (cross-reference against the
 [official revision codes](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#raspberry-pi-revision-codes)).

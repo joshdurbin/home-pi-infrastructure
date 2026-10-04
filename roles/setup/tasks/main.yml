@@ -1,4 +1,7 @@
 ---
+- name: repair stale apt source configuration
+  ansible.builtin.include_tasks: repair_apt_sources.yml
+
 - name: include config.txt (per-board boot config) tasks
   ansible.builtin.include_tasks: config_txt.yml
 

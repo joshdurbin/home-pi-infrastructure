@@ -1,0 +1,22 @@
+---
+- name: Find apt source lists with Helm Buildkite repository
+  ansible.builtin.find:
+    paths: /etc/apt/sources.list.d
+    patterns: '*.list'
+    contains: 'packages\.buildkite\.com/helm-linux/helm-debian/any/'
+  register: helm_buildkite_source_lists
+  changed_when: false
+
+- name: Remove legacy Helm apt source entries using dearmored key
+  ansible.builtin.lineinfile:
+    path: "{{ item.path }}"
+    regexp: '^deb\s+\[.*signed-by=/usr/share/keyrings/helm\.gpg.*\]\s+https://packages\.buildkite\.com/helm-linux/helm-debian/any/\s+any\s+main\s*$'
+    state: absent
+  loop: "{{ helm_buildkite_source_lists.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Remove legacy dearmored Helm key
+  ansible.builtin.file:
+    path: /usr/share/keyrings/helm.gpg
+    state: absent
