@@ -665,8 +665,7 @@ Pre-configured datasources (all provisioned automatically): **VictoriaMetrics** 
 and native), **Alertmanager** and **VictoriaLogs** (logs are dual-shipped to VictoriaLogs and OpenSearch; see
 [Logging](#logging-opensearch) below).
 
-Dashboards can be imported from grafana.com via `roles/grafana_dashboards/` (`ansible-playbook site.yml -i
-inventory.dist --tags grafana`) — see that role's own README for what's included and why, and for the
+Dashboards can be imported from grafana.com via `roles/grafana_dashboards/` (`make deploy-dashboards`; it is not part of `make deploy`) — see that role's own README for what's included and why, and for the
 handful already provisioned automatically by the chart itself (Kubernetes cluster/node views, CoreDNS,
 etcd, Node Exporter Full, and all four VictoriaMetrics dashboards).
 

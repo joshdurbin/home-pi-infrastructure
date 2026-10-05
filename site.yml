@@ -115,9 +115,12 @@
 # delegated per-task. Needs apps/victoria-metrics already synced by Argo CD
 # (Grafana pod Ready) and the control host on the tailnet with working
 # MagicDNS. See roles/grafana_dashboards/README.md.
+#
+# Tagged `never`: skipped by a plain `make deploy` (it would fail on a freshly
+# bootstrapped cluster where Grafana isn't up yet). Run with `make deploy-dashboards`.
 - name: Import community Grafana dashboards
   hosts: localhost
   gather_facts: false
   roles:
     - grafana_dashboards
-  tags: [grafana, dashboards]
+  tags: [never, grafana, dashboards]

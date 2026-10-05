@@ -1,0 +1,59 @@
+---
+# DESTRUCTIVE: removes k3s and the Longhorn data directory from every node.
+# Run via `make destroy-cluster`. Prompts for confirmation first.
+#
+# Agents are uninstalled before the servers so they don't churn against a
+# control plane that is going away. After this, `make deploy` bootstraps a
+# fresh cluster.
+- name: Confirm cluster destruction
+  hosts: localhost
+  gather_facts: false
+  vars_prompt:
+    - name: destroy_confirm
+      prompt: "This DELETES the k3s cluster (etcd) and /var/lib/longhorn on ALL nodes. Type 'destroy' to continue"
+      private: false
+  tasks:
+    - name: Abort unless confirmed
+      ansible.builtin.assert:
+        that: destroy_confirm == 'destroy'
+        fail_msg: Not confirmed, nothing was changed.
+
+- name: Uninstall k3s agent on the non-server nodes
+  hosts: k3s_cluster:!server
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check for the agent uninstall script
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s-agent-uninstall.sh
+      register: destroy_agent_script
+
+    - name: Run the agent uninstall script
+      ansible.builtin.command: /usr/local/bin/k3s-agent-uninstall.sh
+      when: destroy_agent_script.stat.exists
+      changed_when: true
+
+- name: Uninstall k3s on the server nodes
+  hosts: server
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check for the server uninstall script
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s-uninstall.sh
+      register: destroy_server_script
+
+    - name: Run the server uninstall script
+      ansible.builtin.command: /usr/local/bin/k3s-uninstall.sh
+      when: destroy_server_script.stat.exists
+      changed_when: true
+
+- name: Remove Longhorn data from every node
+  hosts: k3s_cluster
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Remove the Longhorn data directory
+      ansible.builtin.file:
+        path: /var/lib/longhorn
+        state: absent

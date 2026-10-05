@@ -59,7 +59,7 @@ their IDs here once that scrape config exists.
 ## Usage
 
 ```bash
-ansible-playbook site.yml -i inventory.dist --tags grafana
+make deploy-dashboards   # same as: ansible-playbook site.yml -i inventory.dist --tags dashboards
 ```
 
 Runs from the Ansible control host (`hosts: localhost` — no Pi/kubectl access needed, this is pure HTTP),

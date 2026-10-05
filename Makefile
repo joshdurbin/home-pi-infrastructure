@@ -1,4 +1,4 @@
-.PHONY: help install deploy deploy-system deploy-k3s deploy-users deploy-secrets deploy-argocd verify logs clean status syntax-check lint
+.PHONY: help install deploy deploy-system deploy-k3s deploy-users deploy-secrets deploy-argocd deploy-dashboards destroy-cluster verify logs clean status syntax-check lint
 
 INVENTORY := inventory.dist
 VAULT_PASS := --ask-vault-pass
@@ -17,6 +17,10 @@ help:
 	@echo "  make deploy-users         Deploy only user management"
 	@echo "  make deploy-secrets       Seed cluster Secrets/ConfigMaps only"
 	@echo "  make deploy-argocd        Bootstrap Argo CD only"
+	@echo "  make deploy-dashboards    Import Grafana dashboards (not part of make deploy)"
+	@echo ""
+	@echo "Destruction:"
+	@echo "  make destroy-cluster      WIPE k3s + Longhorn data on every node (asks to confirm)"
 	@echo ""
 	@echo "Verification & Monitoring:"
 	@echo "  make verify               Verify cluster health"
@@ -56,6 +60,13 @@ deploy-secrets:
 deploy-argocd:
 	@echo "Bootstrapping Argo CD only..."
 	ansible-playbook site.yml -i $(INVENTORY) $(VAULT_PASS) --tags helm,argocd
+
+deploy-dashboards:
+	@echo "Importing Grafana dashboards (needs Grafana up and the control host on the tailnet)..."
+	ansible-playbook site.yml -i $(INVENTORY) $(VAULT_PASS) --tags dashboards
+
+destroy-cluster:
+	ansible-playbook destroy.yml -i $(INVENTORY)
 
 verify:
 	@echo "Verifying cluster health..."

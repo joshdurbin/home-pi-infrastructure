@@ -159,6 +159,8 @@ this repo's `apps/` directory. See [docs/REFERENCE.md](docs/REFERENCE.md) for wh
 | `make deploy-users` | User/SSH management only |
 | `make deploy-secrets` | Seed cluster Secrets/ConfigMaps only |
 | `make deploy-argocd` | Bootstrap Argo CD only |
+| `make deploy-dashboards` | Import Grafana dashboards (needs a running Grafana; not part of `make deploy`) |
+| `make destroy-cluster` | **Destructive.** Uninstall k3s on every node and remove `/var/lib/longhorn` (asks to confirm) |
 | `make verify` | Node health + Argo CD Application status |
 | `make status` | Node status + Argo CD Application status |
 | `make logs` | Tail k3s logs from the first server |
