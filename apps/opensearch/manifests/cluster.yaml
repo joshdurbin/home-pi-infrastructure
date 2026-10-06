@@ -188,7 +188,7 @@ spec:
     # nodes now for that hardware reason, not the disk-quality one this
     # comment used to be about.
     - component: data
-      replicas: 1
+      replicas: 2
       # cluster_manager added alongside data - see the client pool's own
       # comment for why. Two permanent manager-eligible nodes instead of
       # one means the cluster can always re-elect between them, rather than
