@@ -156,12 +156,12 @@ victoria-metrics-operator:
       memory: 128Mi
 vmagent:
   spec:
-    # Two vmagents scrape every target independently, so draining either one's
-    # node loses nothing: the other keeps scraping. Both write to vminsert and
-    # the identical samples are de-duplicated (dedup.minScrapeInterval on
-    # vmstorage/vmselect below), so they must add no replica-specific external
-    # label. Required anti-affinity keeps them on different nodes.
-    replicaCount: 2
+    # One vmagent. With 2, each scrapes every target independently (draining
+    # either node loses nothing) and the identical samples are de-duplicated
+    # (dedup.minScrapeInterval on vmstorage/vmselect below), so they must add
+    # no replica-specific external label. Required anti-affinity keeps them on
+    # different nodes.
+    replicaCount: 1
     affinity:
       podAntiAffinity:
         requiredDuringSchedulingIgnoredDuringExecution:
@@ -194,17 +194,19 @@ vmalert:
       requests:
         cpu: 10m
         memory: 128Mi
-# Metrics storage runs in cluster mode so that losing any one node loses no
-# data and never stops ingestion or queries:
-#   vminsert (x2, stateless)  receives writes from both vmagents and replicates
-#                             each sample to both vmstorage pods
-#   vmstorage (x2, own PVCs)  holds the data (replicationFactor 2: each holds
-#                             a full copy)
-#   vmselect (x2, stateless)  answers queries (Grafana, vmalert, the UI) from
-#                             whichever vmstorage pods are up
-# Every component has required anti-affinity (one per node) and a PDB, so a
-# drain evicts one at a time. None is pinned to a node class: all can run on
-# the Pi 4Bs as well as the Pi 5s.
+# Metrics storage keeps the CLUSTER architecture but runs ONE pod of each tier,
+# no redundancy (fewer pods, less memory on the Pi nodes):
+#   vminsert (stateless)   receives writes from vmagent
+#   vmstorage (own PVC)    holds the data (replicationFactor 1: one copy)
+#   vmselect (stateless)   answers queries (Grafana, vmalert, the UI)
+# TO RESTORE REDUNDANCY, set vmagent.spec.replicaCount and vminsert/vmselect/
+# vmstorage replicaCount back to 2 and vmcluster.spec.replicationFactor to 2
+# (each vmstorage then holds a full copy; losing any one node loses no data and
+# never stops ingestion or queries). A scaled-down vmstorage's old PVC
+# (vmstorage-db-...-1) stays behind: delete it before scaling back up, or that
+# pod will rejoin with stale, partial data. Every component keeps required
+# anti-affinity (one per node) and a PDB, which are no-ops at 1 replica and take
+# effect again when scaled up. None is pinned to a node class.
 vmsingle:
   enabled: false
 vmcluster:
@@ -212,9 +214,9 @@ vmcluster:
   spec:
     # The chart default is 1 month; the old single-node instance kept 7d.
     retentionPeriod: 7d
-    replicationFactor: 2
+    replicationFactor: 1
     vminsert:
-      replicaCount: 2
+      replicaCount: 1
       # 256Mi was OOMKilled (exitCode 137) right after the first deploy, while
       # the two vmagents flushed their buffered backlog (~10MB batches) at it.
       # 512Mi then OOMKilled the same way (CrashLoopBackOff on both replicas)
@@ -235,7 +237,7 @@ vmcluster:
       podDisruptionBudget:
         maxUnavailable: 1
     vmselect:
-      replicaCount: 2
+      replicaCount: 1
       extraArgs:
         # Same as vmstorage: collapses the two vmagents' duplicate samples.
         dedup.minScrapeInterval: 30s
@@ -260,7 +262,7 @@ vmcluster:
       podDisruptionBudget:
         maxUnavailable: 1
     vmstorage:
-      replicaCount: 2
+      replicaCount: 1
       extraArgs:
         # The two vmagents scrape the same targets, so every sample arrives
         # twice with slightly different timestamps; keep one per 30s interval.
