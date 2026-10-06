@@ -1,6 +1,6 @@
 # Egress-only (Tailscale reaching the web UI is ingress, unaffected).
-# DNS, Postgres and LiteLLM (the LLM backend, port 4000 in the litellm
-# namespace - the provider API calls themselves egress from LiteLLM, whose own
+# DNS, Postgres and Bifrost (the LLM backend, port 8080 in the bifrost
+# namespace - the provider API calls themselves egress from Bifrost, whose own
 # policy allows 443, not from here). Checked the app's own source for a
 # startup update-check/telemetry call and found none in the one module most
 # likely to have it, but couldn't fully rule it out, so this stays
@@ -36,13 +36,13 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
-    # LiteLLM proxy (apps/litellm/) - OpenAI-compatible API on 4000. Its
+    # Bifrost gateway (apps/bifrost/) - OpenAI-compatible API on 8080. Its
     # ingress is unrestricted (its own NetworkPolicy is egress-only), so only
     # this pod's egress side needs a rule.
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: litellm
+              kubernetes.io/metadata.name: bifrost
       ports:
         - protocol: TCP
-          port: 4000
+          port: 8080

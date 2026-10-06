@@ -116,16 +116,12 @@ Ansible owns the machines and the secrets; Argo CD owns everything that runs in 
    openwebui_db_password: "<output of: openssl rand -hex 32>"
    grafana_db_password: "<output of: openssl rand -hex 32>"
    pgadmin_db_password: "<output of: openssl rand -hex 32>"   # the WhoDB Postgres login (name kept from an earlier tool)
-   litellm_master_key: "sk-<output of: openssl rand -hex 24>"   # must start with sk-
-   litellm_salt_key: "sk-<output of: openssl rand -hex 24>"     # never change once set
-   litellm_db_password: "<output of: openssl rand -hex 32>"
+   litellm_salt_key: "<output of: openssl rand -hex 24>"        # Bifrost's encryption key is derived from this; never change once set
+   litellm_db_password: "<output of: openssl rand -hex 32>"     # Bifrost's DB password (name kept until renamed in the vault)
    goff_db_password: "<output of: openssl rand -hex 32>"
    goff_admin_api_key: "<output of: openssl rand -hex 32>"
    goff_evaluation_api_key: "<output of: openssl rand -hex 32>"
-   openwebui_litellm_key: "sk-<output of: openssl rand -hex 24>"  # a LiteLLM virtual key, see docs/REFERENCE.md#litellm
-   # optional - LLM provider keys for LiteLLM:
-   # anthropic_api_key: "sk-ant-..."
-   # openai_api_key: "sk-..."
+   # LLM provider keys are added in Bifrost's UI, not here (see docs/REFERENCE.md#bifrost)
    ```
 
 6. Deploy everything:
@@ -142,9 +138,9 @@ Ansible owns the machines and the secrets; Argo CD owns everything that runs in 
 From there, Longhorn (storage), VictoriaMetrics/Grafana (metrics), OpenSearch/OpenSearch
 Dashboards + VictoriaLogs (logs, dual-shipped to both), Blocky (DNS), SearXNG (search), the redis-operator
 (Blocky's and SearXNG's own small caching clusters), WhoDB (a UI for browsing Postgres, OpenSearch and those caches),
-CloudNativePG (a two-instance Postgres cluster on Longhorn volumes, free to schedule anywhere, behind PgBouncer poolers), LiteLLM (an LLM gateway backed by Postgres and its own Redis cache), GO Feature Flag (a feature-flag service stored in that Postgres), Temporal (a
+CloudNativePG (a two-instance Postgres cluster on Longhorn volumes, free to schedule anywhere, behind PgBouncer poolers), Bifrost (an LLM gateway backed by Postgres and its own Redis cache), GO Feature Flag (a feature-flag service stored in that Postgres), Temporal (a
 workflow orchestration platform, backed by that same Postgres cluster), shairport-sync on the dedicated audio node (AirPlay to a USB DAC), a Tor Snowflake proxy (committed, scaled to 0), Homepage (a dashboard linking out
-to every other UI below), Open WebUI (a chat UI for LLMs, backed by LiteLLM), the descheduler (periodically rebalances pods across nodes), Trivy Operator (continuous
+to every other UI below), Open WebUI (a chat UI for LLMs, backed by Bifrost), the descheduler (periodically rebalances pods across nodes), Trivy Operator (continuous
 vulnerability scanning), and the Tailscale Operator all come up on their own — Argo CD manages them from
 this repo's `apps/` directory. See [docs/REFERENCE.md](docs/REFERENCE.md) for what each one does.
 
@@ -230,12 +226,10 @@ Common ones:
 |---|---|---|
 | Grafana admin | `monitoring` / `vmks-credentials` | `admin-user`, `admin-password` |
 | OpenSearch admin | `opensearch` / `opensearch-admin-credentials` | `username`, `password` |
-| LiteLLM master key | `litellm` / `litellm-masterkey` | `masterkey` |
-| LiteLLM provider keys + salt | `litellm` / `litellm-env` | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `LITELLM_SALT_KEY` |
+| Bifrost encryption key | `bifrost` / `bifrost-encryption` | `encryption-key` |
 | Postgres app user (full connection info) | `postgres` / `postgres-app` | `password`, `uri`, `jdbc-uri`, `pgpass` ... |
-| A database role's password (e.g. Grafana) | `postgres` / `<name>-db-credentials` (`grafana-`, `litellm-`, `goff-`, `whodb-`, `temporal-`, `open-webui-`) | `username`, `password` |
+| A database role's password (e.g. Grafana) | `postgres` / `<name>-db-credentials` (`grafana-`, `bifrost-`, `goff-`, `whodb-`, `temporal-`, `open-webui-`) | `username`, `password` |
 | GO Feature Flag config (API keys, DB URI) | `go-feature-flag` / `goff-config` | `goff-proxy.yaml` |
-| Open WebUI -> LiteLLM key | `open-webui` / `open-webui-litellm-key` | `api-key` |
 
 The source of truth for the values *you* chose is the Vault, not the cluster:
 ```bash
@@ -263,7 +257,7 @@ Once Tailscale is set up and synced:
 | Temporal Web UI | `https://temporal.<tailnet>.ts.net` |
 | Open WebUI | `https://chat.<tailnet>.ts.net` |
 | WhoDB | `https://whodb.<tailnet>.ts.net` |
-| LiteLLM | `https://litellm.<tailnet>.ts.net/ui` |
+| Bifrost | `https://bifrost.<tailnet>.ts.net` |
 | GO Feature Flag (Swagger) | `https://flags.<tailnet>.ts.net/swagger/index.html` |
 
 (Replace `<tailnet>` with your tailnet's `.ts.net` domain — run `tailscale status` on any connected device

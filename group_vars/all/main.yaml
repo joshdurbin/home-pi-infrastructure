@@ -129,6 +129,14 @@ litellm_db_password: !vault |
   30633434363362363831616465323130613061646634313430656236633532313365393066333434
   6564336462663030360a303334636330393931393130353031306365343665373765343839653665
   63353331343131333461646663653133663765666233313339666666613933643139
+# Bifrost (apps/bifrost/) reuses the vaulted LiteLLM values until you add
+# dedicated ones with `ansible-vault edit` (then replace these two lines):
+# - the DB password is used as-is for the new `bifrost` Postgres role;
+# - the encryption key must be 32 bytes, so it is derived (32 hex chars) from
+#   litellm_salt_key. Never change litellm_salt_key (or this derivation) once
+#   Bifrost holds provider keys - they would become unreadable.
+bifrost_db_password: "{{ litellm_db_password }}"
+bifrost_encryption_key: "{{ litellm_salt_key | hash('sha256') | truncate(32, true, '') }}"
 openwebui_litellm_key: !vault |
   $ANSIBLE_VAULT;1.1;AES256
   36333863353431373438393839643964613032343135376266346638376131313435616366353236

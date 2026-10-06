@@ -1,6 +1,6 @@
 # GO Feature Flag's own Postgres user and database (apps/go-feature-flag/),
 # via CloudNativePG's DatabaseRole/Database CRDs - same pattern as
-# open-webui-database.yaml and litellm-database.yaml beside this file.
+# open-webui-database.yaml and bifrost-database.yaml beside this file.
 #
 # The role owns its database, which it needs: the relay proxy reads the
 # go_feature_flag table, a schema Job creates that table (it is not

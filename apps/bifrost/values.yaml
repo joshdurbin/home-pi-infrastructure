@@ -1,0 +1,63 @@
+# Bifrost - one OpenAI-compatible endpoint (/v1) in front of every LLM
+# provider, with a web UI (/) for providers, keys, logs and spend. Replaces
+# LiteLLM.
+#
+# - Database: the cluster's CloudNativePG Postgres via postgres-pooler-rw
+#   (apps/postgres/manifests/bifrost-database.yaml) for both the config store
+#   and the request-log store. Password from the bifrost-db-credentials Secret
+#   seeded by k8s_secrets.
+# - Providers and their API keys are added in the UI, not in git: they are
+#   stored encrypted in Postgres using the key from the bifrost-encryption
+#   Secret (BIFROST_ENCRYPTION_KEY - never change it once set, or the stored
+#   provider keys become unreadable). Models are addressed as
+#   <provider>/<model>, e.g. anthropic/claude-sonnet-5-5.
+# - Auth: none in-app, like every other UI here - the Service is reachable only
+#   in-cluster or via the Tailscale ingress (apps/tailscale-operator).
+# - Metrics: /metrics on the http port, scraped by manifests/vmservicescrape.yaml.
+
+image:
+  # The chart requires an explicit tag (it matches the chart's appVersion).
+  tag: v1.5.12
+  pullPolicy: IfNotPresent
+
+# One replica: stateless (state in Postgres), so a drain just reschedules it.
+replicaCount: 1
+
+storage:
+  mode: postgres
+  configStore:
+    enabled: true
+  logsStore:
+    enabled: true
+
+postgresql:
+  enabled: false
+  external:
+    enabled: true
+    host: postgres-pooler-rw.postgres.svc.cluster.local
+    port: 5432
+    user: bifrost
+    database: bifrost
+    sslMode: require
+    existingSecret: bifrost-db-credentials
+    passwordKey: password
+
+bifrost:
+  encryptionKeySecret:
+    name: bifrost-encryption
+    key: encryption-key
+  client:
+    enableLogging: true
+    # The chart turns this on for production. Callers here (Open WebUI) are
+    # in-cluster and the UI/API are only exposed on the tailnet, so no virtual
+    # keys - same stance as the rest of the cluster's UIs.
+    enforceAuthOnInference: false
+    logRetentionDays: 30
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi

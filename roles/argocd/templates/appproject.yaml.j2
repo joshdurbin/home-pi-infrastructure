@@ -23,7 +23,7 @@ spec:
     - https://aquasecurity.github.io/helm-charts/
     - https://helm.openwebui.com/
     - https://kubernetes-sigs.github.io/headlamp/
-    - ghcr.io/berriai
+    - https://maximhq.github.io/bifrost/helm-charts
     - '{{ argocd_vars.gitops.repo_url }}'
   # Scoped to the namespaces these apps actually use.
   destinations:
@@ -54,9 +54,7 @@ spec:
       server: https://kubernetes.default.svc
     - namespace: whodb
       server: https://kubernetes.default.svc
-    - namespace: litellm
-      server: https://kubernetes.default.svc
-    - namespace: litellm-cache
+    - namespace: bifrost
       server: https://kubernetes.default.svc
     - namespace: go-feature-flag
       server: https://kubernetes.default.svc

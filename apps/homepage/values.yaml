@@ -155,9 +155,9 @@ configMaps:
                 href: https://whodb.{{ $d }}
                 description: Postgres, OpenSearch and Redis browser (read-only)
                 icon: mdi-database-search-outline
-            - LiteLLM:
-                href: https://litellm.{{ $d }}/ui
-                description: LLM gateway (API, keys, spend)
+            - Bifrost:
+                href: https://bifrost.{{ $d }}
+                description: LLM gateway (API, providers, logs, spend)
                 icon: mdi-router-network
             - Feature Flags:
                 href: https://flags.{{ $d }}/swagger/index.html

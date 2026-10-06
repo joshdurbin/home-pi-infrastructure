@@ -1,0 +1,44 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bifrost
+  namespace: argocd
+  annotations:
+    # Needs the Postgres cluster + poolers (wave 2, same tier - its DB/role are
+    # CRs in apps/postgres; the pod simply retries until they exist). Same
+    # tier as every other end-user facing app.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bifrost
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  sources:
+    # Official chart from Bifrost's classic Helm repo (no OCI registration
+    # needed in Argo CD, unlike LiteLLM's). The chart does NOT default the
+    # image tag - values.yaml pins it. Re-pin both deliberately on bumps.
+    - repoURL: https://maximhq.github.io/bifrost/helm-charts
+      chart: bifrost
+      targetRevision: 2.1.43
+      helm:
+        releaseName: bifrost
+        valueFiles:
+          - $values/apps/bifrost/values.yaml
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      ref: values
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      path: apps/bifrost/manifests

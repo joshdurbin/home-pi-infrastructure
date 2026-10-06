@@ -63,12 +63,6 @@
             kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
             wait: true
 
-        - name: Register the BerriAI OCI chart registry (LiteLLM) in Argo CD
-          kubernetes.core.k8s:
-            definition: "{{ lookup('ansible.builtin.template', 'repository-ghcr-berriai.yaml.j2') | from_yaml }}"
-            kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
-            wait: true
-
         - name: Apply root Application (app-of-apps)
           kubernetes.core.k8s:
             definition: "{{ lookup('ansible.builtin.template', 'root-application.yaml.j2') | from_yaml }}"

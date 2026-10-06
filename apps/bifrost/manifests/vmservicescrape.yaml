@@ -1,0 +1,17 @@
+# Scrapes Bifrost's Prometheus endpoint (/metrics on the http port, served by
+# its telemetry plugin by default). Chart Service is "bifrost", port "http"
+# 8080, label app.kubernetes.io/name=bifrost (confirmed via `helm template`).
+# No auth on /metrics.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: bifrost
+  namespace: bifrost
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bifrost
+  endpoints:
+    - port: http
+      path: /metrics
+      scheme: http

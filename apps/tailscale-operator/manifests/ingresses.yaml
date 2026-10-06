@@ -331,21 +331,21 @@ spec:
                 port:
                   number: 8080
 ---
-# LiteLLM's API (OpenAI-compatible, /v1) and admin UI (/ui) on one host -
-# https://litellm.<tailnet>.ts.net. Service "litellm", port 4000 (chart
+# Bifrost's API (OpenAI-compatible, /v1) and admin UI (/) on one host -
+# https://bifrost.<tailnet>.ts.net. Service "bifrost", port 8080 (chart
 # default, confirmed via `helm template`). Plain HTTP backend, TLS ends at
 # Tailscale like every other UI here.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: litellm
-  namespace: litellm
+  name: bifrost
+  namespace: bifrost
   annotations:
     tailscale.com/proxy-group: ingress-proxies
 spec:
   ingressClassName: tailscale
   tls:
-    - hosts: [litellm]
+    - hosts: [bifrost]
   rules:
     - http:
         paths:
@@ -353,9 +353,9 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: litellm
+                name: bifrost
                 port:
-                  number: 4000
+                  number: 8080
 ---
 # GO Feature Flag relay proxy - https://flags.<tailnet>.ts.net. The Swagger UI
 # (an evaluation test console) is at /swagger/index.html; the whole API is

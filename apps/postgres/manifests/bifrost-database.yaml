@@ -1,0 +1,35 @@
+# Bifrost's own Postgres user and database (apps/bifrost/), created
+# declaratively via CloudNativePG's DatabaseRole/Database CRDs - same
+# pattern as open-webui-database.yaml beside this file. Bifrost connects
+# through postgres-pooler-rw and owns its database (it creates its own
+# schema on start).
+#
+# The password Secret (bifrost-db-credentials) is seeded by the k8s_secrets
+# Ansible role - once here (basic-auth shape, for CNPG) and once in the
+# bifrost namespace (what the chart's postgresql.external.existingSecret
+# reads), since Secrets are namespace-scoped.
+apiVersion: postgresql.cnpg.io/v1
+kind: DatabaseRole
+metadata:
+  name: bifrost
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  name: bifrost
+  ensure: present
+  login: true
+  passwordSecret:
+    name: bifrost-db-credentials
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: bifrost
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  name: bifrost
+  owner: bifrost
+  ensure: present

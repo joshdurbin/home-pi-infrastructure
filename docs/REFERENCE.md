@@ -29,7 +29,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [Node Rebalancing (descheduler)](#node-rebalancing-descheduler)
 - [Vulnerability Scanning (Trivy Operator)](#vulnerability-scanning-trivy-operator)
 - [Open WebUI](#open-webui)
-- [LiteLLM](#litellm)
+- [Bifrost](#bifrost)
 - [GO Feature Flag](#go-feature-flag)
 - [Snowflake (Tor)](#snowflake-tor)
 - [Audio node and shairport-sync](#audio-node-and-shairport-sync)
@@ -91,7 +91,7 @@ home-pi-infrastructure/
 │   ├── cloudnative-pg, postgres, temporal
 │   ├── redis-operator, redis-operator-metrics
 │   ├── blocky, searxng, homepage, whodb
-│   ├── litellm, open-webui, go-feature-flag
+│   ├── bifrost, open-webui, go-feature-flag
 │   ├── shairport-sync, snowflake
 │   ├── descheduler, trivy-operator
 │   └── tailscale-operator
@@ -1232,9 +1232,8 @@ kubectl get vulnerabilityreport -n <namespace> -l trivy-operator.resource.name=<
 
 A self-hosted chat UI for LLMs ([open-webui/open-webui](https://github.com/open-webui/open-webui),
 `apps/open-webui/`, namespace `open-webui`). Its LLM backend is the in-cluster
-[LiteLLM](#litellm) gateway (`http://litellm.litellm.svc.cluster.local:4000/v1`), using a LiteLLM *virtual key*
-(Vault var `openwebui_litellm_key`, seeded as the `open-webui-litellm-key` Secret). Provider keys and spend limits
-live in LiteLLM, not here; there is no Ollama and nothing credential-bearing in git.
+[Bifrost](#bifrost) gateway (`http://bifrost.bifrost.svc.cluster.local:8080/v1`), with no inference auth.
+Provider keys live in Bifrost, not here; there is no Ollama and nothing credential-bearing in git.
 
 - **Chart**: the official `open-webui/open-webui` chart (`helm.openwebui.com`) - unlike Homepage/SearXNG/
   WhoDB, this project does publish and maintain its own chart, so no `bjw-s-labs/app-template`
@@ -1310,49 +1309,38 @@ replaces the former pgAdmin and RedisInsight apps. Runs the official `clidey/who
 may linger - drop it with `DROP ROLE pgadmin;` as `postgres`. The old `pgadmin-db-credentials` Secret in the
 `postgres` namespace can be deleted too.
 
-## LiteLLM
+## Bifrost
 
-An OpenAI-compatible gateway in front of LLM providers (`apps/litellm/`, namespace `litellm`): one endpoint,
-virtual API keys, per-key/team spend tracking, an admin UI. Deployed from BerriAI's official Helm chart, which
-is published only as an OCI artifact (`ghcr.io/berriai/litellm-helm`) - so `roles/argocd` registers that
-registry with `enableOCI` and the AppProject allows it. Chart version = LiteLLM version (default image tag is
-the chart's `appVersion`); re-pin deliberately.
+An OpenAI-compatible gateway in front of LLM providers (`apps/bifrost/`, namespace `bifrost`): one endpoint
+(`/v1`), a web UI for providers, keys, request logs and spend. Replaced LiteLLM. Deployed from Bifrost's official
+Helm chart (classic repo `https://maximhq.github.io/bifrost/helm-charts`, allowed in the AppProject). The chart
+requires an explicit image tag: `values.yaml` pins `image.tag` (= the chart's `appVersion`); re-pin both
+deliberately.
 
-- **Database**: the cluster's CloudNativePG Postgres through `postgres-pooler-rw`, database/role `litellm`
-  (`apps/postgres/manifests/litellm-database.yaml`) - the chart's bundled Postgres is off. The chart's PreSync
-  migration Job runs the Prisma schema push as that role.
-- **Cache**: `litellm-cache`, its own Redis replication + Sentinel (`apps/litellm/manifests/redis-*.yaml`,
-  namespace `litellm-cache`), same shape as the Blocky/SearXNG ones. Used for response caching
-  (`cache_params`, 10 min TTL) and router state (`router_settings.redis_*`). LiteLLM connects to the
-  operator-maintained `litellm-cache-master` Service - failover-aware, no Sentinel client needed.
-- **Metrics**: `callbacks: ["prometheus"]` (request/token/spend/latency/failure counters per model, key, team)
-  plus `service_callback: ["prometheus_system"]` (Redis/Postgres latency), at `/metrics` on :4000. `/metrics`
-  needs an API key by default, so the `VMServiceScrape` (`apps/litellm/manifests/vmservicescrape.yaml`) sends
-  the master key as a bearer token. The Redis exporter sidecars are scraped by a `VMPodScrape` like the other
-  caches.
-- **Models** (`apps/litellm/values.yaml`, `proxy_config.model_list`): wildcards `anthropic/*` and `openai/*`
-  (anything the provider offers, no edits needed) plus aliases `claude-sonnet`, `claude-opus`, `claude-haiku`.
-  `store_model_in_db: true` also lets you add models and keys in the UI (stored encrypted in Postgres).
-- **Secrets** (Vault, seeded by `k8s_secrets` -> `make deploy-secrets`): `litellm_master_key` (admin key / UI
-  login, must start with `sk-`), `litellm_salt_key` (encrypts DB-stored provider credentials; **never change it
-  once set**), `litellm_db_password`, and optionally `anthropic_api_key` / `openai_api_key`. Provider keys are
-  read at process start: after adding one, re-seed and `kubectl -n litellm rollout restart deploy/litellm`.
-- **Egress NetworkPolicy**: DNS, 5432 to `postgres`, 6379 to `litellm-cache`, and 443 to anywhere outside the
-  private ranges (provider APIs).
+- **Database**: the cluster's CloudNativePG Postgres through `postgres-pooler-rw`, database/role `bifrost`
+  (`apps/postgres/manifests/bifrost-database.yaml`), for both the config store and the request-log store.
+- **Providers and keys**: added in the UI (stored encrypted in Postgres), not in git. Models are addressed as
+  `<provider>/<model>`, e.g. `anthropic/claude-sonnet-5-5`.
+- **Auth**: none in-app (`enforceAuthOnInference: false`), like the other UIs here - the Service is only
+  reachable in-cluster or over Tailscale.
+- **Metrics**: `/metrics` on the `http` port (8080), scraped by `apps/bifrost/manifests/vmservicescrape.yaml`.
+- **Secrets** (seeded by `k8s_secrets` -> `make deploy-secrets`): `bifrost_db_password` and
+  `bifrost_encryption_key`. Both are currently aliases in `group_vars/all/main.yaml` of the old vaulted
+  `litellm_db_password` / `litellm_salt_key` (the encryption key is a 32-hex-char SHA-256 derivation); replace
+  them with dedicated vault values if you like. **Never change the encryption key once providers are stored.**
+- **Egress NetworkPolicy**: DNS, 5432 to `postgres`, and 443 to anywhere outside the private ranges (provider
+  APIs, pricing sync).
+- **No Redis cache yet**: LiteLLM's response cache was dropped. Bifrost's semantic cache needs a vector store
+  (Redis with RediSearch, Weaviate or Qdrant), which is not set up.
 
-**First-time order**: add the Vault vars -> `make deploy-secrets` -> `make deploy-argocd` (registers the OCI
-registry, allows the namespaces) -> push. **Use it**: sign in to `/ui` with the master key (username `admin`),
-create a virtual key, then point clients (e.g. Open WebUI's OpenAI connection) at
-`http://litellm.litellm.svc.cluster.local:4000/v1` or `https://litellm.<tailnet>.ts.net/v1`.
+**Use it**: open the UI, add a provider (e.g. Anthropic) with its API key, then point clients at
+`http://bifrost.bifrost.svc.cluster.local:8080/v1` or `https://bifrost.<tailnet>.ts.net/v1`.
 
-**Open WebUI** uses LiteLLM as its only LLM backend (`OPENAI_API_BASE_URL` / `OPENAI_API_KEY` in
-`apps/open-webui/values.yaml`, in-cluster URL, plus an egress rule). Its key is a *virtual key*, not the master
-key: generate a value (`sk-` + `openssl rand -hex 24`), store it in Vault as `openwebui_litellm_key`, and create
-a key with that exact value in the LiteLLM UI (Virtual Keys -> Create, "Key" field, alias `open-webui`, models
-`claude-sonnet`/`claude-opus`/`claude-haiku`). Then `make deploy-secrets` and restart Open WebUI. Those env vars
-only seed Open WebUI's connection on first start; afterwards edit it in Admin Settings -> Connections.
+**Open WebUI** uses Bifrost as its only LLM backend (`openaiBaseApiUrl` in `apps/open-webui/values.yaml`,
+in-cluster URL, plus an egress rule); its API key is a placeholder. Those values only seed Open WebUI's
+connection on first start; afterwards edit it in Admin Settings -> Connections.
 
-**Access it**: `https://litellm.<tailnet>.ts.net/ui`.
+**Access it**: `https://bifrost.<tailnet>.ts.net`.
 
 ## GO Feature Flag
 
@@ -1490,10 +1478,10 @@ does **not** have the spare capacity for more than one node out at a time, so th
 | Redis caches (3 clusters) | master/replica and the 3 sentinels each on different nodes, PDB `maxUnavailable: 1` (keeps sentinel quorum) |
 | GO Feature Flag relay proxy | 2 replicas on different nodes + PDB + readiness probe; rolling update starts the new pod first |
 | shairport-sync (audio node) | 1 replica, only schedulable on `rpi-3bplus-1`; a drain of that node stops AirPlay until it returns |
-| LiteLLM, Grafana, Homepage | 1 replica each (stateless - state is in Postgres/Redis); a drain reschedules them, gaps of roughly 1-2 min, 30-90s and 10-30s (Pi start-up, plus an image pull on a node that hasn't run them) |
+| Bifrost, Grafana, Homepage | 1 replica each (stateless - state is in Postgres/Redis); a drain reschedules them, gaps of roughly 1-2 min, 30-90s and 10-30s (Pi start-up, plus an image pull on a node that hasn't run them) |
 
 **Accepted blips** (single replica by design; recover when the pod reschedules, typically under a minute or two):
-Blocky, LiteLLM, Grafana and Homepage, Open WebUI and WhoDB (RWO volume), SearXNG, Temporal (all services), OpenSearch and its Dashboards,
+Blocky, Bifrost, Grafana and Homepage, Open WebUI and WhoDB (RWO volume), SearXNG, Temporal (all services), OpenSearch and its Dashboards,
 VictoriaLogs/Alertmanager (Vector buffers or retries), vmalert, Argo CD, and the other
 operators. None are on a path that other workloads need to keep running.
 
@@ -1533,10 +1521,10 @@ Done when `status` shows a healthy primary and a streaming replica again. The `p
 `postgres-pooler-rw` PgBouncer follow the new primary on their own; apps reconnect without config changes. A failover
 takes a few seconds to tens of seconds (`failoverDelay: 0`); a planned `promote` is quicker.
 
-**Redis** (Sentinel; the clusters are `blocky-cache`, `searxng-cache` and `litellm-cache`, each in its own namespace,
+**Redis** (Sentinel; the clusters are `blocky-cache`, `searxng-cache`, each in its own namespace,
 and each Sentinel master group is named after its cluster):
 ```bash
-NS=blocky-cache                                           # or searxng-cache / litellm-cache
+NS=blocky-cache                                           # or searxng-cache
 
 # Which pod is master now (the redis-role label is maintained by the operator)
 kubectl -n $NS get pods -l redis-role=master
@@ -1549,7 +1537,7 @@ kubectl -n $NS exec ${NS}-sentinel-sentinel-0 -- redis-cli -p 26379 sentinel fai
 kubectl -n $NS delete pod $(kubectl -n $NS get pods -l redis-role=master -o name | cut -d/ -f2)
 ```
 After a few seconds the `redis-role=master` label and `get-master-addr-by-name` point at the other pod. Blocky and
-SearXNG discover the new master through Sentinel; LiteLLM and the others use the operator-maintained `<name>-master`
+SearXNG discover the new master through Sentinel; the others use the operator-maintained `<name>-master`
 Service. They need no change. Check `sentinel master $NS` shows `num-slaves 1` once the old master has rejoined as the
 replica.
 
@@ -1640,7 +1628,7 @@ hostname shown there):
 | Argo CD | `https://argocd.<tailnet>.ts.net` |
 | Open WebUI | `https://chat.<tailnet>.ts.net` |
 | WhoDB | `https://whodb.<tailnet>.ts.net` |
-| LiteLLM | `https://litellm.<tailnet>.ts.net/ui` |
+| Bifrost | `https://bifrost.<tailnet>.ts.net` |
 | GO Feature Flag (Swagger) | `https://flags.<tailnet>.ts.net/swagger/index.html` |
 
 Confirmed working from a phone with the Tailscale app active. If you test from a **Mac terminal or
