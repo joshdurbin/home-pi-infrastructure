@@ -1,6 +1,6 @@
 # Replaces the hand-rolled curl Job an earlier version of this app used -
 # the operator provides this natively as a CRD instead. min_index_age
-# matches VictoriaLogs' retentionPeriod: 7d at daily-index granularity
+# 7 days of retention at daily-index granularity
 # (see apps/opensearch/README.md for the boundary-imprecision tradeoff of
 # daily indices vs. an exact 7d cutoff). Bumped from the original 2d after
 # confirming live headroom: the data pool's PVC was only 3% used (246M of
@@ -20,7 +20,7 @@ spec:
   opensearchCluster:
     name: opensearch
   policyId: logs-retention
-  description: 'Delete logs-* indices after 7 days, matching VictoriaLogs retentionPeriod: 7d'
+  description: 'Delete logs-* indices after 7 days'
   defaultState: hot
   states:
     - name: hot

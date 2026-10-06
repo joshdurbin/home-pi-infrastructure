@@ -59,11 +59,6 @@ grafana:
       enabled: true
       org_role: Admin
   plugins:
-    # victoriametrics-logs-datasource re-added - apps/victoria-logs/ is back
-    # (dual-shipped alongside OpenSearch, see apps/opensearch/values-vector.yaml),
-    # and apps/victoria-logs/manifests/grafana-datasource-configmap.yaml's
-    # datasource needs this plugin installed to render at all.
-    - victoriametrics-logs-datasource
     - victoriametrics-metrics-datasource
   envValueFrom:
     GF_DATABASE_PASSWORD:

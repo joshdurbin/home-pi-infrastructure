@@ -98,6 +98,15 @@ spec:
         memory: 512Mi
 
   nodePools:
+    # HA layout: TWO client pods and TWO data pods, each with its own PVC.
+    # Four cluster_manager-eligible nodes (client x2 + data x2): OpenSearch keeps
+    # an odd-sized voting set (3 of the 4), so the cluster survives losing any one
+    # node. With 2 data nodes and number_of_replicas: 1 (manifests/index-template.yaml)
+    # every shard has a copy on each data node: losing one data pod or its disk
+    # loses no logs and indexing continues; ingest is on both client pods, so
+    # Vector's requests to the `opensearch` Service survive one of them going away.
+    # Capacity: ~1.5Gi memory per pod (6Gi total, was 3Gi) on the Pi 5 nodes.
+    #
     # Coordinating (ingest) + cluster-manager pool. Two things must hold:
     #
     # 1. cluster_manager-ELIGIBLE here, alongside the data pool. The operator
@@ -116,7 +125,7 @@ spec:
     #    reschedules and drains: it simply comes back (a short outage while it
     #    does) instead of the cluster dying.
     - component: client
-      replicas: 1
+      replicas: 2
       roles:
         - cluster_manager
         - ingest
@@ -141,6 +150,28 @@ spec:
       # plugins, carrying real off-heap overhead beyond the heap alone.
       # Doubled rather than nudged, matching this repo's own sizing pattern
       # elsewhere for the same class of live-confirmed OOM.
+      # Redundancy: the two pods of this pool never share a node (required), and
+      # the scheduler also prefers spreading across every OpenSearch pod. At
+      # most one pod of the pool is ever voluntarily down (drains, node
+      # maintenance), so the cluster keeps serving.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  opensearch.org/opensearch-cluster: opensearch
+                  opensearch.org/opensearch-nodepool: client
+              topologyKey: kubernetes.io/hostname
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    opensearch.org/opensearch-cluster: opensearch
+                topologyKey: kubernetes.io/hostname
+      pdb:
+        enabled: true
+        maxUnavailable: 1
       jvm: '-Xmx512M -Xms512M'
       resources:
         limits:
@@ -157,7 +188,7 @@ spec:
     # nodes now for that hardware reason, not the disk-quality one this
     # comment used to be about.
     - component: data
-      replicas: 1
+      replicas: 2
       # cluster_manager added alongside data - see the client pool's own
       # comment for why. Two permanent manager-eligible nodes instead of
       # one means the cluster can always re-elect between them, rather than
@@ -177,6 +208,28 @@ spec:
       # Heap capped at 50% of the container memory limit, per OpenSearch's
       # own heap-sizing guidance - the other 50% is headroom for off-heap
       # Lucene buffers/segment merges, not slack to trim.
+      # Redundancy: the two pods of this pool never share a node (required), and
+      # the scheduler also prefers spreading across every OpenSearch pod. At
+      # most one pod of the pool is ever voluntarily down (drains, node
+      # maintenance), so the cluster keeps serving.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  opensearch.org/opensearch-cluster: opensearch
+                  opensearch.org/opensearch-nodepool: data
+              topologyKey: kubernetes.io/hostname
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    opensearch.org/opensearch-cluster: opensearch
+                topologyKey: kubernetes.io/hostname
+      pdb:
+        enabled: true
+        maxUnavailable: 1
       jvm: '-Xmx768M -Xms768M'
       resources:
         limits:

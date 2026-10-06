@@ -19,7 +19,6 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [Storage (Longhorn)](#storage-longhorn)
 - [Monitoring (VictoriaMetrics, Grafana)](#monitoring-victoriametrics-grafana)
 - [Logging (OpenSearch)](#logging-opensearch)
-- [Logs, Also in VictoriaLogs](#logs-also-in-victorialogs)
 - [DNS (Blocky)](#dns-blocky)
 - [Search (SearXNG)](#search-searxng)
 - [Redis Clusters (Blocky + SearXNG + Bifrost Caching)](#redis-clusters-blocky--searxng--bifrost-caching)
@@ -65,7 +64,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - **`pi5=true`** marks the Pi 5s; OpenSearch requires it (its Amazon Linux images won't run on a Pi 4B).
 - **Audio node** (`[audio]`): see [Audio node and shairport-sync](#audio-node-and-shairport-sync). It runs only the
   k3s agent, node-exporter, Vector and shairport-sync.
-- Everything else, including VictoriaMetrics, VictoriaLogs and (by default) Postgres, is unpinned and can schedule
+- Everything else, including VictoriaMetrics and (by default) Postgres, is unpinned and can schedule
   on any node with capacity. Size container memory limits for the smallest node that can run them: the Pi 4Bs
   report ~3.9GiB (`kubectl get nodes -o jsonpath='{.status.capacity.memory}'`).
 
@@ -87,7 +86,7 @@ home-pi-infrastructure/
 │   │                              # anything outside it. Same repo, two independent consumers.
 │   │                              # One directory per app: application.yaml, values.yaml, and
 │   │                              # (where needed) manifests/.
-│   ├── longhorn, victoria-metrics, victoria-logs, opensearch, argocd-metrics
+│   ├── longhorn, victoria-metrics, opensearch, argocd-metrics
 │   ├── cloudnative-pg, postgres, temporal
 │   ├── redis-operator, redis-operator-metrics, redis-cache
 │   ├── blocky, searxng, homepage, whodb
@@ -485,7 +484,7 @@ cluster-admin access — fine for a single-user homelab, but keep it as private 
 
 ## GitOps (Argo CD)
 
-Longhorn, VictoriaMetrics, VictoriaLogs, OpenSearch, Blocky, SearXNG, redis-operator, WhoDB,
+Longhorn, VictoriaMetrics, OpenSearch, Blocky, SearXNG, redis-operator, WhoDB,
 CloudNativePG, Postgres, Temporal, Homepage, Open WebUI, the descheduler, Trivy Operator, and the
 Tailscale Operator are no longer installed or upgraded by Ansible. Argo CD runs in-cluster (namespace
 `argocd`) and continuously reconciles every child `Application` under this **same** repo's `apps/`
@@ -662,8 +661,7 @@ kubectl -n monitoring port-forward svc/vmks-grafana 3000:80
 Visit `http://localhost:3000` — no login required.
 
 Pre-configured datasources (all provisioned automatically): **VictoriaMetrics** (x2 — Prometheus-compatible
-and native), **Alertmanager** and **VictoriaLogs** (logs are dual-shipped to VictoriaLogs and OpenSearch; see
-[Logging](#logging-opensearch) below).
+and native) and **Alertmanager** (logs live in OpenSearch Dashboards; see [Logging](#logging-opensearch) below).
 
 Dashboards can be imported from grafana.com via `roles/grafana_dashboards/` (`make deploy-dashboards`; it is not part of `make deploy`) — see that role's own README for what's included and why, and for the
 handful already provisioned automatically by the chart itself (Kubernetes cluster/node views, CoreDNS,
@@ -687,26 +685,24 @@ full rationale (why an operator over the plain chart an earlier version of this 
 over Elasticsearch/Kibana naming, why TLS + auth are mandatory here unlike everywhere else in this
 cluster, why Vector rather than a new log shipper); this section covers day-to-day access.
 
-Dual-shipped to `apps/victoria-logs/` too (VictoriaLogs, re-added alongside OpenSearch rather than
-replacing it again - see [Logs, Also in VictoriaLogs](#logs-also-in-victorialogs) below) - the same
-Vector DaemonSet writes every log line to both backends, same retention target on both, so either can be
-used to cross-check the other.
-
 **Prerequisite**: `opensearch_admin_password` must be set in Vault (`ansible-vault edit
 group_vars/all/main.yaml`) before this deploys successfully - see [Secrets & Variables](#secrets--variables).
 
 - **Topology**: an `OpenSearchCluster` custom resource (`apps/opensearch/manifests/cluster.yaml`) with two
-  node pools (`client`: cluster-manager + coordinating, no PVC; `data`: the only pool with a PVC,
-  `storageClassName: longhorn`), plus its own `dashboards` section (not a separate chart under the
-  operator). Single replica per pool - evaluation-scale, not HA. The data pool is left unpinned
-  (scheduler's choice of node) - see `cluster.yaml`'s own comment on the tradeoff that implies.
-- **Log shipping**: the same Vector DaemonSet from the old VictoriaLogs setup, writing to daily
+  node pools - `client` (cluster-manager + ingest, 2 pods, 2Gi PVC each) and `data` (data + cluster-manager, 2 pods,
+  10Gi PVC each, `storageClassName: longhorn`) - plus its own `dashboards` section (not a separate chart under the
+  operator). HA: the two pods of each pool never share a node (required anti-affinity) and each pool has a PDB
+  (`maxUnavailable: 1`); four manager-eligible nodes give a 3-voter set, so any single node can be lost, and indices
+  keep one replica so every shard exists on both data nodes. All pods are pinned to the Pi 5s (`pi5=true`).
+  About 1.5Gi memory per pod (6Gi total).
+- **Log shipping**: one Vector DaemonSet, writing to daily
   `logs-*`/`logs-host-*` indices via OpenSearch's bulk API, now authenticating with TLS + basic auth
   (`apps/opensearch/values-vector.yaml`).
 - **Retention**: an `OpenSearchISMPolicy` custom resource (`apps/opensearch/manifests/ism-policy.yaml`)
   deletes `logs-*` indices once `min_index_age: 7d`; an `OpenSearchIndexTemplate`
-  (`apps/opensearch/manifests/index-template.yaml`) sets `number_of_replicas: 0` for those same indices
-  (required, not an optimization - there's only one data node).
+  (`apps/opensearch/manifests/index-template.yaml`) sets `number_of_replicas: 1` for those same indices
+  (a primary on one data node, a replica on the other). Indices created before this keep their old replica count:
+  raise them once with `PUT logs-*/_settings {"index":{"number_of_replicas":1}}`.
 - **Auth**: unlike everywhere else in this cluster (Grafana's anonymous Admin, Argo CD via tailnet),
   **mandatory** here - the operator has no equivalent of a fully-disabled security plugin. TLS is
   operator-generated (self-signed), and Vector/Dashboards authenticate with the same
@@ -747,7 +743,7 @@ curl -k -u admin:<opensearch_admin_password> "https://localhost:9200/logs-*/_sea
 | `storage=true` | rpi-5-2, rpi-5-3 | Longhorn replica placement (physical data) |
 | `pi5=true` | rpi-5-1..4 | OpenSearch (Amazon Linux images need a Pi 5 CPU) |
 
-The former `telemetry=true` (VictoriaMetrics/VictoriaLogs) and `database=true` (Postgres) labels are gone -
+The former `telemetry=true` (VictoriaMetrics) and `database=true` (Postgres) labels are gone -
 those workloads are unpinned. Postgres's optional `local` storage mode pins to `rpi-5-1`/`rpi-5-4` by
 hostname instead (`apps/postgres/cluster/components/local`), so no custom label is needed for it.
 
@@ -757,41 +753,6 @@ Kubernetes Node object — not tied to any single chart-deploying role). Labels 
 by group_vars, since this repo's `ansible.cfg` doesn't set `hash_behaviour = merge`, so a
 group_vars-level `k8s_labels` would be silently replaced outright (not merged) by any host's own
 `k8s_labels` in `host_vars/`, rather than combined with it.
-
-## Logs, Also in VictoriaLogs
-
-The same log stream OpenSearch receives is dual-shipped to VictoriaLogs too (`apps/victoria-logs/`,
-chart `victoria-logs-single`, namespace `monitoring`) - re-added alongside OpenSearch rather than
-replacing it again (this repo ran VictoriaLogs alone before OpenSearch existed, then OpenSearch alone
-after - see git history on this directory). Not a migration path or a redundant backup: both are live,
-both get every log line, and either can be used to cross-check the other.
-
-- **Shipping**: the one Vector DaemonSet (`apps/opensearch/values-vector.yaml` - still that file, not a
-  new one, since Vector is one shared chart release, not one per backend) gained two more sinks (`vlogs`,
-  `vlogs_host`) alongside the existing `opensearch`/`opensearch_host` ones, same inputs, same data.
-  VictoriaLogs has no native Vector sink in this cluster's pinned `vector:0.58.0-debian` (checked
-  upstream's own `src/sinks` tree at that tag - no `victorialogs` directory exists), so these use the
-  `elasticsearch` sink type pointed at VictoriaLogs' own Elastic-bulk-compatible endpoint plus its
-  `VL-Time-Field`/`VL-Stream-Fields`/`VL-Msg-Field`/`AccountID`/`ProjectID` headers (its own documented
-  integration method for exactly this case) - recovered verbatim from this repo's prior VictoriaLogs
-  incarnation, not re-derived. No TLS, no auth, unlike the OpenSearch sinks - VictoriaLogs has no
-  security-plugin equivalent and this chart runs with none by default.
-- **Retention**: `7d`, matching OpenSearch's own `min_index_age` (see [Logging
-  (OpenSearch)](#logging-opensearch) above) so both backends hold a comparable, honestly-equal window of
-  the same dual-shipped data.
-- **Placement**: unpinned, same as `vmsingle` - the PVC is a Longhorn volume, so the pod can run on any node.
-- **Grafana datasource**: the `victoriametrics-logs-datasource` plugin (`apps/victoria-metrics/values.yaml`'s
-  `grafana.plugins`) plus a `grafana-datasource-configmap.yaml` using the same sidecar-provisioning mechanism
-  (`grafana_datasource: "1"` label) as the metrics datasource.
-- **Unconfirmed**: the server's `512Mi` memory limit is carried over from this app's prior incarnation,
-  not re-verified against today's actual (dual-shipped) log volume - worth a `kubectl top pod`/OOMKilled
-  check after deploy, same as every other live-confirmed resize in this repo (e.g. `vmsingle`'s own).
-
-**Troubleshooting:**
-```bash
-kubectl -n monitoring get pods -l app.kubernetes.io/name=victoria-logs-single
-kubectl -n monitoring logs -l app.kubernetes.io/name=victoria-logs-single
-```
 
 ## DNS (Blocky)
 
@@ -1377,7 +1338,7 @@ so the chart can't carry the secrets any other way.
 - **Availability**: 2 replicas on different nodes with a PDB (a tiny Go service others will depend on); updates start the
   new pod first. Flip `replicas` to 1 in `values.yaml` if memory ever matters more.
 - **Logs**: nothing to configure. The relay proxy logs JSON to stdout (`logFormat: json`), and Vector tails every pod, so it
-  lands in both OpenSearch and VictoriaLogs like everything else. Evaluation events are also emitted as log lines (the `log`
+  lands in OpenSearch like everything else. Evaluation events are also emitted as log lines (the `log`
   exporter is on by default).
 - **Metrics**: Prometheus `/metrics` on the monitoring port (1032), scraped by a `VMServiceScrape`
   (`manifests/vmservicescrape.yaml`). No API key needed on that port.
@@ -1457,7 +1418,7 @@ How it is kept to that job:
 
 shairport-sync runs `hostNetwork` (mDNS discovery and the stream come straight from the sender), `Recreate` strategy
 (one USB device, one owner), privileged for `/dev/snd`. It outputs to ALSA `hw:CARD=AUDIO` (the USB DAC, by name, since its card number changes once the onboard audio is
-disabled). Vector tolerates the taint, so logs ship to OpenSearch and VictoriaLogs like everywhere else; its 256Mi
+disabled). Vector tolerates the taint, so logs ship to OpenSearch like everywhere else; its 256Mi
 request is the heaviest item on the 1GB node besides the k3s agent. Tailscale is installed on the host (the `[pi3]`
 group is in that play).
 
@@ -1496,8 +1457,8 @@ does **not** have the spare capacity for more than one node out at a time, so th
 | Bifrost, Grafana, Homepage | 1 replica each (stateless - state is in Postgres/Redis); a drain reschedules them, gaps of roughly 1-2 min, 30-90s and 10-30s (Pi start-up, plus an image pull on a node that hasn't run them) |
 
 **Accepted blips** (single replica by design; recover when the pod reschedules, typically under a minute or two):
-Blocky, Bifrost, Grafana and Homepage, Open WebUI and WhoDB (RWO volume), SearXNG, Temporal (all services), OpenSearch and its Dashboards,
-VictoriaLogs/Alertmanager (Vector buffers or retries), vmalert, Argo CD, and the other
+Blocky, Bifrost, Grafana and Homepage, Open WebUI and WhoDB (RWO volume), SearXNG, Temporal (all services), Dashboards (OpenSearch itself runs two client and two data pods, so one can go),
+Alertmanager (Vector buffers or retries), vmalert, Argo CD, and the other
 operators. None are on a path that other workloads need to keep running.
 
 **Known gaps** (not yet addressed):

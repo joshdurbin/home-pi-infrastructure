@@ -1,8 +1,8 @@
 # OpenSearch
 
-Replaces `apps/victoria-logs/` as this cluster's log store - same Vector DaemonSet shipping every
-container's logs plus host journald, now landing in OpenSearch + OpenSearch Dashboards instead of
-VictoriaLogs. Evaluation-scale, single-replica-per-pool deployment, not a production topology.
+This cluster's log store: one Vector DaemonSet ships every container's logs plus host journald into
+OpenSearch + OpenSearch Dashboards (VictoriaLogs, the previous store, is gone). HA layout: two client pods and
+two data pods, each with its own PVC, indices with one replica (see "Redundancy" below).
 
 **Not Kibana** - Elastic revoked Kibana's OSS license in 2021; OpenSearch forked it into a
 separately-maintained product called OpenSearch Dashboards. Same job, different name.
@@ -67,23 +67,32 @@ the security plugin's own auth comes with it (an `admin`/`password` credential p
   CA here, and nothing outside the cluster ever talks to `https://opensearch:9200` directly) and
   authenticates with basic auth over that TLS connection.
 
-## Retention: 7d, matching VictoriaLogs
+## Retention: 7d
 
-VictoriaLogs' `retentionPeriod: 7d` is enforced by `manifests/ism-policy.yaml`'s `min_index_age: 7d`
-transition to a `delete` state, at daily-index granularity (`logs-%Y.%m.%d` / `logs-host-%Y.%m.%d` -
-`values-vector.yaml`'s `bulk.index`). Worth knowing: this is index-boundary granularity, not an exact 7d
-cutoff like VictoriaLogs enforces - data can live up to ~8d in the worst case at daily boundaries.
+Enforced by `manifests/ism-policy.yaml`'s `min_index_age: 7d` transition to a `delete` state, at
+daily-index granularity (`logs-%Y.%m.%d` / `logs-host-%Y.%m.%d` - `values-vector.yaml`'s `bulk.index`).
+This is index-boundary granularity, not an exact 7d cutoff - data can live up to ~8d in the worst case.
+
+## Redundancy
+
+- **Pods**: 2 `client` (cluster-manager-eligible + ingest) and 2 `data` (data + cluster-manager-eligible),
+  each pool with required anti-affinity (the two pods of a pool never share a node) and a PDB
+  (`maxUnavailable: 1`). Four manager-eligible nodes give a 3-voter set: any single node can be lost.
+- **Storage**: each pod has its own Longhorn PVC (client 2Gi, data 10Gi). Indices use
+  `number_of_replicas: 1` (`manifests/index-template.yaml`), so every shard has a copy on each data node,
+  on top of Longhorn's own volume replication. Losing a data pod, its node or its volume loses no logs.
+- **Existing indices** created before this was enabled keep `number_of_replicas: 0`: raise them once with
+  `PUT logs-*/_settings {"index":{"number_of_replicas":1}}` (and the same for `logs-host-*`).
+- **Cost**: about 1.5Gi memory per OpenSearch pod (6Gi total across the Pi 5s, was 3Gi).
 
 ## Log shipping
 
 Reuses this cluster's existing Vector DaemonSet rather than introducing a new shipper (Fluent Bit is the
 more common default for k8s→OpenSearch specifically, but Vector's `elasticsearch` sink is
 [documented as fully OpenSearch-compatible](https://vector.dev/docs/reference/configuration/sinks/elasticsearch/),
-and this cluster already runs it). Sourced from Vector's own chart (`https://helm.vector.dev`) rather
-than `victoria-logs-single`'s bundled `vector` subchart dependency, since that chart is gone - same
-config otherwise, sinks retargeted at `https://opensearch:9200` (TLS + basic auth, see above) with the
-VictoriaLogs-proprietary `VL-*`/`AccountID`/`ProjectID` bulk headers dropped and `bulk.index` added for
-index naming instead.
+and this cluster already runs it). Sourced from Vector's own chart (`https://helm.vector.dev`); two sinks (container
+and host logs) at `https://opensearch:9200` (TLS + basic auth, see above), `bulk.index` for index naming. Memory
+and I/O are bounded on the Pi 4Bs (see the comments in `values-vector.yaml`).
 
 ## Temporal integration
 
@@ -97,24 +106,19 @@ OpenSearch cluster's uptime and credentials too. A separate decision, not part o
 
 ## Resource footprint
 
-~2.75GB total (client 768Mi + data 1536Mi + dashboards 512Mi container limits) plus the operator itself
-(256Mi), noticeably more than VictoriaLogs' old 512Mi (server) + 128Mi (vector). Confirmed against live
-headroom at the time this was added: rpi-4b nodes ~2.0-2.7GB free each, rpi-5 nodes ~4.0-4.6GB free each -
-fits without pinning anything to a specific node (every pool is left unpinned, scheduler's choice). Worth
-knowing: the data pool could land on an rpi-4b, and this repo's own `inventory.dist` comments flag those
-nodes' disks as slow/inconsistent for disk-heavy workloads generally (that finding was about etcd and
-Longhorn specifically, not measured for OpenSearch/Lucene) - add a nodeSelector back if that turns out to
-matter in practice. A second Pi 5 (NVMe, 8GB) is expected soon and would be a better fit for Lucene
-segment-merge I/O than any existing node's disk either way.
+About 8.6GB of container memory limits in total: client 2 x 1536Mi + data 2 x 1536Mi + dashboards 512Mi, plus
+the operator (256Mi). Every OpenSearch pod is pinned to a Pi 5 (`pi5=true`): the Amazon Linux image can't
+run on a Pi 4B CPU. Spread across the four Pi 5s that is roughly 2GB each; watch `kubectl top nodes` -
+the Pi 5s were already at 56-71% memory before this layout.
 
-## One-time cleanup after this change syncs
+## One-time cleanup after VictoriaLogs was removed
 
 Deleting `apps/victoria-logs/application.yaml` prunes the `victoria-logs` child Application via the
 root app-of-apps, but Argo CD does **not** cascade-delete that Application's own managed resources
-without a finalizer (none was set) - its StatefulSet/PVC will be orphaned, not deleted. After this
-syncs:
+without a finalizer (none was set) - its StatefulSet/PVC are orphaned. After the removal syncs:
 ```bash
 kubectl delete application victoria-logs -n argocd --cascade=foreground
-kubectl -n monitoring get pvc   # find the orphaned VictoriaLogs PVC
+kubectl -n monitoring get pvc | grep vls      # the orphaned VictoriaLogs volume
 kubectl -n monitoring delete pvc <name>
+kubectl -n monitoring delete cm victorialogs-grafana-ds   # if still present
 ```

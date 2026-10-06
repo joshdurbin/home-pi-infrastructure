@@ -1,23 +1,9 @@
-# Sources this cluster's log shipping directly from vector's own chart
-# (https://helm.vector.dev) rather than victoria-logs-single's bundled
-# `vector` subchart dependency - same Vector, same config shape, just no
-# longer tied to that chart's own release cycle.
-#
-# Dual-shipped to both OpenSearch (primary, the one with Dashboards/auth/
-# retention policy - see manifests/) and VictoriaLogs (apps/victoria-logs/,
-# re-added alongside OpenSearch rather than replacing it again) - four
-# sinks below, two backends x {container, host} sources, identical data to
-# both. The two vlogs_* sinks are the exact config this cluster ran before
-# OpenSearch replaced VictoriaLogs outright (see git log on
-# apps/victoria-logs/ for that prior version) - the elasticsearch sink type
-# pointed at VictoriaLogs' own Elastic-bulk-compatible endpoint plus its
-# VL-*/AccountID/ProjectID headers, not a native `victorialogs` sink type -
-# confirmed live (`kubectl -n opensearch get pods ... -o jsonpath=
-# '{...image}'`) this cluster's pinned vector:0.58.0-debian doesn't ship
-# one (checked vectordotdev/vector's own src/sinks tree at that tag - no
-# victorialogs/victoria_logs directory exists), and the elasticsearch-sink
-# approach is VictoriaLogs' own documented integration method for exactly
-# this case.
+# Ships this cluster's logs to OpenSearch (apps/opensearch/manifests/ has the
+# index template and retention policy; Dashboards is the log UI): container logs
+# (kubernetes_logs) to logs-*, host/journald logs to logs-host-*. Sourced from
+# Vector's own chart (https://helm.vector.dev). VictoriaLogs used to be a second
+# backend here and is gone - fewer sinks means roughly half the buffering,
+# compression and outbound requests per node.
 
 # Default is "Aggregator" (StatefulSet) - "Agent" (DaemonSet) is required to
 # get one Vector pod per node tailing that node's own /var/log (the chart's
@@ -142,8 +128,7 @@ customConfig:
     # chart's own service naming, from before this app switched to the
     # operator). api_version: v8 avoids the deprecated bulk-action `_type`
     # field older API versions send, which OpenSearch 2.x+ rejects outright
-    # (https://github.com/vectordotdev/vector/issues/23342) - not a
-    # VictoriaLogs-specific setting, still needed here. tls.verify_certificate:
+    # (https://github.com/vectordotdev/vector/issues/23342). tls.verify_certificate:
     # false trusts the operator's self-signed cert (security.tls.http.generate:
     # true in cluster.yaml) - nothing here talks to a real CA-issued cert.
     # auth reads the same admin credentials Dashboards uses (envFrom above).
@@ -219,99 +204,3 @@ customConfig:
         password: '${password}'
       bulk:
         index: 'logs-host-%Y.%m.%d'
-    # VictoriaLogs (apps/victoria-logs/) - no TLS, no auth, unlike the
-    # opensearch sinks above: VictoriaLogs itself has no security plugin
-    # equivalent and this chart's defaults run it with no auth at all,
-    # same reasoning as every other app in this cluster that doesn't
-    # mandate it. Service name confirmed via `helm template vls
-    # victoriametrics/victoria-logs-single --version 0.13.9` (releaseName
-    # "vls" + the chart's own fixed "-victoria-logs-single-server" suffix),
-    # same naming this repo's old apps/victoria-logs/ already used before
-    # it was removed. VL-Time-Field/VL-Stream-Fields/VL-Msg-Field and the
-    # AccountID/ProjectID pair are VictoriaLogs' own documented
-    # elasticsearch-bulk-ingestion headers (its multitenancy fields,
-    # "0"/"0" being the default/only tenant a single-tenant deploy like
-    # this needs) - carried over verbatim from this cluster's prior
-    # VictoriaLogs config, not re-derived.
-    vlogs:
-      type: elasticsearch
-      inputs: [parser]
-      # Confirmed live, broken: VictoriaLogs rejected every request with
-      # "unsupported path requested: \"/_bulk\"" (Vector's elasticsearch
-      # sink always appends /_bulk to whatever endpoint URL it's given) -
-      # the real path is /insert/elasticsearch/_bulk, confirmed against
-      # VictoriaLogs' own Vector-setup docs, not the bare root this
-      # previously carried over unverified. The VL-Time-Field/VL-Stream-
-      # Fields/VL-Msg-Field request headers below that path were wrong too
-      # (same source) - those three are `query` params (_time_field/
-      # _stream_fields/_msg_field), not headers; only AccountID/ProjectID
-      # (multi-tenancy) really are headers.
-      endpoints: ['http://vls-victoria-logs-single-server.monitoring.svc.cluster.local:9428/insert/elasticsearch/']
-      mode: bulk
-      api_version: v8
-      compression: gzip
-      # Bounded on purpose (vectordotdev/vector#25212: the elasticsearch sink
-      # retries without limit during sustained failures and grows until
-      # OOMKilled). Small batches/buffers, finite retries (about 2 minutes of
-      # outage, then that batch is dropped), memory buffers only - disk buffers
-      # would add I/O on the Pi 4B SSDs, which are already the bottleneck.
-      batch:
-        max_bytes: 1048576
-        timeout_secs: 5
-      buffer:
-        type: memory
-        max_events: 200
-        when_full: block
-      healthcheck:
-        enabled: false
-      query:
-        _time_field: timestamp
-        _stream_fields: stream,kubernetes.pod_name,kubernetes.container_name,kubernetes.pod_namespace
-        _msg_field: log
-      request:
-        concurrency: 2
-        timeout_secs: 30
-        retry_attempts: 15
-        headers:
-          AccountID: '0'
-          ProjectID: '0'
-    # Same reasoning as opensearch_host above - journald events carry none
-    # of the kubernetes.* fields vlogs's VL-Stream-Fields expects, so this
-    # needs its own stream-field set, not a shared sink.
-    vlogs_host:
-      type: elasticsearch
-      inputs: [journal]
-      # Same two fixes as the vlogs sink above - real bulk path, and
-      # _time_field/_stream_fields/_msg_field as query params not headers.
-      # journald events keep their own .message field (no parser transform
-      # renames it the way k8s container logs' .log does), confirmed
-      # against a live sample doc already indexed in OpenSearch.
-      endpoints: ['http://vls-victoria-logs-single-server.monitoring.svc.cluster.local:9428/insert/elasticsearch/']
-      mode: bulk
-      api_version: v8
-      compression: gzip
-      # Bounded on purpose (vectordotdev/vector#25212: the elasticsearch sink
-      # retries without limit during sustained failures and grows until
-      # OOMKilled). Small batches/buffers, finite retries (about 2 minutes of
-      # outage, then that batch is dropped), memory buffers only - disk buffers
-      # would add I/O on the Pi 4B SSDs, which are already the bottleneck.
-      batch:
-        max_bytes: 1048576
-        timeout_secs: 5
-      buffer:
-        type: memory
-        max_events: 200
-        when_full: block
-      healthcheck:
-        enabled: false
-      query:
-        _time_field: timestamp
-        _stream_fields: host,_SYSTEMD_UNIT,PRIORITY
-        _msg_field: message
-      request:
-        concurrency: 2
-        timeout_secs: 30
-        retry_attempts: 15
-        headers:
-          AccountID: '0'
-          ProjectID: '0'

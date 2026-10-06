@@ -136,7 +136,7 @@ Ansible owns the machines and the secrets; Argo CD owns everything that runs in 
    All nodes should show `Ready`, all Argo CD Applications `Synced`/`Healthy`.
 
 From there, Longhorn (storage), VictoriaMetrics/Grafana (metrics), OpenSearch/OpenSearch
-Dashboards + VictoriaLogs (logs, dual-shipped to both), Blocky (DNS), SearXNG (search), the redis-operator
+Dashboards (logs), Blocky (DNS), SearXNG (search), the redis-operator
 (Blocky's and SearXNG's own small caching clusters), WhoDB (a UI for browsing Postgres, OpenSearch and those caches),
 CloudNativePG (a two-instance Postgres cluster on Longhorn volumes, free to schedule anywhere, behind PgBouncer poolers), Bifrost (an LLM gateway backed by Postgres and its own Redis cache), GO Feature Flag (a feature-flag service stored in that Postgres), Temporal (a
 workflow orchestration platform, backed by that same Postgres cluster), shairport-sync on the dedicated audio node (AirPlay to a USB DAC), a Tor Snowflake proxy (committed, scaled to 0), Homepage (a dashboard linking out
@@ -276,6 +276,6 @@ kubectl get nodes
 ## More detail
 
 [docs/REFERENCE.md](docs/REFERENCE.md) covers: project structure, the GitOps split between Ansible and
-Argo CD, per-app configuration (Longhorn, VictoriaMetrics, VictoriaLogs, OpenSearch, Blocky, SearXNG,
+Argo CD, per-app configuration (Longhorn, VictoriaMetrics, OpenSearch, Blocky, SearXNG,
 redis-operator, WhoDB, Postgres/CloudNativePG, Temporal, Homepage, Open WebUI, descheduler, Trivy
 Operator, Tailscale Operator), user management, node maintenance, and troubleshooting.
