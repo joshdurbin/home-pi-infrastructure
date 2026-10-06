@@ -689,20 +689,19 @@ cluster, why Vector rather than a new log shipper); this section covers day-to-d
 group_vars/all/main.yaml`) before this deploys successfully - see [Secrets & Variables](#secrets--variables).
 
 - **Topology**: an `OpenSearchCluster` custom resource (`apps/opensearch/manifests/cluster.yaml`) with two
-  node pools - `client` (cluster-manager + ingest, 2 pods, 2Gi PVC each) and `data` (data + cluster-manager, 2 pods,
-  10Gi PVC each, `storageClassName: longhorn`) - plus its own `dashboards` section (not a separate chart under the
-  operator). HA: the two pods of each pool never share a node (required anti-affinity) and each pool has a PDB
-  (`maxUnavailable: 1`); four manager-eligible nodes give a 3-voter set, so any single node can be lost, and indices
-  keep one replica so every shard exists on both data nodes. All pods are pinned to the Pi 5s (`pi5=true`).
-  About 1.5Gi memory per pod (6Gi total).
+  node pools - `client` (cluster-manager + ingest, 2Gi PVC) and `data` (data + cluster-manager, 10Gi PVC,
+  `storageClassName: longhorn`) - plus its own `dashboards` section (not a separate chart under the operator).
+  Currently ONE pod per pool and no index replicas (about 3Gi): the structure (per-pool anti-affinity and PDB) is kept so
+  scaling back up is a replica-count change - see `apps/opensearch/README.md` "Scaling" for how, and for the safe
+  way to scale down (a naive `replicas` decrease turned the cluster red once). All pods are pinned to the Pi 5s.
 - **Log shipping**: one Vector DaemonSet, writing to daily
   `logs-*`/`logs-host-*` indices via OpenSearch's bulk API, now authenticating with TLS + basic auth
   (`apps/opensearch/values-vector.yaml`).
 - **Retention**: an `OpenSearchISMPolicy` custom resource (`apps/opensearch/manifests/ism-policy.yaml`)
   deletes `logs-*` indices once `min_index_age: 7d`; an `OpenSearchIndexTemplate`
   (`apps/opensearch/manifests/index-template.yaml`) sets `number_of_replicas: 1` for those same indices
-  (a primary on one data node, a replica on the other). Indices created before this keep their old replica count:
-  raise them once with `PUT logs-*/_settings {"index":{"number_of_replicas":1}}`.
+  (none: one data node). With two data nodes set it to 1 and raise existing indices once with
+  `PUT logs-*,logs-host-*/_settings {"index":{"number_of_replicas":1}}`.
 - **Auth**: unlike everywhere else in this cluster (Grafana's anonymous Admin, Argo CD via tailnet),
   **mandatory** here - the operator has no equivalent of a fully-disabled security plugin. TLS is
   operator-generated (self-signed), and Vector/Dashboards authenticate with the same
@@ -1457,7 +1456,7 @@ does **not** have the spare capacity for more than one node out at a time, so th
 | Bifrost, Grafana, Homepage | 1 replica each (stateless - state is in Postgres/Redis); a drain reschedules them, gaps of roughly 1-2 min, 30-90s and 10-30s (Pi start-up, plus an image pull on a node that hasn't run them) |
 
 **Accepted blips** (single replica by design; recover when the pod reschedules, typically under a minute or two):
-Blocky, Bifrost, Grafana and Homepage, Open WebUI and WhoDB (RWO volume), SearXNG, Temporal (all services), Dashboards (OpenSearch itself runs two client and two data pods, so one can go),
+Blocky, Bifrost, Grafana and Homepage, Open WebUI and WhoDB (RWO volume), SearXNG, Temporal (all services), Dashboards (OpenSearch runs one client and one data pod by default; HA is a replica-count change),
 Alertmanager (Vector buffers or retries), vmalert, Argo CD, and the other
 operators. None are on a path that other workloads need to keep running.
 

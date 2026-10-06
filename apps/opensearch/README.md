@@ -1,8 +1,9 @@
 # OpenSearch
 
 This cluster's log store: one Vector DaemonSet ships every container's logs plus host journald into
-OpenSearch + OpenSearch Dashboards (VictoriaLogs, the previous store, is gone). HA layout: two client pods and
-two data pods, each with its own PVC, indices with one replica (see "Redundancy" below).
+OpenSearch + OpenSearch Dashboards (VictoriaLogs, the previous store, is gone). Minimal layout - one client
+pod and one data pod, no redundancy - with the structure kept so it scales back up by changing replica counts
+(see "Scaling" below).
 
 **Not Kibana** - Elastic revoked Kibana's OSS license in 2021; OpenSearch forked it into a
 separately-maintained product called OpenSearch Dashboards. Same job, different name.
@@ -73,17 +74,22 @@ Enforced by `manifests/ism-policy.yaml`'s `min_index_age: 7d` transition to a `d
 daily-index granularity (`logs-%Y.%m.%d` / `logs-host-%Y.%m.%d` - `values-vector.yaml`'s `bulk.index`).
 This is index-boundary granularity, not an exact 7d cutoff - data can live up to ~8d in the worst case.
 
-## Redundancy
+## Scaling
 
-- **Pods**: 2 `client` (cluster-manager-eligible + ingest) and 2 `data` (data + cluster-manager-eligible),
-  each pool with required anti-affinity (the two pods of a pool never share a node) and a PDB
-  (`maxUnavailable: 1`). Four manager-eligible nodes give a 3-voter set: any single node can be lost.
-- **Storage**: each pod has its own Longhorn PVC (client 2Gi, data 10Gi). Indices use
-  `number_of_replicas: 1` (`manifests/index-template.yaml`), so every shard has a copy on each data node,
-  on top of Longhorn's own volume replication. Losing a data pod, its node or its volume loses no logs.
-- **Existing indices** created before this was enabled keep `number_of_replicas: 0`: raise them once with
-  `PUT logs-*/_settings {"index":{"number_of_replicas":1}}` (and the same for `logs-host-*`).
-- **Cost**: about 1.5Gi memory per OpenSearch pod (6Gi total across the Pi 5s, was 3Gi).
+Currently **1 client + 1 data pod, `number_of_replicas: 0`** (about 3Gi of memory). Losing the data pod or its
+volume loses the logs on it; the client pod can be replaced freely.
+
+- **Restore HA**: `client` and `data` `replicas: 2` in `manifests/cluster.yaml` (each pool has required
+  anti-affinity and a PDB already; four manager-eligible nodes give a 3-voter set that survives any one node),
+  `number_of_replicas: 1` in `manifests/index-template.yaml`, then once for existing indices
+  `PUT logs-*,logs-host-*/_settings {"index":{"number_of_replicas":1}}`.
+- **Scale down safely**: do not just lower `replicas` - with index replicas at 0 the operator removes the pod
+  before its shards move and the cluster goes red (this happened once). Exclude the node from allocation first
+  (`PUT _cluster/settings {"persistent":{"cluster.routing.allocation.exclude._name":"opensearch-data-1"}}`), wait
+  until `_cat/shards` shows nothing on it, then lower `replicas`, then clear the setting (`null`). For the client
+  pool also `POST _cluster/voting_config_exclusions?node_names=opensearch-client-1` first and `DELETE` it after.
+  Leftover PVCs (`data-opensearch-*-1`) are not removed automatically; delete them before scaling back up if you
+  want a clean node.
 
 ## Log shipping
 
@@ -106,10 +112,9 @@ OpenSearch cluster's uptime and credentials too. A separate decision, not part o
 
 ## Resource footprint
 
-About 8.6GB of container memory limits in total: client 2 x 1536Mi + data 2 x 1536Mi + dashboards 512Mi, plus
-the operator (256Mi). Every OpenSearch pod is pinned to a Pi 5 (`pi5=true`): the Amazon Linux image can't
-run on a Pi 4B CPU. Spread across the four Pi 5s that is roughly 2GB each; watch `kubectl top nodes` -
-the Pi 5s were already at 56-71% memory before this layout.
+About 3Gi of OpenSearch pod memory now (client 1536Mi + data 1536Mi) plus Dashboards (512Mi) and the operator
+(256Mi); double the OpenSearch part when scaled to HA. Every OpenSearch pod is pinned to a Pi 5 (`pi5=true`): the
+Amazon Linux image can't run on a Pi 4B CPU.
 
 ## One-time cleanup after VictoriaLogs was removed
 
