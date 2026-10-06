@@ -41,9 +41,15 @@ tolerations:
     value: audio
     effect: NoSchedule
 
+# 512Mi, not 256Mi: at 256Mi the two Vectors on the Pi 4Bs sat at their cgroup
+# limit and thrashed - their own binary's pages evicted and re-read from the
+# USB SSD (90+ MB/s, 7k IOPS, 40-60% iowait node-wide). Healthy Vectors use
+# 40-90Mi; this is headroom for the 0.55-0.58 kubernetes_logs backlog
+# behaviour (vectordotdev/vector#26465) and sink retries (#25212), which the
+# source/sink settings below also bound.
 resources:
   limits:
-    memory: 256Mi
+    memory: 512Mi
   requests:
     cpu: 10m
     memory: 256Mi
@@ -101,6 +107,19 @@ customConfig:
   sources:
     k8s:
       type: kubernetes_logs
+      # Vector 0.55.0-0.58.0 (vectordotdev/vector#26465, open) reads the whole
+      # on-disk log backlog into memory at once and holds it. These bound that:
+      # only new data on a file with no checkpoint, nothing old, and no
+      # kubelet-rotated plain files (the default excludes only .gz/.tmp).
+      read_from: end
+      ignore_older_secs: 3600
+      exclude_paths_glob_patterns: ["**/*.gz", "**/*.tmp", "**/*.log.*"]
+      # Default keeps a handle open on rotated files "forever" - the source of
+      # the deleted-but-still-open pgbouncer logs seen on the 4B nodes.
+      rotate_wait_secs: 30
+      # Serve pod metadata from the apiserver cache (lighter on the control
+      # plane; Vector logged apiserver connect errors on the 4Bs).
+      use_apiserver_cache: true
     internal_metrics:
       type: internal_metrics
     journal:
@@ -135,6 +154,22 @@ customConfig:
       mode: bulk
       api_version: v8
       compression: gzip
+      # Bounded on purpose (vectordotdev/vector#25212: the elasticsearch sink
+      # retries without limit during sustained failures and grows until
+      # OOMKilled). Small batches/buffers, finite retries (about 2 minutes of
+      # outage, then that batch is dropped), memory buffers only - disk buffers
+      # would add I/O on the Pi 4B SSDs, which are already the bottleneck.
+      batch:
+        max_bytes: 1048576
+        timeout_secs: 5
+      buffer:
+        type: memory
+        max_events: 200
+        when_full: block
+      request:
+        concurrency: 2
+        timeout_secs: 30
+        retry_attempts: 15
       healthcheck:
         enabled: false
       tls:
@@ -158,6 +193,22 @@ customConfig:
       mode: bulk
       api_version: v8
       compression: gzip
+      # Bounded on purpose (vectordotdev/vector#25212: the elasticsearch sink
+      # retries without limit during sustained failures and grows until
+      # OOMKilled). Small batches/buffers, finite retries (about 2 minutes of
+      # outage, then that batch is dropped), memory buffers only - disk buffers
+      # would add I/O on the Pi 4B SSDs, which are already the bottleneck.
+      batch:
+        max_bytes: 1048576
+        timeout_secs: 5
+      buffer:
+        type: memory
+        max_events: 200
+        when_full: block
+      request:
+        concurrency: 2
+        timeout_secs: 30
+        retry_attempts: 15
       healthcheck:
         enabled: false
       tls:
@@ -199,6 +250,18 @@ customConfig:
       mode: bulk
       api_version: v8
       compression: gzip
+      # Bounded on purpose (vectordotdev/vector#25212: the elasticsearch sink
+      # retries without limit during sustained failures and grows until
+      # OOMKilled). Small batches/buffers, finite retries (about 2 minutes of
+      # outage, then that batch is dropped), memory buffers only - disk buffers
+      # would add I/O on the Pi 4B SSDs, which are already the bottleneck.
+      batch:
+        max_bytes: 1048576
+        timeout_secs: 5
+      buffer:
+        type: memory
+        max_events: 200
+        when_full: block
       healthcheck:
         enabled: false
       query:
@@ -206,6 +269,9 @@ customConfig:
         _stream_fields: stream,kubernetes.pod_name,kubernetes.container_name,kubernetes.pod_namespace
         _msg_field: log
       request:
+        concurrency: 2
+        timeout_secs: 30
+        retry_attempts: 15
         headers:
           AccountID: '0'
           ProjectID: '0'
@@ -224,6 +290,18 @@ customConfig:
       mode: bulk
       api_version: v8
       compression: gzip
+      # Bounded on purpose (vectordotdev/vector#25212: the elasticsearch sink
+      # retries without limit during sustained failures and grows until
+      # OOMKilled). Small batches/buffers, finite retries (about 2 minutes of
+      # outage, then that batch is dropped), memory buffers only - disk buffers
+      # would add I/O on the Pi 4B SSDs, which are already the bottleneck.
+      batch:
+        max_bytes: 1048576
+        timeout_secs: 5
+      buffer:
+        type: memory
+        max_events: 200
+        when_full: block
       healthcheck:
         enabled: false
       query:
@@ -231,6 +309,9 @@ customConfig:
         _stream_fields: host,_SYSTEMD_UNIT,PRIORITY
         _msg_field: message
       request:
+        concurrency: 2
+        timeout_secs: 30
+        retry_attempts: 15
         headers:
           AccountID: '0'
           ProjectID: '0'
