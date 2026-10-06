@@ -4,9 +4,10 @@
 #
 # The operator only wires ONE RedisReplication per RedisSentinel, and only from
 # the Sentinel's own namespace: that is blocky-cache (redisReplicationName /
-# masterGroupName below). The other two groups are added as raw sentinel.conf
-# lines via additionalSentinelConfig, by hostname - each cache's
-# operator-maintained "-master" Service - which is why resolveHostnames is on.
+# masterGroupName below). The other two groups come from the ConfigMap named
+# by additionalSentinelConfig (redis-sentinel-config.yaml: `sentinel monitor`
+# lines, by hostname - each cache's operator-maintained "-master" Service -
+# which is why resolveHostnames is on).
 # After a failover Sentinel tracks the promoted replica itself; the operator
 # re-points the "-master" Service.
 #
@@ -44,15 +45,7 @@ spec:
     redisReplicationName: blocky-cache
     masterGroupName: blocky-cache
     resolveHostnames: "yes"
-    additionalSentinelConfig: |
-      sentinel monitor searxng-cache searxng-cache-master.redis-cache.svc.cluster.local 6379 2
-      sentinel down-after-milliseconds searxng-cache 5000
-      sentinel failover-timeout searxng-cache 10000
-      sentinel parallel-syncs searxng-cache 1
-      sentinel monitor bifrost-cache bifrost-cache-master.redis-cache.svc.cluster.local 6379 2
-      sentinel down-after-milliseconds bifrost-cache 5000
-      sentinel failover-timeout bifrost-cache 10000
-      sentinel parallel-syncs bifrost-cache 1
+    additionalSentinelConfig: redis-cache-sentinel-config
   kubernetesConfig:
     image: quay.io/opstree/redis-sentinel:v8.10.1
     imagePullPolicy: IfNotPresent

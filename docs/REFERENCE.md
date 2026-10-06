@@ -923,8 +923,10 @@ Ansible except SearXNG's `valkey.url` setting (part of its seeded `settings.yml`
   `clusterSize: 2`: one master, one replica, own 512Mi Longhorn PVC) — and ONE shared `RedisSentinel`
   (`redis-cache-sentinel`, `clusterSize: 3`, quorum 2-of-3) monitoring all three, one master group per cache,
   named after it. The operator wires only one `RedisReplication` per Sentinel and only from the Sentinel's own
-  namespace (`blocky-cache`, via `redisReplicationName`); the other two groups are raw `sentinel monitor` lines in
-  `additionalSentinelConfig`, by each cache's `-master` Service hostname (`resolveHostnames: "yes"`).
+  namespace (`blocky-cache`, via `redisReplicationName`); the other two groups are `sentinel monitor` lines in a
+  ConfigMap (`redis-cache-sentinel-config`, key `redis-sentinel-additional.conf`) that `additionalSentinelConfig`
+  *names* (it is a ConfigMap name, not inline config), by each cache's `-master` Service hostname
+  (`resolveHostnames: "yes"`). If the sentinel StatefulSet's pod-0 is stuck on an old revision, delete that pod.
   **Unverified live when written** - check `sentinel masters` (below) shows all three groups.
 - **Known operator quirk**: if a sentinel *container* restarts in place, the image appends its
   `sentinel monitor` line to the persisted config again and crashes with `Duplicate master name`. Delete that

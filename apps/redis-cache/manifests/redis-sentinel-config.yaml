@@ -1,0 +1,27 @@
+# Extra master groups for the shared Sentinel (redis-sentinel.yaml). The
+# RedisSentinel's `additionalSentinelConfig` is the NAME of this ConfigMap
+# (not inline config): the operator mounts it at /etc/redis/external.conf.d and
+# the sentinel image `include`s the file redis-sentinel-additional.conf from it,
+# after its own generated lines (which already set `sentinel resolve-hostnames
+# yes` via resolveHostnames, needed for the hostnames below).
+#
+# blocky-cache is the group the operator wires itself (redisReplicationName).
+# The other caches are monitored by their operator-maintained "-master"
+# Service hostnames. Wave -1 so it exists before the Sentinel pods mount it.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-cache-sentinel-config
+  namespace: redis-cache
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+data:
+  redis-sentinel-additional.conf: |
+    sentinel monitor searxng-cache searxng-cache-master.redis-cache.svc.cluster.local 6379 2
+    sentinel down-after-milliseconds searxng-cache 5000
+    sentinel failover-timeout searxng-cache 10000
+    sentinel parallel-syncs searxng-cache 1
+    sentinel monitor bifrost-cache bifrost-cache-master.redis-cache.svc.cluster.local 6379 2
+    sentinel down-after-milliseconds bifrost-cache 5000
+    sentinel failover-timeout bifrost-cache 10000
+    sentinel parallel-syncs bifrost-cache 1
