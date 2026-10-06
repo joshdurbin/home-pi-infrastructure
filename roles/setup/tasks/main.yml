@@ -5,6 +5,9 @@
 - name: include config.txt (per-board boot config) tasks
   ansible.builtin.include_tasks: config_txt.yml
 
+- name: include USB disk read-ahead tasks
+  ansible.builtin.include_tasks: usb_read_ahead.yml
+
 - name: include kill radios tasks
   ansible.builtin.include_tasks: kill_radios.yml
 

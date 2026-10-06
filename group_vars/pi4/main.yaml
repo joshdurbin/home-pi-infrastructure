@@ -1,1 +1,4 @@
 board_model: pi4
+# Cap read-ahead on the USB SSD (the bridge reports a 64MB default) - see
+# roles/setup/tasks/usb_read_ahead.yml.
+usb_disk_read_ahead_kb: 256

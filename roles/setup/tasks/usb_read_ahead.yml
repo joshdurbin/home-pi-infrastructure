@@ -1,0 +1,26 @@
+---
+# Caps read-ahead on USB-attached disks. The USB-SATA bridges on the Pi 4B
+# nodes report a huge optimal I/O size, so the kernel sets sda's read_ahead_kb
+# to 65532 (64MB). Under memory pressure (a container squeezed against its
+# cgroup limit evicting its own mapped binary) every page fault then pulls in
+# up to that much, saturating the SSD: measured 300+ MB/s of reads and 50-70%
+# iowait on rpi-4b-3. Lowering it keeps those faults cheap.
+#
+# Only runs where usb_disk_read_ahead_kb is set (group_vars/pi4). Matches
+# whole disks on the USB bus only, so Longhorn's iSCSI sd* devices and the SD
+# card are untouched. Takes effect for already-open files only after their
+# process restarts (a mapped file keeps the read-ahead it was opened with).
+- name: cap read-ahead on USB-attached disks
+  ansible.builtin.copy:
+    dest: /etc/udev/rules.d/99-usb-read-ahead.rules
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      # Managed by Ansible (roles/setup/tasks/usb_read_ahead.yml).
+      SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_BUS}=="usb", ATTR{queue/read_ahead_kb}="{{ usb_disk_read_ahead_kb }}"
+  when: usb_disk_read_ahead_kb is defined
+  notify: apply udev read-ahead rule
+  tags:
+    - usb_read_ahead
+    - performance_optimization

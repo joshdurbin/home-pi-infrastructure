@@ -19,3 +19,10 @@
     daemon_reload: true
     enabled: true
     state: restarted
+
+# Reloads the rules and re-applies them to the block devices that already
+# exist, so the new read-ahead takes effect without a reboot. Processes that
+# already have a file open keep its old read-ahead until they restart.
+- name: apply udev read-ahead rule
+  ansible.builtin.shell: udevadm control --reload && udevadm trigger --subsystem-match=block --property-match=ID_BUS=usb --action=change && udevadm settle
+  changed_when: true

@@ -103,6 +103,15 @@ To check a real board's revision before assuming any documented overclock step a
 `cat /proc/cpuinfo | grep Revision` (cross-reference against the
 [official revision codes](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#raspberry-pi-revision-codes)).
 
+## USB disk read-ahead
+
+On the Pi 4B nodes (`group_vars/pi4`: `usb_disk_read_ahead_kb: 256`) a udev rule
+(`/etc/udev/rules.d/99-usb-read-ahead.rules`, `tasks/usb_read_ahead.yml`) caps read-ahead on USB-attached
+disks. The USB-SATA bridge reports a huge optimal I/O size, so the kernel picks `read_ahead_kb=65532`; under
+memory pressure each page fault then reads up to 64MB and saturates the SSD. It is applied live
+(`udevadm trigger`), but a process that already has a file mapped keeps the old value until it restarts - restart
+(e.g. delete the pod of) anything that was thrashing.
+
 ## Reboots are manual
 
 Every task that writes to `/boot/firmware/config.txt` notifies the `restart pi after config change` handler
