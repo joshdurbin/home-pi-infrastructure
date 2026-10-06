@@ -22,7 +22,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [Logs, Also in VictoriaLogs](#logs-also-in-victorialogs)
 - [DNS (Blocky)](#dns-blocky)
 - [Search (SearXNG)](#search-searxng)
-- [Redis Clusters (Blocky + SearXNG Caching)](#redis-clusters-blocky--searxng-caching)
+- [Redis Clusters (Blocky + SearXNG + Bifrost Caching)](#redis-clusters-blocky--searxng--bifrost-caching)
 - [Postgres (CloudNativePG)](#postgres-cloudnativepg)
 - [Temporal](#temporal)
 - [Home Dashboard (Homepage)](#home-dashboard-homepage)
@@ -89,7 +89,7 @@ home-pi-infrastructure/
 │   │                              # (where needed) manifests/.
 │   ├── longhorn, victoria-metrics, victoria-logs, opensearch, argocd-metrics
 │   ├── cloudnative-pg, postgres, temporal
-│   ├── redis-operator, redis-operator-metrics
+│   ├── redis-operator, redis-operator-metrics, redis-cache
 │   ├── blocky, searxng, homepage, whodb
 │   ├── bifrost, open-webui, go-feature-flag
 │   ├── shairport-sync, snowflake
@@ -810,11 +810,11 @@ admin login, so its entire config is non-secret and lives as a plain git-managed
   rewrites its own config, so a plain read-only ConfigMap mount is all that's required.
 - **Blocklist**: OISD (small) — same list AdGuard used, a low-false-positive list.
 - **Cache backend**: Blocky's native `redis:` config (in `configmap.yaml`) points at `blocky-cache`'s
-  Sentinel cluster for master discovery — see [Redis Clusters](#redis-clusters-blocky--searxng-caching)
+  Sentinel cluster for master discovery — see [Redis Clusters](#redis-clusters-blocky--searxng--bifrost-caching)
   below. `required: false`, so a cache outage degrades to in-memory-only caching rather than blocking DNS
   resolution.
 - **Storage**: none for Blocky itself — no mutable runtime config, no required local persistence. Its
-  cache backend does have storage, see [Redis Clusters](#redis-clusters-blocky--searxng-caching) below.
+  cache backend does have storage, see [Redis Clusters](#redis-clusters-blocky--searxng--bifrost-caching) below.
 - **Metrics**: native Prometheus endpoint at `/metrics` (port 4000), wired to `vmagent` via a
   `VMServiceScrape` (`apps/blocky/manifests/vmservicescrape.yaml`) — verified this actually gets scraped
   (`vmagent`'s `serviceScrapeSelector` is `selectAllByDefault: true` in this chart, confirmed against the
@@ -860,10 +860,10 @@ is a web UI, not a port every LAN client needs to hit directly (same pattern as 
   `searxng_secret_key`.
 - **Storage**: none for SearXNG itself — it stores no user data or query history server-side by design
   (that's the whole point of it), and its on-disk cache is fine to lose on restart. Its own redis/valkey
-  cache does have storage, see [Redis Clusters](#redis-clusters-blocky--searxng-caching) below.
+  cache does have storage, see [Redis Clusters](#redis-clusters-blocky--searxng--bifrost-caching) below.
 - **Rate-limiting / bot-protection**: configured via `valkey.url` in
   `roles/k8s_secrets/templates/searxng-config.yaml.j2`, pointing at `searxng-cache` — see
-  [Redis Clusters](#redis-clusters-blocky--searxng-caching) below for the real caveat: SearXNG's client
+  [Redis Clusters](#redis-clusters-blocky--searxng--bifrost-caching) below for the real caveat: SearXNG's client
   can't discover a new master after a failover, unlike Blocky's.
 - **Metrics**: SearXNG does have a native OpenMetrics endpoint after all (confirmed directly against its
   source, `searx/settings.yml`/`searx/webapp.py` - an earlier version of this doc claimed otherwise and
@@ -896,7 +896,7 @@ ansible-playbook site.yml -i inventory.dist -t secrets --ask-vault-pass
 
 **Access it**: `https://search.<tailnet>.ts.net` once the Tailscale Operator step below has synced.
 
-## Redis Clusters (Blocky + SearXNG Caching)
+## Redis Clusters (Blocky + SearXNG + Bifrost Caching)
 
 Two small, independent master+replica redis clusters — one backing Blocky's cache/blocking-state, one
 backing SearXNG's rate-limiter — each with automatic failover via Sentinel. **Everything here lives in
@@ -916,12 +916,22 @@ Ansible except SearXNG's `valkey.url` setting (part of its seeded `settings.yml`
   for Blocky's/SearXNG's own redis clusters below to depend on. No dedicated Grafana dashboard exists for
   the controller's own metrics (checked) - the "Redis (Kubernetes mode)" dashboard below covers the
   managed clusters, not this.
-- **Topology per cluster**: a `RedisReplication` (`clusterSize: 2` — one master, one replica, each with its
-  own 512Mi Longhorn PVC) plus a separate `RedisSentinel` (`clusterSize: 3`, quorum 2-of-3 — a real
-  majority, which 2 sentinels can't provide) monitoring it. Namespaces: `blocky-cache`, `searxng-cache` —
-  deliberately **not** the `blocky`/`searxng` namespaces themselves, so those apps' existing egress-only
-  `NetworkPolicy` (`podSelector: {}` — every pod in the namespace) doesn't accidentally clamp down the
-  redis/sentinel pods' own intra-cluster traffic too.
+- **Topology**: everything lives in ONE namespace, `redis-cache` (`apps/redis-cache/`, its own Argo CD app),
+  deliberately **not** the consuming apps' namespaces, so their egress-only `NetworkPolicy`
+  (`podSelector: {}` — every pod in the namespace) doesn't clamp down the redis/sentinel pods' own traffic.
+  It holds one `RedisReplication` per cache — `blocky-cache`, `searxng-cache`, `bifrost-cache` (each
+  `clusterSize: 2`: one master, one replica, own 512Mi Longhorn PVC) — and ONE shared `RedisSentinel`
+  (`redis-cache-sentinel`, `clusterSize: 3`, quorum 2-of-3) monitoring all three, one master group per cache,
+  named after it. The operator wires only one `RedisReplication` per Sentinel and only from the Sentinel's own
+  namespace (`blocky-cache`, via `redisReplicationName`); the other two groups are raw `sentinel monitor` lines in
+  `additionalSentinelConfig`, by each cache's `-master` Service hostname (`resolveHostnames: "yes"`).
+  **Unverified live when written** - check `sentinel masters` (below) shows all three groups.
+- **Known operator quirk**: if a sentinel *container* restarts in place, the image appends its
+  `sentinel monitor` line to the persisted config again and crashes with `Duplicate master name`. Delete that
+  pod (`kubectl -n redis-cache delete pod redis-cache-sentinel-sentinel-<n>`) to get a fresh volume.
+- **bifrost-cache** is deployed and managed by the shared Sentinel but **not wired into Bifrost**: Bifrost's Redis
+  vector store (semantic cache) needs RediSearch (`FT.*`), and this image (`quay.io/opstree/redis`) only ships
+  the `vectorset` module (`MODULE LIST`). Wiring it needs a search-capable Redis for that one cache.
 - **Sizing**: `maxmemory 128mb` / `allkeys-lru` (set via `redisConfig.dynamicConfig` on the
   `RedisReplication`) — these are small caches, not a source of truth. Each redis container gets a 192Mi
   memory limit — `maxmemory` plus headroom for redis's own process overhead, client buffers and
@@ -931,36 +941,38 @@ Ansible except SearXNG's `valkey.url` setting (part of its seeded `settings.yml`
   (not a `VMServiceScrape` like Blocky's own — the operator doesn't document a stable Service port *name*
   for the exporter, only the container port number) in each cache namespace.
 - **How Blocky connects**: natively Sentinel-aware — its `redis.sentinelAddresses` (in
-  `apps/blocky/manifests/configmap.yaml`) points at the round-robin `blocky-cache-sentinel-sentinel`
-  Service, and `redis.address: blocky-cache` is the Sentinel master group name
+  `apps/blocky/manifests/configmap.yaml`) points at the round-robin `redis-cache-sentinel-sentinel`
+  Service (the shared Sentinel), and `redis.address: blocky-cache` is the Sentinel master group name
   (`redisSentinelConfig.masterGroupName`). Always finds the current master, even after a failover.
 - **How SearXNG connects**: its `valkey.url` only takes a single connection string, with no
   Sentinel-discovery support at the protocol level — but rather than pointing at a specific pod, it points
   at `searxng-cache`'s own operator-maintained **`searxng-cache-master`** Service
-  (`searxng-cache-master.searxng-cache.svc.cluster.local`), confirmed live to be exactly what the
+  (`searxng-cache-master.redis-cache.svc.cluster.local`), confirmed live to be exactly what the
   `RedisReplication` CR itself recommends:
-  `kubectl -n searxng-cache get redisreplication searxng-cache -o jsonpath='{.status.connectionInfo}'`. The
+  `kubectl -n redis-cache get redisreplication searxng-cache -o jsonpath='{.status.connectionInfo}'`. The
   redis-operator keeps this Service's endpoint pointed at whichever pod is actually master, so this *is*
   failover-aware despite the plain-URL limitation — SearXNG follows a failover automatically, same as
   Blocky, just via a different (non-Sentinel) mechanism.
 
 **A real gotcha, confirmed live, worth remembering**: the operator appends its own `-sentinel` suffix to
-whatever name a `RedisSentinel` CR is given — so a CR named `blocky-cache-sentinel` actually produces a
-StatefulSet/Service named `blocky-cache-sentinel-sentinel` (`kubectl -n blocky-cache get svc` to check),
-**not** `blocky-cache-sentinel`. This bit the very first deploy of this feature — Blocky logged
+whatever name a `RedisSentinel` CR is given — so the CR named `redis-cache-sentinel` actually produces a
+StatefulSet/Service named `redis-cache-sentinel-sentinel` (`kubectl -n redis-cache get svc` to check),
+**not** `redis-cache-sentinel`. This bit the very first deploy of this feature — Blocky logged
 `sentinel: ... no such host` and silently ran with no cache until the address was corrected.
 
 **Troubleshooting:**
 ```bash
 # Cluster health
-kubectl -n blocky-cache get pods,pvc,redisreplication,redissentinel
-kubectl -n searxng-cache get pods,pvc,redisreplication,redissentinel
+kubectl -n redis-cache get pods,pvc,redisreplication,redissentinel
 
 # Which pod is master right now
-kubectl -n blocky-cache get redisreplication blocky-cache
+kubectl -n redis-cache get redisreplication blocky-cache
+
+# Does the shared Sentinel monitor all three groups?
+kubectl -n redis-cache exec redis-cache-sentinel-sentinel-0 -- redis-cli -p 26379 sentinel masters | grep -A1 '^name'
 
 # Actual Service names the operator created (don't assume - check)
-kubectl -n blocky-cache get svc
+kubectl -n redis-cache get svc
 
 # Confirm Blocky actually connected (look for "sentinel: new master=..." not "no such host")
 kubectl -n blocky logs deployment/blocky | grep -i redis
@@ -980,7 +992,7 @@ directly.
 - **Operator**: `apps/cloudnative-pg/`, namespace `cnpg-system`, official `cnpg/cloudnative-pg` chart.
   Installs the `Cluster`/`Pooler`/etc. CRDs `apps/postgres/` depends on. Exports its own controller metrics
   (port 8080) via a hand-written `VMPodScrape` - same reasoning throughout this section as
-  [Redis Clusters](#redis-clusters-blocky--searxng-caching)'s own VM*Scrapes: CNPG's native `PodMonitor`
+  [Redis Clusters](#redis-clusters-blocky--searxng--bifrost-caching)'s own VM*Scrapes: CNPG's native `PodMonitor`
   toggle depends on the VM operator's unverified ServiceMonitor/PodMonitor converter, so this repo's proven
   hand-written mechanism is used instead. Also ships CloudNativePG's own official Grafana dashboard, wired
   straight into the existing Grafana sidecar (`grafana_dashboard: "1"` label) with no extra plumbing.
@@ -1099,7 +1111,7 @@ database directly" pattern as everything else in this repo.
 - **Metrics**: all four server components (frontend/history/matching/worker) export native Prometheus
   metrics on port 9090 - scraped via a hand-written `VMPodScrape`
   (`apps/temporal/manifests/vmpodscrape.yaml`), same reasoning as [Postgres](#postgres-cloudnativepg) and
-  [Redis Clusters](#redis-clusters-blocky--searxng-caching): the native chart toggle depends on the VM
+  [Redis Clusters](#redis-clusters-blocky--searxng--bifrost-caching): the native chart toggle depends on the VM
   operator's unverified ServiceMonitor/PodMonitor converter. The Web UI component exposes no metrics port
   and isn't scraped.
 - **Sync-wave**: `argocd.argoproj.io/sync-wave: "3"` - strictly after `cloudnative-pg` (wave 1) and
@@ -1208,7 +1220,7 @@ image, publishing results as CRDs rather than needing a UI of its own.
 - **Sync-wave 2, not 1**: `apps/trivy-operator/manifests/vmservicescrape.yaml` needs victoria-metrics'
   own CRD (wave 1) to exist first - same race class Blocky's own sync-wave comment describes; nothing
   else depends on trivy-operator's own CRDs at any particular wave, so bumping this app's wave (unlike
-  redis-operator's, see [Redis Clusters](#redis-clusters-blocky--searxng-caching) above) was the simpler
+  redis-operator's, see [Redis Clusters](#redis-clusters-blocky--searxng--bifrost-caching) above) was the simpler
   fix, no split-app needed.
 - **Prometheus metrics**: `metricsFindingsEnabled` (chart default `true`) plus `metricsVulnIdEnabled`/
   `metricsExposedSecretInfo`/`metricsConfigAuditInfo`/`metricsRbacAssessmentInfo` (chart default `false`,
@@ -1291,7 +1303,7 @@ replaces the former pgAdmin and RedisInsight apps. Runs the official `clidey/who
   - **OpenSearch** (`WHODB_OPENSEARCH`): `opensearch.opensearch:9200` as `admin` (the cluster requires TLS +
     auth), `SSL Mode: insecure` since the operator's cert is self-signed. This is the admin login, so
     WhoDB can write to OpenSearch.
-  - **Redis** (`WHODB_REDIS`, plain env in `values.yaml` - no auth): `blocky-cache` and `searxng-cache`, via
+  - **Redis** (`WHODB_REDIS`, plain env in `values.yaml` - no auth): `blocky-cache`, `searxng-cache` and `bifrost-cache` (namespace `redis-cache`), via
     each cluster's operator-maintained `-master` Service (failover-aware).
   - Postgres and OpenSearch profiles carry passwords, so they're in the `whodb-env` Secret, built from
     `whodb_postgres_profiles` / `whodb_opensearch_profiles` in `group_vars/all/cluster_secrets.yaml` and
@@ -1300,8 +1312,7 @@ replaces the former pgAdmin and RedisInsight apps. Runs the official `clidey/who
 - **WhoDB's own login**: none beyond picking a profile - the tailnet is the access control.
 - **Redis caching**: WhoDB does not use Redis itself. Its only state is an encrypted session store
   (`/data`, 256Mi Longhorn PVC); there is no cache-backend setting.
-- **Egress NetworkPolicy**: DNS, 5432 to `postgres`, 9200 to `opensearch`, 6379 to `blocky-cache` /
-  `searxng-cache`.
+- **Egress NetworkPolicy**: DNS, 5432 to `postgres`, 9200 to `opensearch`, 6379 to `redis-cache`.
 
 **Access it**: `https://whodb.<tailnet>.ts.net`.
 
@@ -1331,8 +1342,9 @@ current v2 schema (`https://www.getbifrost.ai/schema`); re-check that and re-pin
   them with dedicated vault values if you like. **Never change the encryption key once providers are stored.**
 - **Egress NetworkPolicy**: DNS, 5432 to `postgres`, and 443 to anywhere outside the private ranges (provider
   APIs, pricing sync).
-- **No Redis cache yet**: LiteLLM's response cache was dropped. Bifrost's semantic cache needs a vector store
-  (Redis with RediSearch, Weaviate or Qdrant), which is not set up.
+- **Cache**: `bifrost-cache` (shared `redis-cache` namespace, shared Sentinel) is deployed but **not wired in yet**:
+  Bifrost's semantic cache needs a vector store, and its Redis one needs RediSearch, which the operator's Redis
+  image lacks (see [Redis Clusters](#redis-clusters-blocky--searxng--bifrost-caching)).
 
 **Use it**: open the UI, add a provider (e.g. Anthropic) with its API key, then point clients at
 `http://bifrost.bifrost.svc.cluster.local:8080/v1` or `https://bifrost.<tailnet>.ts.net/v1`.
@@ -1522,24 +1534,25 @@ Done when `status` shows a healthy primary and a streaming replica again. The `p
 `postgres-pooler-rw` PgBouncer follow the new primary on their own; apps reconnect without config changes. A failover
 takes a few seconds to tens of seconds (`failoverDelay: 0`); a planned `promote` is quicker.
 
-**Redis** (Sentinel; the clusters are `blocky-cache`, `searxng-cache`, each in its own namespace,
-and each Sentinel master group is named after its cluster):
+**Redis** (one shared Sentinel in `redis-cache`; the caches are `blocky-cache`, `searxng-cache`, `bifrost-cache`,
+and each Sentinel master group is named after its cache):
 ```bash
-NS=blocky-cache                                           # or searxng-cache
+NS=redis-cache
+CACHE=blocky-cache                                        # or searxng-cache / bifrost-cache
 
 # Which pod is master now (the redis-role label is maintained by the operator)
-kubectl -n $NS get pods -l redis-role=master
-kubectl -n $NS exec ${NS}-sentinel-sentinel-0 -- redis-cli -p 26379 sentinel get-master-addr-by-name $NS
+kubectl -n $NS get pods -l app=$CACHE,redis-role=master
+kubectl -n $NS exec redis-cache-sentinel-sentinel-0 -- redis-cli -p 26379 sentinel get-master-addr-by-name $CACHE
 
 # Ask Sentinel to fail over to the replica
-kubectl -n $NS exec ${NS}-sentinel-sentinel-0 -- redis-cli -p 26379 sentinel failover $NS
+kubectl -n $NS exec redis-cache-sentinel-sentinel-0 -- redis-cli -p 26379 sentinel failover $CACHE
 
 # Crash simulation instead: delete the master pod
-kubectl -n $NS delete pod $(kubectl -n $NS get pods -l redis-role=master -o name | cut -d/ -f2)
+kubectl -n $NS delete pod $(kubectl -n $NS get pods -l app=$CACHE,redis-role=master -o name | cut -d/ -f2)
 ```
 After a few seconds the `redis-role=master` label and `get-master-addr-by-name` point at the other pod. Blocky and
 SearXNG discover the new master through Sentinel; the others use the operator-maintained `<name>-master`
-Service. They need no change. Check `sentinel master $NS` shows `num-slaves 1` once the old master has rejoined as the
+Service. They need no change. Check `sentinel master $CACHE` shows `num-slaves 1` once the old master has rejoined as the
 replica.
 
 ## Exposing UIs via Tailscale Operator

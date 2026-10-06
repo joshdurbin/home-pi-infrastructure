@@ -3,8 +3,9 @@
 # - Postgres poolers (port 5432, postgres namespace; the poolers' own
 #   ingress is open by design, see apps/postgres/manifests/networkpolicy.yaml)
 # - OpenSearch (port 9200, opensearch namespace)
-# - the blocky-cache / searxng-cache Redis clusters (port 6379; no Sentinel,
-#   WhoDB only talks to each cluster's "-master" Service)
+# - the blocky-cache / searxng-cache / bifrost-cache Redis clusters in the
+#   redis-cache namespace (port 6379; no Sentinel, WhoDB only talks to each
+#   cluster's "-master" Service)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -41,10 +42,8 @@ spec:
           port: 9200
     - to:
         - namespaceSelector:
-            matchExpressions:
-              - key: kubernetes.io/metadata.name
-                operator: In
-                values: [blocky-cache, searxng-cache]
+            matchLabels:
+              kubernetes.io/metadata.name: redis-cache
       ports:
         - protocol: TCP
           port: 6379

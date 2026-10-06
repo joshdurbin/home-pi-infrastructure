@@ -42,23 +42,23 @@ data:
       enable: true
       path: /metrics
 
-    # Cache/blocking-state backend: blocky-cache (redis-replication.yaml),
-    # discovered via its sentinels (redis-sentinel.yaml) rather than a
+    # Cache/blocking-state backend: blocky-cache (redis-cache app's blocky-cache RedisReplication),
+    # discovered via its sentinels (apps/redis-cache's shared Sentinel) rather than a
     # direct pod address so Blocky always finds the current master, even
     # after a failover. required: false - if the cache is ever unreachable,
     # DNS resolution itself (Blocky's actual job) must keep working,
     # degraded to in-memory-only caching, not fail outright.
     #
     # sentinelAddresses points at the operator's own round-robin ClusterIP
-    # service for the RedisSentinel - confirmed live (kubectl get svc -n
-    # blocky-cache) as "blocky-cache-sentinel-sentinel", not
-    # "blocky-cache-sentinel": the operator appends its own "-sentinel"
-    # suffix to whatever name the RedisSentinel CR is given, on top of the
-    # "-sentinel" already in this CR's own name. go-redis only needs one
+    # service for the shared RedisSentinel (apps/redis-cache) -
+    # "redis-cache-sentinel-sentinel": the operator appends its own
+    # "-sentinel" suffix to whatever name the RedisSentinel CR is given, on
+    # top of the "-sentinel" already in the CR's name. `address` is the
+    # Sentinel master group name (blocky-cache). go-redis only needs one
     # reachable sentinel to bootstrap - it learns the others from
     # `SENTINEL SENTINELS` once connected.
     redis:
       address: blocky-cache
       required: false
       sentinelAddresses:
-        - blocky-cache-sentinel-sentinel.blocky-cache.svc.cluster.local:26379
+        - redis-cache-sentinel-sentinel.redis-cache.svc.cluster.local:26379

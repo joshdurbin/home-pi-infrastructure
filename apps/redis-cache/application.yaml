@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: redis-cache
+  namespace: argocd
+  annotations:
+    # Owns every Redis cache's PVCs (Longhorn, wave 0), the RedisReplication /
+    # RedisSentinel CRs (redis-operator's CRDs, wave 1) and a VMPodScrape
+    # (victoria-metrics' operator CRDs). Same wave as the apps that consume it
+    # (blocky, searxng, bifrost): those tolerate the cache being briefly absent.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: redis-cache
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  source:
+    repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+    targetRevision: master
+    path: apps/redis-cache/manifests

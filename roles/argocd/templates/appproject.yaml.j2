@@ -48,9 +48,7 @@ spec:
     # (podSelector: {}, i.e. every pod in that namespace) don't
     # accidentally clamp down the redis/sentinel pods' own intra-cluster
     # traffic.
-    - namespace: blocky-cache
-      server: https://kubernetes.default.svc
-    - namespace: searxng-cache
+    - namespace: redis-cache
       server: https://kubernetes.default.svc
     - namespace: whodb
       server: https://kubernetes.default.svc

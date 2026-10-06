@@ -4,8 +4,8 @@ metadata:
   name: searxng
   namespace: argocd
   annotations:
-    # Now has a real PVC dependency (searxng-cache's redis PVCs, see
-    # manifests/redis-replication.yaml) and needs redis-operator's CRDs to
+    # Now has a real PVC dependency (searxng-cache's redis PVCs, in
+    # apps/redis-cache) and needs redis-operator's CRDs to
     # already exist - moved from wave 1 to strictly after both Longhorn
     # (wave 0) and redis-operator (wave 1), same race class as the
     # VMServiceScrape CRD issue fixed for Blocky.

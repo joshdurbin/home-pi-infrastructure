@@ -1,0 +1,9 @@
+# One namespace for every Redis cache in the cluster (blocky-cache,
+# searxng-cache, bifrost-cache) and the single Sentinel cluster that manages
+# them. Kept separate from the consuming apps' namespaces so their egress-only
+# NetworkPolicies never govern the Redis<->Redis and Redis<->Sentinel traffic
+# (see networkpolicy.yaml here).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: redis-cache

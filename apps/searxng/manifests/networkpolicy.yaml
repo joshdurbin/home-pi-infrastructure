@@ -7,11 +7,11 @@
 # all of this app's egress instead of one exception within it.
 # - 53/udp+tcp to CoreDNS resolves every search engine's hostname.
 # - 443/tcp is broad by necessity - this is what the app is for.
-# - 6379 to the searxng-cache namespace: SearXNG's own redis/valkey cache
-#   (see redis-replication.yaml) - kept in its own namespace specifically
+# - 6379 to the redis-cache namespace: SearXNG's redis/valkey cache
+#   (searxng-cache, apps/redis-cache) - kept in its own namespace specifically
 #   so it needed its own egress rule here rather than silently falling
 #   under this same policy's podSelector: {}. No 26379 - unlike Blocky,
-#   SearXNG never talks to the sentinels directly (see redis-sentinel.yaml).
+#   SearXNG never talks to the sentinels directly.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -38,7 +38,7 @@ spec:
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: searxng-cache
+              kubernetes.io/metadata.name: redis-cache
       ports:
         - protocol: TCP
           port: 6379

@@ -1,0 +1,20 @@
+# Scrapes the redis_exporter sidecar every RedisReplication in this namespace
+# runs (blocky-cache, searxng-cache, bifrost-cache; master and replica pods),
+# converting Redis's native INFO stats into PromQL-queryable metrics. A
+# VMPodScrape (not a VMServiceScrape) targets pods directly by label and
+# container port, since the operator doesn't document a stable Service port
+# *name* for the exporter - only the container port number (9121,
+# redisExporter's own default). One scrape covers all three caches via the
+# shared redis_setup_type label.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: redis-cache-redis-exporter
+  namespace: redis-cache
+spec:
+  selector:
+    matchLabels:
+      redis_setup_type: replication
+  podMetricsEndpoints:
+    - targetPort: 9121
+      path: /metrics

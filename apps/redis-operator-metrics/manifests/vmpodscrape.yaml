@@ -1,5 +1,5 @@
 # The operator's own controller metrics (distinct from the redis_exporter
-# VMPodScrapes in blocky-cache/searxng-cache, which scrape the Redis
+# VMPodScrape in redis-cache, which scrape the Redis
 # clusters this operator manages, not the operator itself). VMPodScrape,
 # not VMServiceScrape - confirmed live: no Service exists for this pod at
 # all (`kubectl -n redis-operator get svc` returns nothing), even though

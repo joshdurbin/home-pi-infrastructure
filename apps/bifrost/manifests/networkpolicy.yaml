@@ -3,6 +3,8 @@
 # - CoreDNS
 # - Postgres poolers, 5432 in the postgres namespace (the poolers' own
 #   ingress is open by design, see apps/postgres/manifests/networkpolicy.yaml)
+# - the shared Redis caches, 6379 to redis-cache (bifrost-cache; not used by
+#   Bifrost yet, see docs/REFERENCE.md#bifrost)
 # - HTTPS (443) to anywhere outside the cluster/LAN: the LLM provider APIs
 #   (Anthropic, OpenAI, ...) and Bifrost's pricing-data sync. Private ranges
 #   are excluded so this doesn't double as a path to other in-cluster or LAN
@@ -34,6 +36,13 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: redis-cache
+      ports:
+        - protocol: TCP
+          port: 6379
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

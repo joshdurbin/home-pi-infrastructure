@@ -1,0 +1,65 @@
+# The ONE Sentinel cluster for every cache in redis-cache: 3 sentinels for a
+# real majority quorum (2 of 3), monitoring blocky-cache, searxng-cache and
+# bifrost-cache (a master group each, named after its RedisReplication).
+#
+# The operator only wires ONE RedisReplication per RedisSentinel, and only from
+# the Sentinel's own namespace: that is blocky-cache (redisReplicationName /
+# masterGroupName below). The other two groups are added as raw sentinel.conf
+# lines via additionalSentinelConfig, by hostname - each cache's
+# operator-maintained "-master" Service - which is why resolveHostnames is on.
+# After a failover Sentinel tracks the promoted replica itself; the operator
+# re-points the "-master" Service.
+#
+# Clients: Blocky talks to Sentinel directly
+# (redis-cache-sentinel-sentinel.redis-cache:26379, master group blocky-cache);
+# SearXNG and Bifrost use their cache's "-master" Service.
+#
+# KNOWN OPERATOR QUIRK: if a sentinel *container* restarts in place, the image
+# appends its `sentinel monitor` line to the persisted config again and crashes
+# with "Duplicate master name". Delete that pod (fresh volume) to recover:
+#   kubectl -n redis-cache delete pod redis-cache-sentinel-sentinel-<n>
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisSentinel
+metadata:
+  name: redis-cache-sentinel
+  namespace: redis-cache
+spec:
+  clusterSize: 3
+  # One sentinel per node and at most 1 down at a time, so a drain never costs
+  # the 2-of-3 quorum Sentinel needs to promote a replica.
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: redis-cache-sentinel-sentinel
+          topologyKey: kubernetes.io/hostname
+  pdb:
+    enabled: true
+    maxUnavailable: 1
+  podSecurityContext:
+    runAsUser: 1000
+    fsGroup: 1000
+  redisSentinelConfig:
+    redisReplicationName: blocky-cache
+    masterGroupName: blocky-cache
+    resolveHostnames: "yes"
+    additionalSentinelConfig: |
+      sentinel monitor searxng-cache searxng-cache-master.redis-cache.svc.cluster.local 6379 2
+      sentinel down-after-milliseconds searxng-cache 5000
+      sentinel failover-timeout searxng-cache 10000
+      sentinel parallel-syncs searxng-cache 1
+      sentinel monitor bifrost-cache bifrost-cache-master.redis-cache.svc.cluster.local 6379 2
+      sentinel down-after-milliseconds bifrost-cache 5000
+      sentinel failover-timeout bifrost-cache 10000
+      sentinel parallel-syncs bifrost-cache 1
+  kubernetesConfig:
+    image: quay.io/opstree/redis-sentinel:v8.10.1
+    imagePullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi

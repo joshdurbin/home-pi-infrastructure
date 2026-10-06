@@ -1,0 +1,62 @@
+# Bifrost's cache backend: two pods (master + one replica), each with its own
+# PVC, failover via the shared Sentinel (redis-sentinel.yaml). Bifrost reaches
+# the current master through the operator-maintained "bifrost-cache-master"
+# Service. NOTE: not wired into Bifrost yet - its Redis vector store (semantic
+# cache) needs RediSearch (FT.*), and this image (quay.io/opstree/redis) ships
+# only the `vectorset` module. See docs/REFERENCE.md#bifrost.
+# Lives in the shared redis-cache namespace.
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisReplication
+metadata:
+  name: bifrost-cache
+  namespace: redis-cache
+spec:
+  clusterSize: 2
+  # Master and replica on different nodes, and never both down for a drain - a node
+  # going away must not take the whole cache (and its failover target) with it.
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: bifrost-cache
+          topologyKey: kubernetes.io/hostname
+  pdb:
+    enabled: true
+    maxUnavailable: 1
+  podSecurityContext:
+    runAsUser: 1000
+    fsGroup: 1000
+  redisConfig:
+    dynamicConfig:
+      - maxmemory 128mb
+      - maxmemory-policy allkeys-lru
+  kubernetesConfig:
+    image: quay.io/opstree/redis:v8.10.1
+    imagePullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 50m
+        memory: 192Mi
+      limits:
+        cpu: 200m
+        memory: 192Mi
+  redisExporter:
+    enabled: true
+    image: quay.io/opstree/redis-exporter:v1.89.0
+    imagePullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: longhorn
+        resources:
+          requests:
+            storage: 512Mi
