@@ -7,8 +7,9 @@
 # iowait on rpi-4b-3. Lowering it keeps those faults cheap.
 #
 # Only runs where usb_disk_read_ahead_kb is set (group_vars/pi4). Matches
-# whole disks on the USB bus only, so Longhorn's iSCSI sd* devices and the SD
-# card are untouched. Takes effect for already-open files only after their
+# whole disks attached through a USB driver (uas / usb-storage) only, so
+# Longhorn's iSCSI sd* devices and the SD card are untouched. NOT ID_BUS: UAS
+# presents the SSD as ID_BUS=ata, so ID_BUS==usb never matches. Takes effect for already-open files only after their
 # process restarts (a mapped file keeps the read-ahead it was opened with).
 - name: cap read-ahead on USB-attached disks
   ansible.builtin.copy:
@@ -18,7 +19,7 @@
     mode: '0644'
     content: |
       # Managed by Ansible (roles/setup/tasks/usb_read_ahead.yml).
-      SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_BUS}=="usb", ATTR{queue/read_ahead_kb}="{{ usb_disk_read_ahead_kb }}"
+      SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_USB_DRIVER}=="?*", ATTR{queue/read_ahead_kb}="{{ usb_disk_read_ahead_kb }}"
   when: usb_disk_read_ahead_kb is defined
   notify: apply udev read-ahead rule
   tags:
