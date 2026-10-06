@@ -691,17 +691,19 @@ group_vars/all/main.yaml`) before this deploys successfully - see [Secrets & Var
 - **Topology**: an `OpenSearchCluster` custom resource (`apps/opensearch/manifests/cluster.yaml`) with two
   node pools - `client` (cluster-manager + ingest, 2Gi PVC) and `data` (data + cluster-manager, 10Gi PVC,
   `storageClassName: longhorn`) - plus its own `dashboards` section (not a separate chart under the operator).
-  Currently ONE pod per pool and no index replicas (about 3Gi): the structure (per-pool anti-affinity and PDB) is kept so
-  scaling back up is a replica-count change - see `apps/opensearch/README.md` "Scaling" for how, and for the safe
-  way to scale down (a naive `replicas` decrease turned the cluster red once). All pods are pinned to the Pi 5s.
+  Two pods of each (client, data, dashboards) on different nodes with required anti-affinity (and PDBs for the pools):
+  four manager-eligible nodes give a 3-voter set that survives any one node, and indices keep one replica so every
+  shard exists on both data nodes. All pods pinned to the Pi 5s (the image can't run on a Pi 4B CPU). About 7Gi of
+  limits; `apps/opensearch/README.md` describes running lean and, importantly, how to scale down safely (a naive
+  `replicas` decrease turned the cluster red once).
 - **Log shipping**: one Vector DaemonSet, writing to daily
   `logs-*`/`logs-host-*` indices via OpenSearch's bulk API, now authenticating with TLS + basic auth
   (`apps/opensearch/values-vector.yaml`).
 - **Retention**: an `OpenSearchISMPolicy` custom resource (`apps/opensearch/manifests/ism-policy.yaml`)
   deletes `logs-*` indices once `min_index_age: 7d`; an `OpenSearchIndexTemplate`
   (`apps/opensearch/manifests/index-template.yaml`) sets `number_of_replicas: 1` for those same indices
-  (none: one data node). With two data nodes set it to 1 and raise existing indices once with
-  `PUT logs-*,logs-host-*/_settings {"index":{"number_of_replicas":1}}`.
+  (a primary on one data node, a replica on the other). Indices created earlier keep their old count: raise them
+  once with `PUT logs-*,logs-host-*/_settings {"index":{"number_of_replicas":1}}`.
 - **Auth**: unlike everywhere else in this cluster (Grafana's anonymous Admin, Argo CD via tailnet),
   **mandatory** here - the operator has no equivalent of a fully-disabled security plugin. TLS is
   operator-generated (self-signed), and Vector/Dashboards authenticate with the same
@@ -1453,10 +1455,10 @@ does **not** have the spare capacity for more than one node out at a time, so th
 | Redis caches (3 clusters) | master/replica and the 3 sentinels each on different nodes, PDB `maxUnavailable: 1` (keeps sentinel quorum) |
 | GO Feature Flag relay proxy | 2 replicas on different nodes + PDB + readiness probe; rolling update starts the new pod first |
 | shairport-sync (audio node) | 1 replica, only schedulable on `rpi-3bplus-1`; a drain of that node stops AirPlay until it returns |
-| Bifrost, Grafana, Homepage | 1 replica each (stateless - state is in Postgres/Redis); a drain reschedules them, gaps of roughly 1-2 min, 30-90s and 10-30s (Pi start-up, plus an image pull on a node that hasn't run them) |
+| Bifrost, Homepage | 1 replica each (stateless - state is in Postgres/Redis); a drain reschedules them, gaps of roughly 1-2 min, 30-90s and 10-30s (Pi start-up, plus an image pull on a node that hasn't run them) |
 
 **Accepted blips** (single replica by design; recover when the pod reschedules, typically under a minute or two):
-Blocky, Bifrost, Grafana and Homepage, Open WebUI and WhoDB (RWO volume), SearXNG, Temporal (all services), Dashboards (OpenSearch runs one client and one data pod by default; HA is a replica-count change),
+Blocky, Bifrost and Homepage, Open WebUI and WhoDB (RWO volume), SearXNG, Temporal (all services), (OpenSearch and its Dashboards run two of each on different nodes, as do Grafana, vmalert and Alertmanager),
 Alertmanager (Vector buffers or retries), vmalert, Argo CD, and the other
 operators. None are on a path that other workloads need to keep running.
 

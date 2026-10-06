@@ -71,7 +71,15 @@ spec:
   dashboards:
     enable: true
     version: '3.8.0'
-    replicas: 1
+    # Two Dashboards pods on different nodes (both pinned to Pi 5s below).
+    replicas: 2
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                opensearch.cluster.dashboards: opensearch
+            topologyKey: kubernetes.io/hostname
     # Dashboards' own TLS is independently toggleable from the cluster's
     # (confirmed via schema: dashboards.tls.enable is a separate field from
     # security.tls.http.enabled) - kept off since Tailscale is what
@@ -98,21 +106,23 @@ spec:
         memory: 512Mi
 
   nodePools:
-    # MINIMAL layout: one client pod and one data pod, each with its own PVC, no
-    # redundancy (about 3Gi of memory instead of 6Gi). The structure for scaling
-    # back up is kept (per-pool required anti-affinity + PDB below are no-ops at 1
-    # replica). TO RESTORE HA:
-    #   1. client replicas: 2 and data replicas: 2 (four manager-eligible nodes give a
-    #      3-voter set that survives losing any one node);
-    #   2. manifests/index-template.yaml number_of_replicas: 1, and for existing
-    #      indices PUT logs-*,logs-host-*/_settings {"index":{"number_of_replicas":1}}.
-    # TO SCALE DOWN again, do NOT just lower replicas: with index replicas 0 the
-    # operator removes the pod before its shards move and the cluster goes red.
-    # First PUT _cluster/settings {"persistent":{"cluster.routing.allocation.exclude._name":
-    # "opensearch-data-1"}}, wait until `_cat/shards` shows nothing on that node, then
-    # lower replicas, then clear the setting (null). For the client pool, POST
-    # _cluster/voting_config_exclusions?node_names=opensearch-client-1 first and
-    # DELETE it afterwards.
+    # HA layout: TWO client pods and TWO data pods, each with its own PVC, plus
+    # two Dashboards pods, all on different nodes. Four cluster_manager-eligible
+    # nodes (client x2 + data x2): OpenSearch keeps an odd-sized voting set (3 of
+    # the 4), so the cluster survives losing any one node. With 2 data nodes and
+    # number_of_replicas: 1 (manifests/index-template.yaml) every shard has a copy
+    # on each data node (nothing lost if one data pod or its disk goes away) and
+    # ingest runs on both client pods, so Vector's requests to the `opensearch`
+    # Service survive losing either. Cost: ~1.5Gi memory per OpenSearch pod (6Gi
+    # total, 3Gi when run lean).
+    # TO RUN LEAN: client/data replicas 1 and index-template number_of_replicas 0.
+    # NEVER just lower replicas on a running cluster: with index replicas 0 the
+    # operator removes the pod before its shards move and the cluster goes red
+    # (happened once). First PUT _cluster/settings {"persistent":{"cluster.routing.
+    # allocation.exclude._name":"opensearch-data-1"}}, wait until `_cat/shards`
+    # shows nothing on that node, then lower replicas, then clear the setting
+    # (null). For the client pool POST _cluster/voting_config_exclusions?
+    # node_names=opensearch-client-1 first and DELETE it afterwards.
     #
     # Coordinating (ingest) + cluster-manager pool. Two things must hold:
     #
@@ -132,7 +142,7 @@ spec:
     #    reschedules and drains: it simply comes back (a short outage while it
     #    does) instead of the cluster dying.
     - component: client
-      replicas: 1
+      replicas: 2
       roles:
         - cluster_manager
         - ingest
@@ -195,7 +205,7 @@ spec:
     # nodes now for that hardware reason, not the disk-quality one this
     # comment used to be about.
     - component: data
-      replicas: 1
+      replicas: 2
       # cluster_manager added alongside data - see the client pool's own
       # comment for why. Two permanent manager-eligible nodes instead of
       # one means the cluster can always re-elect between them, rather than

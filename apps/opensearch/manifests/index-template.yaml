@@ -1,7 +1,9 @@
-# number_of_replicas: 0 - the data pool (cluster.yaml) runs ONE data node, so a
-# replica could never be allocated (every index would sit yellow). With two data
-# nodes set this to 1 (primary on one, replica on the other) and raise existing
-# indices once: PUT logs-*,logs-host-*/_settings {"index":{"number_of_replicas":1}}.
+# number_of_replicas: 1 - the data pool (cluster.yaml) runs two data nodes, so
+# each logs-* shard has a primary on one and a replica on the other: losing a
+# data pod or its disk loses no logs. With ONE data node set this to 0 (a
+# replica could never be allocated and every index would sit yellow); existing
+# indices need a one-off PUT logs-*,logs-host-*/_settings
+# {"index":{"number_of_replicas":N}} either way.
 # Fields confirmed against the operator's bundled CRD schema
 # (opensearch.org_opensearchindextemplates.yaml): template.settings is a
 # free-form passthrough to OpenSearch's own index template settings object.
@@ -30,4 +32,4 @@ spec:
   template:
     settings:
       number_of_shards: 1
-      number_of_replicas: 0
+      number_of_replicas: 1

@@ -16,7 +16,16 @@ alertmanager:
       - name: default
       - name: watchdog
   spec:
-    replicaCount: 1
+    replicaCount: 2
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: vmalertmanager
+            topologyKey: kubernetes.io/hostname
+    podDisruptionBudget:
+      maxUnavailable: 1
     resources:
       limits:
         memory: 128Mi
@@ -73,10 +82,18 @@ grafana:
   # PVC deadlock).
   persistence:
     enabled: false
-  # One replica: all state is in Postgres (grafana.ini above), so a drain just
-  # reschedules it (~30-90s gap; Grafana 13 is slow to start on a Pi). Accepted -
-  # a second replica costs ~512Mi and a Pi 4B struggled to run it.
-  replicas: 1
+  # Two replicas: all state is in Postgres (grafana.ini above), so they are
+  # interchangeable and a drain or node loss leaves the other serving (Grafana 13
+  # is slow to start on a Pi, ~30-90s, so a single replica meant a gap). Each is
+  # sized below; required anti-affinity keeps them on different nodes.
+  replicas: 2
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+          topologyKey: kubernetes.io/hostname
   # 256Mi was right-sized for Grafana 12.4.2. Confirmed live (OOMKilled,
   # exitCode 137) that Grafana 13.1.1 (bundled by this chart version) is a
   # meaningfully heavier process - its startup log shows a whole new
@@ -156,12 +173,12 @@ victoria-metrics-operator:
       memory: 128Mi
 vmagent:
   spec:
-    # One vmagent. With 2, each scrapes every target independently (draining
-    # either node loses nothing) and the identical samples are de-duplicated
+    # Two vmagents scrape every target independently (draining either node loses
+    # nothing) and the identical samples are de-duplicated
     # (dedup.minScrapeInterval on vmstorage/vmselect below), so they must add
     # no replica-specific external label. Required anti-affinity keeps them on
     # different nodes.
-    replicaCount: 1
+    replicaCount: 2
     affinity:
       podAntiAffinity:
         requiredDuringSchedulingIgnoredDuringExecution:
@@ -187,26 +204,35 @@ vmagent:
     # to cap ephemeral disk use - not worth it for this workload.
 vmalert:
   spec:
-    replicaCount: 1
+    replicaCount: 2
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: vmalert
+            topologyKey: kubernetes.io/hostname
+    podDisruptionBudget:
+      maxUnavailable: 1
     resources:
       limits:
         memory: 128Mi
       requests:
         cpu: 10m
         memory: 128Mi
-# Metrics storage keeps the CLUSTER architecture but runs ONE pod of each tier,
-# no redundancy (fewer pods, less memory on the Pi nodes):
-#   vminsert (stateless)   receives writes from vmagent
-#   vmstorage (own PVC)    holds the data (replicationFactor 1: one copy)
-#   vmselect (stateless)   answers queries (Grafana, vmalert, the UI)
-# TO RESTORE REDUNDANCY, set vmagent.spec.replicaCount and vminsert/vmselect/
-# vmstorage replicaCount back to 2 and vmcluster.spec.replicationFactor to 2
-# (each vmstorage then holds a full copy; losing any one node loses no data and
-# never stops ingestion or queries). A scaled-down vmstorage's old PVC
-# (vmstorage-db-...-1) stays behind: delete it before scaling back up, or that
-# pod will rejoin with stale, partial data. Every component keeps required
-# anti-affinity (one per node) and a PDB, which are no-ops at 1 replica and take
-# effect again when scaled up. None is pinned to a node class.
+# Everything runs with TWO of each piece on different nodes (required
+# anti-affinity + a PDB each), so any single pod or node can be lost:
+#   vmagent (x2)           scrapes every target independently
+#   vminsert (x2)          receives writes from both vmagents, writes each
+#                          sample to both vmstorage pods
+#   vmstorage (x2, PVCs)   holds the data (replicationFactor 2: each pod has a full copy)
+#   vmselect (x2)          answers queries (Grafana, vmalert, the UI)
+#   vmalert / Alertmanager / Grafana (x2 each)
+# The Pi 4Bs stay eligible for all of them (nothing is pinned; vmstorage only has a
+# soft preference for Pi 5s). Single by design: the operator, kube-state-metrics
+# (a second copy would duplicate every series) and the node-exporter DaemonSet.
+# TO RUN LEANER set the replicaCounts to 1 and replicationFactor to 1 - scale
+# vmstorage down only after the replicationFactor change has rolled out.
 vmsingle:
   enabled: false
 vmcluster:
@@ -214,9 +240,9 @@ vmcluster:
   spec:
     # The chart default is 1 month; the old single-node instance kept 7d.
     retentionPeriod: 7d
-    replicationFactor: 1
+    replicationFactor: 2
     vminsert:
-      replicaCount: 1
+      replicaCount: 2
       # 256Mi was OOMKilled (exitCode 137) right after the first deploy, while
       # the two vmagents flushed their buffered backlog (~10MB batches) at it.
       # 512Mi then OOMKilled the same way (CrashLoopBackOff on both replicas)
@@ -237,7 +263,7 @@ vmcluster:
       podDisruptionBudget:
         maxUnavailable: 1
     vmselect:
-      replicaCount: 1
+      replicaCount: 2
       extraArgs:
         # Same as vmstorage: collapses the two vmagents' duplicate samples.
         dedup.minScrapeInterval: 30s
@@ -262,7 +288,7 @@ vmcluster:
       podDisruptionBudget:
         maxUnavailable: 1
     vmstorage:
-      replicaCount: 1
+      replicaCount: 2
       extraArgs:
         # The two vmagents scrape the same targets, so every sample arrives
         # twice with slightly different timestamps; keep one per 30s interval.

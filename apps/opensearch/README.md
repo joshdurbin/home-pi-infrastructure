@@ -74,22 +74,24 @@ Enforced by `manifests/ism-policy.yaml`'s `min_index_age: 7d` transition to a `d
 daily-index granularity (`logs-%Y.%m.%d` / `logs-host-%Y.%m.%d` - `values-vector.yaml`'s `bulk.index`).
 This is index-boundary granularity, not an exact 7d cutoff - data can live up to ~8d in the worst case.
 
-## Scaling
+## Redundancy and scaling
 
-Currently **1 client + 1 data pod, `number_of_replicas: 0`** (about 3Gi of memory). Losing the data pod or its
-volume loses the logs on it; the client pod can be replaced freely.
+Currently **2 client + 2 data + 2 Dashboards pods, `number_of_replicas: 1`**, each pool on different nodes
+(required anti-affinity; client and data also have PDBs). Four manager-eligible nodes give a 3-voter set that
+survives any one node; every shard has a copy on each data node. About 6Gi of OpenSearch pod memory plus 1Gi for
+Dashboards. All pods are pinned to the Pi 5s (the image can't run on a Pi 4B CPU).
 
-- **Restore HA**: `client` and `data` `replicas: 2` in `manifests/cluster.yaml` (each pool has required
-  anti-affinity and a PDB already; four manager-eligible nodes give a 3-voter set that survives any one node),
-  `number_of_replicas: 1` in `manifests/index-template.yaml`, then once for existing indices
-  `PUT logs-*,logs-host-*/_settings {"index":{"number_of_replicas":1}}`.
-- **Scale down safely**: do not just lower `replicas` - with index replicas at 0 the operator removes the pod
+- **Run lean** (one of each, no redundancy): `replicas: 1` for the pools and Dashboards and
+  `number_of_replicas: 0` in `manifests/index-template.yaml`, then once for existing indices
+  `PUT logs-*,logs-host-*/_settings {"index":{"number_of_replicas":0}}`.
+- **Scale down safely**: never just lower `replicas` - with index replicas at 0 the operator removes the pod
   before its shards move and the cluster goes red (this happened once). Exclude the node from allocation first
   (`PUT _cluster/settings {"persistent":{"cluster.routing.allocation.exclude._name":"opensearch-data-1"}}`), wait
   until `_cat/shards` shows nothing on it, then lower `replicas`, then clear the setting (`null`). For the client
   pool also `POST _cluster/voting_config_exclusions?node_names=opensearch-client-1` first and `DELETE` it after.
-  Leftover PVCs (`data-opensearch-*-1`) are not removed automatically; delete them before scaling back up if you
-  want a clean node.
+- **Cosmetic yellow**: with one data node two internal ISM system-index replicas can't allocate (that index is
+  protected, so it can't be edited); it clears with two data nodes.
+- Leftover PVCs (`data-opensearch-*-1`) from a scale-down are not removed automatically.
 
 ## Log shipping
 
@@ -112,9 +114,9 @@ OpenSearch cluster's uptime and credentials too. A separate decision, not part o
 
 ## Resource footprint
 
-About 3Gi of OpenSearch pod memory now (client 1536Mi + data 1536Mi) plus Dashboards (512Mi) and the operator
-(256Mi); double the OpenSearch part when scaled to HA. Every OpenSearch pod is pinned to a Pi 5 (`pi5=true`): the
-Amazon Linux image can't run on a Pi 4B CPU.
+About 7Gi of container memory limits: client 2 x 1536Mi + data 2 x 1536Mi + dashboards 2 x 512Mi, plus the operator
+(256Mi); half the OpenSearch part when run lean. Every OpenSearch pod is pinned to a Pi 5 (`pi5=true`): the Amazon
+Linux image can't run on a Pi 4B CPU.
 
 ## One-time cleanup after VictoriaLogs was removed
 
