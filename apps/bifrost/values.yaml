@@ -16,8 +16,11 @@
 # - Metrics: /metrics on the http port, scraped by manifests/vmservicescrape.yaml.
 
 image:
-  # The chart requires an explicit tag (it matches the chart's appVersion).
-  tag: v1.5.12
+  # The chart requires an explicit tag. Deliberately NOT the chart's own
+  # appVersion (1.5.12, stale): the gateway is on 2.x now (latest v2.2.5, has
+  # arm64). Chart 2.1.43's generated config.json validates against the current
+  # (v2) schema at https://www.getbifrost.ai/schema - re-check that when bumping.
+  tag: v2.2.5
   pullPolicy: IfNotPresent
 
 # One replica: stateless (state in Postgres), so a drain just reschedules it.

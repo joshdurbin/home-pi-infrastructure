@@ -1314,8 +1314,9 @@ may linger - drop it with `DROP ROLE pgadmin;` as `postgres`. The old `pgadmin-d
 An OpenAI-compatible gateway in front of LLM providers (`apps/bifrost/`, namespace `bifrost`): one endpoint
 (`/v1`), a web UI for providers, keys, request logs and spend. Replaced LiteLLM. Deployed from Bifrost's official
 Helm chart (classic repo `https://maximhq.github.io/bifrost/helm-charts`, allowed in the AppProject). The chart
-requires an explicit image tag: `values.yaml` pins `image.tag` (= the chart's `appVersion`); re-pin both
-deliberately.
+requires an explicit image tag: `values.yaml` pins `image.tag` to `v2.2.5`, the latest gateway release - newer
+than the chart's own (stale) `appVersion` 1.5.12. The chart's generated `config.json` was validated against the
+current v2 schema (`https://www.getbifrost.ai/schema`); re-check that and re-pin both deliberately on bumps.
 
 - **Database**: the cluster's CloudNativePG Postgres through `postgres-pooler-rw`, database/role `bifrost`
   (`apps/postgres/manifests/bifrost-database.yaml`), for both the config store and the request-log store.

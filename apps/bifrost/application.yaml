@@ -28,7 +28,8 @@ spec:
   sources:
     # Official chart from Bifrost's classic Helm repo (no OCI registration
     # needed in Argo CD, unlike LiteLLM's). The chart does NOT default the
-    # image tag - values.yaml pins it. Re-pin both deliberately on bumps.
+    # image tag - values.yaml pins it (to 2.x, newer than the chart's stale
+    # appVersion). Re-pin both deliberately on bumps.
     - repoURL: https://maximhq.github.io/bifrost/helm-charts
       chart: bifrost
       targetRevision: 2.1.43
