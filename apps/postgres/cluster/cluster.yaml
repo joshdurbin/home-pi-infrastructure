@@ -24,7 +24,16 @@ metadata:
   namespace: postgres
 spec:
   instances: 2
-  imageName: ghcr.io/cloudnative-pg/postgresql:18.6
+  # Pinned by digest as well as tag: CloudNativePG re-pushes the floating 18.6 tag when
+  # it rebuilds the image for base-image security patches, and the Zot pull-through
+  # cache (apps/zot/) never rechecks a tag it already holds, so a bare tag could serve a
+  # stale image to one node and a newer one to another. The digest is the multi-arch
+  # index of the image the instances were running when this was pinned (it includes
+  # arm64); the tag is kept so the version stays readable. To upgrade, change both -
+  # `crane digest ghcr.io/cloudnative-pg/postgresql:<tag>` gives the new digest. Keep the
+  # go-feature-flag schema Job's image (apps/go-feature-flag/manifests/schema-job.yaml)
+  # on the same one.
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.6@sha256:899d3ed526b659d77935dde0e6bf2d69dbbf17d3d8c6486ca8cfd04bd3c18533
 
   # No PodDisruptionBudget: with the default (true), CNPG's PDB refuses to
   # evict the primary, so draining the primary's node stalls until someone runs

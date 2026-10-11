@@ -1000,7 +1000,7 @@ directly.
   *different* node in either storage mode, satisfying "one Postgres instance per node" by construction. Where
   they run and what they store on is the one-line **storage mode** switch described next. CNPG elects one instance primary and streams WAL to the other as a replica, and
   automatically promotes the replica on primary failure - the operator's own job, nothing hand-rolled for
-  it. Image: `ghcr.io/cloudnative-pg/postgresql:18.6` (current latest major, confirmed against the real
+  it. Image: `ghcr.io/cloudnative-pg/postgresql:18.6@sha256:899d3ed5...` (pinned by digest because CNPG re-pushes the floating `18.6` tag and the Zot cache never rechecks a cached tag; current latest major, confirmed against the real
   registry, not assumed).
 - **Storage mode** (`apps/postgres/cluster/kustomization.yaml`): pick exactly one component, one line:
   - `components/longhorn` (default) - volumes use a dedicated `longhorn-postgres` StorageClass (2 Longhorn

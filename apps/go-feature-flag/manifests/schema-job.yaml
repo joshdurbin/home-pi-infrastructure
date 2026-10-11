@@ -32,7 +32,8 @@ spec:
       containers:
         - name: psql
           # The CNPG postgres image already used by the cluster (has psql).
-          image: ghcr.io/cloudnative-pg/postgresql:18.6
+          # Pinned by digest, same as apps/postgres/cluster/cluster.yaml (see the comment there).
+          image: ghcr.io/cloudnative-pg/postgresql:18.6@sha256:899d3ed526b659d77935dde0e6bf2d69dbbf17d3d8c6486ca8cfd04bd3c18533
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
