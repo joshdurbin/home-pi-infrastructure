@@ -11,6 +11,17 @@
 # Deliberately not the k3s-ansible `registries_config_yaml` variable: that role writes
 # the file but never restarts k3s, so a change would sit unapplied until the next
 # unrelated restart.
+
+# Servers already have this directory (k3s keeps its config there); agent nodes do not
+# until something creates it - k3s-ansible's own registries step makes it the same way.
+- name: Make the k3s config directory
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Install the k3s registry mirrors config
   ansible.builtin.template:
     src: registries.yaml.j2
