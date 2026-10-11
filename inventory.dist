@@ -1,12 +1,20 @@
 [all]
-rpi-5-1      ansible_host=192.168.1.30
-rpi-5-2      ansible_host=192.168.1.41
-rpi-5-3      ansible_host=192.168.1.28
-rpi-5-4      ansible_host=192.168.1.83
-rpi-4b-1     ansible_host=192.168.1.13
-rpi-4b-2     ansible_host=192.168.1.14
-rpi-4b-3     ansible_host=192.168.1.18
-rpi-3bplus-1 ansible_host=192.168.1.15
+rpi-5-1      ansible_host=rpi-5-1
+rpi-5-2      ansible_host=rpi-5-2
+rpi-5-3      ansible_host=rpi-5-3
+rpi-5-4      ansible_host=rpi-5-4
+rpi-4b-1     ansible_host=rpi-4b-1
+rpi-4b-2     ansible_host=rpi-4b-2
+rpi-4b-3     ansible_host=rpi-4b-3
+rpi-3bplus-1 ansible_host=rpi-3bplus-1
+#rpi-5-1      ansible_host=192.168.1.30
+#rpi-5-2      ansible_host=192.168.1.41
+#rpi-5-3      ansible_host=192.168.1.28
+#rpi-5-4      ansible_host=192.168.1.83
+#rpi-4b-1     ansible_host=192.168.1.13
+#rpi-4b-2     ansible_host=192.168.1.14
+#rpi-4b-3     ansible_host=192.168.1.18
+#rpi-3bplus-1 ansible_host=192.168.1.15
 
 [all:vars]
 ansible_user=ansible
