@@ -25,3 +25,49 @@ resources:
     memory: 96Mi
   limits:
     memory: 256Mi
+
+# Trivy view: the "headlamp_trivy" plugin (github.com/kubebeam/trivy-headlamp-plugin,
+# Artifact Hub package headlamp-trivy/headlamp_trivy) adds a "Trivy" sidebar item with
+# vulnerability, config-audit and compliance reports read straight from the
+# trivy-operator CRDs (apps/trivy-operator/). Installed by pinning the release
+# tarball + its SHA-256 (the value Artifact Hub publishes for it) and unpacking it
+# into an emptyDir at the plugins dir - not the chart's pluginsManager sidecar,
+# which starts a full Node image and runs npm on every pod start. The tarball is 6KB
+# (main.js + package.json). If GitHub is unreachable at start the init container
+# fails and the pod waits rather than coming up without the plugin; Headlamp itself
+# does not need it. To upgrade: bump the version and checksum together.
+initContainers:
+  - name: install-trivy-plugin
+    image: curlimages/curl:8.22.0
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        V=0.3.2
+        SUM=00b6ab4e49a99fe47ac99824779179f2540fb9c58d619a4100ddb4e9feee9efe
+        curl -fsSL -o /tmp/p.tgz "https://github.com/kubebeam/trivy-headlamp-plugin/releases/download/v${V}/trivy-headlamp-plugin-v${V}.tar.gz"
+        echo "${SUM}  /tmp/p.tgz" | sha256sum -c -
+        mkdir -p /plugins/headlamp_trivy
+        tar -xzf /tmp/p.tgz -C /plugins/headlamp_trivy --strip-components=1
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: false
+      capabilities:
+        drop: [ALL]
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 64Mi
+    volumeMounts:
+      - name: plugins
+        mountPath: /plugins
+volumes:
+  - name: plugins
+    emptyDir: {}
+volumeMounts:
+  - name: plugins
+    mountPath: /headlamp/plugins
+    readOnly: true
