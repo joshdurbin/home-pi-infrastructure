@@ -1252,6 +1252,15 @@ image, publishing results as CRDs rather than needing a UI of its own.
 - **What it scans**: vulnerabilities (`VulnerabilityReport`), misconfigurations (`ConfigAuditReport`),
   exposed secrets (`ExposedSecretReport`), and RBAC over-permissiveness (`RbacAssessmentReport`) - all
   three scanner toggles left on.
+- **Trivy server (ClientServer mode)**: `operator.builtInTrivyServer: true` runs the chart's built-in `trivy-server`
+  StatefulSet (5Gi Longhorn volume, 200m/512Mi requests, 1Gi limit) behind `trivy-service:4954`, and the scan Jobs
+  query it instead of each downloading the vulnerability database. The default Standalone mode did the latter on
+  every Job, and Jobs for multi-container pods (Grafana has four) fought over one database lock ("cache may be in use
+  by another process: timeout"), failed, and were retried every 30s - re-downloading each time. That saturated a Pi
+  4B's disk (~100% busy, 6-13 MB/s of writes, 33-62% iowait on `rpi-4b-3`). The server has no web UI of its own (it is
+  an API: health, version, metrics); findings are viewed in Grafana (the Trivy dashboard the `grafana_dashboards`
+  role imports) or with `kubectl get vulnerabilityreports`. If the server is down, scan Jobs fail and retry; nothing
+  else in the cluster depends on it.
 - **Concurrency**: `scanJobsConcurrentLimit: 2`, down from the chart's default of 10 - each concurrent
   scan Job gets its own CPU/memory footprint, and 10 at once on a mix of 4GB/8GB Pi boards would compete
   hard with every other workload here. Costs a slower first full pass across every image already running.

@@ -21,6 +21,19 @@ operator:
   # full pass across every image already running.
   scanJobsConcurrentLimit: 2
 
+  # Run a Trivy SERVER in the cluster (the chart's built-in one: a `trivy-server`
+  # StatefulSet + the `trivy-service` Service on :4954, which also flips
+  # trivy.mode to ClientServer and points trivy.serverURL at it automatically).
+  # The server downloads and refreshes the vulnerability database ONCE onto its own
+  # volume; scan Jobs just ask it. In the default Standalone mode every scan Job
+  # downloaded the whole database again into an emptyDir, and a pod with several
+  # containers (Grafana has four) ran parallel scans that fought over one database
+  # lock - "cache may be in use by another process: timeout" - so Jobs failed and
+  # were retried every 30s, each retry re-downloading. That loop saturated
+  # rpi-4b-3's disk (sda ~100% busy, 6-13 MB/s of writes, 33-62% iowait). With a
+  # server there is no per-Job download and no lock contention.
+  builtInTrivyServer: true
+
   # Prometheus metrics. metricsFindingsEnabled is already the chart's own
   # default (true) - listed explicitly for visibility, not a change. The
   # other four are chart-default false, each with its own upstream warning
@@ -70,11 +83,17 @@ nodeCollector:
   excludeNodes: audio_output=true
 
 # Per scan-Job resources (one Job per distinct image scanned, up to
-# scanJobsConcurrentLimit at once) - left at the chart's own defaults.
-# Trivy needs real memory to load the vulnerability DB regardless of how
-# small the image being scanned is, so these aren't worth shrinking the
-# way the operator's own idle-most-of-the-time controller pod's are.
+# scanJobsConcurrentLimit at once) - left at the chart's own defaults. In
+# Standalone mode Trivy needed real memory to load the vulnerability DB for every
+# Job; with the server (operator.builtInTrivyServer above) the Jobs are lighter,
+# so these could come down, but they are left as they were.
 trivy:
+  # The server's database/cache volume (the chart's server pod itself is sized by
+  # the chart: 200m/512Mi requests, 1Gi limit). Longhorn, so the pod can move; the
+  # database is re-downloadable, so losing the volume only costs a re-download.
+  storageClassName: longhorn
+  storageSize: 5Gi
+  # Resources for each scan Job (the client side; they no longer carry the database).
   resources:
     requests:
       cpu: 100m
