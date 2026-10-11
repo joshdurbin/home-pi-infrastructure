@@ -79,6 +79,16 @@ settings that apply to it: no `[pi5]`/`[cm4]`/`[cm5]` filter sections and no per
 appends. The original pre-Ansible file is kept once at `/var/backups/config.txt.pre-ansible` (the boot partition is FAT, so
 the template module's own `backup: true` can't be used there).
 
+## Kernel command line (`/boot/firmware/cmdline.txt`)
+
+`tasks/cmdline_txt.yml` appends `psi=1` to the existing single line. The Raspberry Pi OS kernels are built with
+`CONFIG_PSI=y` but `CONFIG_PSI_DEFAULT_DISABLED=y`, so `/proc/pressure/*` and the per-cgroup `*.pressure` files do not exist
+until the kernel is booted with it; with it, node-exporter's `pressure` collector (on by default) exports `node_pressure_cpu_*`,
+`_io_*` and `_memory_*`. It only edits the line when `psi=` is absent, keeps the original at
+`/var/backups/cmdline.txt.pre-ansible`, and fails the run if the file is not left as one line containing `psi=1` once (a
+broken `cmdline.txt` stops a node booting). Takes effect after a reboot; nothing here reboots.
+Run it on its own with `ansible-playbook site.yml -i inventory.dist --tags psi [--limit <node>]`.
+
 ## Overclocking
 
 Applied per `board_model` (set in `group_vars/{pi4,pi5}/main.yaml`, not by inventory group name or

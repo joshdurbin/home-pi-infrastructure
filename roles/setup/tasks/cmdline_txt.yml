@@ -1,0 +1,59 @@
+---
+# Kernel command line (/boot/firmware/cmdline.txt): turn on Pressure Stall Information.
+#
+# Raspberry Pi OS kernels (6.18.x, both the Pi 5 "-rpi-2712" and the Pi 3/4 "-rpi-v8" builds) are
+# compiled with CONFIG_PSI=y but also CONFIG_PSI_DEFAULT_DISABLED=y, so /proc/pressure/{cpu,io,memory}
+# and every cgroup's *.pressure file do not exist until the kernel is booted with `psi=1`. PSI is the
+# direct measure of "tasks are stalled waiting for CPU / disk / memory" - what node-exporter's
+# `pressure` collector (on by default) exports as node_pressure_*, and what would have shown the
+# rpi-4b-3 disk saturation as a percentage instead of having to infer it from iowait and per-cgroup
+# byte counters. The runtime cost is small.
+#
+# A reboot is required, as for config.txt: nothing here reboots, drains or cordons (see
+# docs/REFERENCE.md "Node Maintenance"). cmdline.txt MUST stay a single line - a broken one stops the
+# node booting - so this only appends ` psi=1` to the existing line, and only when `psi=` is absent
+# (so it is idempotent and never overrides someone's explicit psi=0). The original is kept once on the
+# root filesystem (/boot/firmware is FAT, so the module's own backup: true cannot be used there).
+- name: keep a copy of the original cmdline.txt
+  ansible.builtin.copy:
+    src: /boot/firmware/cmdline.txt
+    dest: /var/backups/cmdline.txt.pre-ansible
+    remote_src: true
+    force: false
+    owner: root
+    group: root
+    mode: '0644'
+  tags:
+    - psi
+    - boot_cmdline
+
+- name: enable pressure stall information (psi=1) on the kernel command line
+  ansible.builtin.replace:
+    path: /boot/firmware/cmdline.txt
+    # \A..\Z anchor the WHOLE file, not each line. Ansible's replace compiles with re.MULTILINE, and a
+    # per-line `^...$` also matches the empty "line" after a trailing newline - which appended a second
+    # ` psi=1` on a new line to every cmdline.txt that ends in a newline (found on 4 of 8 nodes and
+    # repaired from the backup). This only matches a file that is exactly one line, optionally newline-
+    # terminated, with no psi= in it, and keeps the newline (or its absence) as it was.
+    regexp: '\A((?![^\n]*\bpsi=)[^\n]*?)[ \t]*(\n?)\Z'
+    replace: '\1 psi=1\2'
+  notify: reboot needed for kernel command line change
+  tags:
+    - psi
+    - boot_cmdline
+
+# Read back the result: exactly one line, and a psi= parameter exactly once. (No \b in the pattern: inside a
+# Jinja string that is a backspace character, not a regex word boundary.) Fails the run
+# (before anything reboots) instead of leaving a node that will not boot.
+- name: check cmdline.txt is still a single line with psi=1 once
+  ansible.builtin.slurp:
+    src: /boot/firmware/cmdline.txt
+  register: cmdline_txt_after
+  failed_when: >-
+    (cmdline_txt_after.content | b64decode | trim).split('\n') | length != 1
+    or (cmdline_txt_after.content | b64decode | regex_findall('(^| )psi=') | length) != 1
+  changed_when: false
+  when: not ansible_check_mode   # --check writes nothing, so there is nothing to read back
+  tags:
+    - psi
+    - boot_cmdline

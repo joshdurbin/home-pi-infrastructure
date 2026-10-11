@@ -5,6 +5,13 @@
 - name: include config.txt (per-board boot config) tasks
   ansible.builtin.include_tasks: config_txt.yml
 
+- name: include kernel command line (cmdline.txt) tasks
+  ansible.builtin.include_tasks: cmdline_txt.yml
+  # The include itself needs the tags, or `--tags psi` skips it without ever opening the file.
+  tags:
+    - psi
+    - boot_cmdline
+
 - name: include USB disk read-ahead tasks
   ansible.builtin.include_tasks: usb_read_ahead.yml
 

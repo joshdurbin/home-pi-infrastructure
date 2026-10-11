@@ -13,6 +13,15 @@
       the new boot config takes effect after a manual reboot (drain first,
       one node at a time - see docs/REFERENCE.md "Node Maintenance").
 
+# Same deliberate behaviour as above for /boot/firmware/cmdline.txt (kernel parameters such as
+# psi=1): only reports, never reboots.
+- name: reboot needed for kernel command line change
+  ansible.builtin.debug:
+    msg: >-
+      /boot/firmware/cmdline.txt changed on {{ inventory_hostname }}; the new kernel parameters take
+      effect after a manual reboot (drain first, one node at a time - see docs/REFERENCE.md
+      "Node Maintenance").
+
 - name: reload systemd and restart apt-daily-upgrade timer
   ansible.builtin.systemd:
     name: apt-daily-upgrade.timer
