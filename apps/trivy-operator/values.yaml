@@ -88,6 +88,9 @@ nodeCollector:
 # Job; with the server (operator.builtInTrivyServer above) the Jobs are lighter,
 # so these could come down, but they are left as they were.
 trivy:
+  # Extra TRIVY_* env vars for the scan Jobs and the server: no version check, no
+  # telemetry (manifests/trivy-env-configmap.yaml).
+  valuesFromConfigMap: trivy-extra-env
   # The server's database/cache volume (the chart's server pod itself is sized by
   # the chart: 200m/512Mi requests, 1Gi limit). Longhorn, so the pod can move; the
   # database is re-downloadable, so losing the volume only costs a re-download.

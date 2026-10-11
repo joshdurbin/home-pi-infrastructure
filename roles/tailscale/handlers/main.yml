@@ -1,0 +1,9 @@
+---
+# Restarting tailscaled drops this node's tailnet connection for a few seconds. If the
+# play is connected over the tailnet (inventory addresses are tailnet names) that cuts its
+# own SSH session: run it against the LAN addresses (the commented 192.168.1.x lines in
+# inventory.dist) and one node at a time.
+- name: restart tailscaled
+  ansible.builtin.systemd:
+    name: tailscaled
+    state: restarted

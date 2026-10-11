@@ -33,6 +33,10 @@ controllers:
           # Tailscale terminates TLS in front of this - Secure cookies.
           WHODB_SECURE: "true"
           WHODB_DISABLE_UPDATE_CHECK: "true"
+          # Also off: the daily anonymous install heartbeat WhoDB sends to PostHog. (Its
+          # other analytics are gated on consent given in the UI and stay off unless
+          # someone opts in.)
+          WHODB_HEARTBEAT_DISABLED: "true"
           WHODB_DATA_DIR: /data
         envFrom:
           - secretRef:

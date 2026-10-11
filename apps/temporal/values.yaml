@@ -5,6 +5,15 @@ server:
   image:
     repository: temporalio/server
     tag: 1.32.0
+  # No phone-home. The frontend's version checker (service/frontend/version_checker.go)
+  # periodically calls Temporal's version service with the product, server version, CPU
+  # arch, OS, database type, the cluster ID and which client SDKs are connecting; any
+  # non-empty value of this env var turns it off (it is the default of the dynamic-config
+  # key frontend.enableServerVersionCheck). Applies to every server service; only the
+  # frontend reads it.
+  additionalEnv:
+    - name: TEMPORAL_VERSION_CHECK_DISABLED
+      value: "true"
   config:
     persistence:
       defaultStore: default

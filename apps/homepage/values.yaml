@@ -74,6 +74,9 @@ configMaps:
         theme: dark
         headerStyle: clean
         hideVersion: true
+        # hideVersion already stops the version badge rendering; this also turns off the
+        # update check itself (a call to GitHub's releases API) in case it is ever shown.
+        disableUpdateCheck: true
 
       bookmarks.yaml: |
         []

@@ -36,6 +36,24 @@
   tags:
     - tailscale
 
+# No client-log upload from the node's own tailscaled. This is Tailscale's documented
+# per-device opt-out (the Debian package reads /etc/default/tailscaled); network flow
+# logs, if the tailnet has them on, are collected over the same client-logging pipeline,
+# and are a tailnet-wide setting in the admin console that this repo can't see or change.
+# Written before the service is first started; the handler restarts it when this changes.
+- name: opt tailscaled out of client log upload
+  ansible.builtin.lineinfile:
+    path: /etc/default/tailscaled
+    regexp: '^#?\s*TS_NO_LOGS_NO_SUPPORT='
+    line: 'TS_NO_LOGS_NO_SUPPORT=true'
+    create: true
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart tailscaled
+  tags:
+    - tailscale
+
 - name: enable and start tailscale service
   ansible.builtin.systemd:
     name: tailscaled

@@ -62,6 +62,18 @@ grafana:
       host: postgres-pooler-rw.postgres.svc.cluster.local:5432
       name: grafana
       user: grafana
+    # No phone-home. Grafana 13's defaults turn all of these ON: usage statistics sent to
+    # stats.grafana.org, checks for a newer Grafana, checks for newer plugin versions
+    # (grafana.com), and the in-app news feed. Plugin INSTALLS (the VictoriaMetrics
+    # datasources below) still fetch from grafana.com at start - that is a download
+    # needed to function, not telemetry.
+    analytics:
+      reporting_enabled: false
+      check_for_updates: false
+      check_for_plugin_updates: false
+      feedback_links_enabled: false
+    news:
+      news_feed_enabled: false
     auth:
       disable_login_form: true
     auth.anonymous:

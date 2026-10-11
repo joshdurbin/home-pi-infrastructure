@@ -1,5 +1,12 @@
 defaultSettings:
   allowCollectingLonghornUsageMetrics: false
+  # The upgrade checker contacts Longhorn's upgrade-responder service on a schedule to ask
+  # whether a newer version exists (usage metrics ride along only if the setting above is
+  # on, which it isn't - but the request itself is still a phone-home). Upgrades here are
+  # done deliberately, from the chart version in apps/longhorn/application.yaml.
+  # defaultSettings only apply on first install; the live setting was `true`, so it also
+  # has to be patched (see docs/REFERENCE.md, "Telemetry and phone-home").
+  upgradeChecker: false
   autoCleanupRecurringJobBackupSnapshot: false
   autoCleanupSnapshotWhenDeleteBackup: false
   autoCleanupSystemGeneratedSnapshot: false

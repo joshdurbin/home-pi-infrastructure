@@ -53,6 +53,19 @@ persistence:
 # bridge (group_vars/all/cluster_secrets.yaml) with a new
 # openwebui_secret_key Vault variable, never committed here.
 extraEnvVars:
+  # No phone-home. ENABLE_VERSION_UPDATE_CHECK defaults to true (it contacts GitHub for
+  # the latest release). The image already bakes in the other three as its defaults
+  # (SCARF_NO_ANALYTICS, DO_NOT_TRACK, ANONYMIZED_TELEMETRY) - restated here so the
+  # opt-out lives in git and survives an image change. OpenTelemetry export
+  # (ENABLE_OTEL*) defaults off and is left alone.
+  - name: ENABLE_VERSION_UPDATE_CHECK
+    value: "false"
+  - name: ANONYMIZED_TELEMETRY
+    value: "false"
+  - name: SCARF_NO_ANALYTICS
+    value: "true"
+  - name: DO_NOT_TRACK
+    value: "true"
   - name: WEBUI_SECRET_KEY
     valueFrom:
       secretKeyRef:

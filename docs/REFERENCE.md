@@ -14,6 +14,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [User Management](#user-management)
 - [K3S Verification](#k3s-verification)
 - [Node Maintenance](#node-maintenance)
+- [Telemetry and phone-home](#telemetry-and-phone-home)
 - [kubectl Access From Your Machine](#kubectl-access-from-your-machine)
 - [GitOps (Argo CD)](#gitops-argo-cd)
 - [Storage (Longhorn)](#storage-longhorn)
@@ -454,6 +455,55 @@ sudo kubectl -n postgres get cluster postgres         # 2 instances, healthy
 - **OpenSearch**: it is a single data node, so it is unavailable while that pod moves; it should recover on its
   own. Its client and data nodes are cluster-manager-eligible and on persistent volumes, so evicting either keeps
   its identity. (See `apps/opensearch/manifests/cluster.yaml` for why that matters.)
+
+## Telemetry and phone-home
+
+**Policy**: nothing running here sends usage data, analytics, crash reports, "check for updates" calls or client logs off the network
+that it does not need to function. Downloads the services need (container images, the Trivy and Blocky databases, Grafana plugin
+installs, Bifrost's model pricing list, SearXNG's search queries, Argo CD reading git) are not telemetry and are left alone. Check
+every new service against this list before adding it, and put its opt-out in git, not in the UI.
+
+**Defence in depth.** The switches below are the primary control. Some namespaces also have egress NetworkPolicies that cannot reach
+the internet at all (Temporal, WhoDB, Open WebUI, Go Feature Flag, Postgres, Redis), which contains a service even if a switch is
+missed or an image update adds a new call. Namespaces without one (`monitoring`, `kube-system`, `trivy-system`, `tailscale`, ...)
+rely on the switches alone, so those are the ones to re-check after an upgrade.
+
+| Service | What it sends by default | Opt-out (where it lives) |
+|---|---|---|
+| Tailscale: node `tailscaled`, operator, ingress proxies | client logs to Tailscale's log service; network flow logs ride the same pipeline if the tailnet has them on | `TS_NO_LOGS_NO_SUPPORT=true` in `/etc/default/tailscaled` (`roles/tailscale`), `operatorConfig.extraEnv` (`apps/tailscale-operator/values.yaml`), ProxyClass `tailscaleContainer.env` (`manifests/proxyclass.yaml`) |
+| Grafana | usage statistics (stats.grafana.org), update checks, plugin update checks, news feed | `analytics.reporting_enabled`, `check_for_updates`, `check_for_plugin_updates`, `feedback_links_enabled`, `news.news_feed_enabled` all `false` (`apps/victoria-metrics/values.yaml`) |
+| Traefik (k3s) | update check to update.traefik.io, sharing version and public IP (anonymous usage is opt-in, off) | `HelmChartConfig` setting `--global.checknewversion=false` (`apps/k3s-addons/`); it is unused and could be removed with k3s `disable: [traefik]` |
+| Longhorn | upgrade checker to Longhorn's upgrade-responder (usage metrics only if enabled, they are not) | `defaultSettings.upgradeChecker: false` and `allowCollectingLonghornUsageMetrics: false` (`apps/longhorn/values.yaml`) |
+| Trivy | new-version check; anonymous usage reporting | `TRIVY_SKIP_VERSION_CHECK`, `TRIVY_DISABLE_TELEMETRY` via `trivy.valuesFromConfigMap` (`apps/trivy-operator/manifests/trivy-env-configmap.yaml`) |
+| Temporal server | version service gets product, version, CPU arch, OS, DB type, cluster ID and connected SDKs | `TEMPORAL_VERSION_CHECK_DISABLED=true` (`apps/temporal/values.yaml`, `server.additionalEnv`) |
+| WhoDB | update check; daily anonymous install heartbeat to PostHog (other analytics are consent-gated in the UI) | `WHODB_DISABLE_UPDATE_CHECK`, `WHODB_HEARTBEAT_DISABLED` (`apps/whodb/values.yaml`) |
+| Open WebUI | update check (default on); telemetry/analytics libraries default off in the image | `ENABLE_VERSION_UPDATE_CHECK=false`, plus `ANONYMIZED_TELEMETRY`, `SCARF_NO_ANALYTICS`, `DO_NOT_TRACK` stated explicitly (`apps/open-webui/values.yaml`) |
+| Homepage | update check (GitHub releases API) | `hideVersion` and `disableUpdateCheck: true` (`apps/homepage/values.yaml`) |
+
+Checked and found to have nothing to opt out of: Argo CD (Google Analytics is off unless a tracking ID is set; none is), Headlamp,
+Bifrost (its "telemetry" plugin is the local Prometheus endpoint), Zot, CloudNativePG and PgBouncer, the Redis operator and caches,
+the descheduler, Vector, VictoriaMetrics/VictoriaLogs/vlagent/vmalert, kube-state-metrics and node-exporter, Blocky and SearXNG
+(which only make the requests they exist for), shairport-sync, and k3s's CoreDNS, metrics-server and local-path provisioner.
+The disabled ProxySQL and OpenSearch configs have not been audited; check them before bringing either back. OpenSearch
+Dashboards in particular has its own telemetry setting.
+
+**Tailnet-level settings this repo cannot change.** Network flow logs (Premium/Enterprise plans) and other logging are switched on or
+off in the Tailscale admin console, not by any device. A device that opts out of client logging stops uploading its logs; whether that
+also removes it from flow logs is not documented clearly, so if flow logging is on, turn it off in the admin console (Logs).
+
+**Applying changes to a running cluster.** Most of the above is picked up when Argo CD syncs. Two things are not:
+```bash
+# Longhorn only applies defaultSettings on first install; patch the live setting
+kubectl -n longhorn patch settings.longhorn.io upgrade-checker --type merge -p '{"value":"false"}'
+# tailscaled on each node: run the Ansible role, one node at a time, against the LAN addresses
+# (restarting tailscaled drops the tailnet connection, which would cut a tailnet-addressed SSH session)
+make deploy-tailscale   # one node at a time; --limit <node> via: ansible-playbook site.yml -i inventory.dist --tags tailscale --limit <node>
+```
+
+**Verifying.** Effective Grafana settings: `curl -s http://<grafana>/api/admin/settings | jq '.analytics, .news'` (anonymous Admin is on).
+A pod's environment: `kubectl -n <ns> exec <pod> -- env | grep -iE 'telemetry|update|no_logs'`. Tailscale:
+`systemctl show tailscaled -p Environment` on a node, and `kubectl -n tailscale get deploy operator -o yaml | grep -A1 NO_LOGS`.
+Egress that actually leaves a namespace can be confirmed from the Pi side with `ss -tnp` / the router's connection log.
 
 ## kubectl Access From Your Machine
 

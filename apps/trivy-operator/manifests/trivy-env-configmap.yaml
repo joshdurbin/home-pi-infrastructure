@@ -1,0 +1,16 @@
+# TRIVY_* environment variables for every Trivy process the operator runs (the scan Jobs and
+# the built-in server), via `trivy.valuesFromConfigMap` in ../values.yaml. The chart has no
+# value for either of these, and this ConfigMap is the supported way to add them.
+#
+# - TRIVY_SKIP_VERSION_CHECK: Trivy checks for a newer release and prints "Version X is now
+#   available" - a call out to the release service (seen in the scan logs).
+# - TRIVY_DISABLE_TELEMETRY: Trivy's own anonymous usage reporting.
+# Neither affects scanning; the vulnerability database download (which IS needed) is separate.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trivy-extra-env
+  namespace: trivy-system
+data:
+  TRIVY_SKIP_VERSION_CHECK: "true"
+  TRIVY_DISABLE_TELEMETRY: "true"

@@ -21,6 +21,11 @@ spec:
   # and draining that one node would take all UIs offline at once.
   statefulSet:
     pod:
+      # No client-log upload from the ingress proxies (see values.yaml: operatorConfig).
+      tailscaleContainer:
+        env:
+          - name: TS_NO_LOGS_NO_SUPPORT
+            value: "true"
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:

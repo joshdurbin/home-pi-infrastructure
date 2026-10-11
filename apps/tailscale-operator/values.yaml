@@ -5,3 +5,14 @@
 # this namespace. That Secret is created directly by Ansible's
 # cluster_secrets role from vault-encrypted credentials, outside git.
 oauth: {}
+
+# No client-log upload. By default every Tailscale client - including this operator -
+# streams its logs to Tailscale's log service (and, if a tailnet turns on network flow
+# logs, its flows ride the same pipeline). TS_NO_LOGS_NO_SUPPORT is Tailscale's
+# documented per-device opt-out; the cost is that Tailscale can't use those logs to help
+# debug a support case. The proxies the operator creates get the same setting from
+# manifests/proxyclass.yaml, and the nodes' own tailscaled from roles/tailscale.
+operatorConfig:
+  extraEnv:
+    - name: TS_NO_LOGS_NO_SUPPORT
+      value: "true"

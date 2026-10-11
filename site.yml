@@ -120,6 +120,9 @@
 # in-cluster UIs - see "Exposing UIs via Tailscale Operator" in README.md.
 - name: Deploy Tailscale
   hosts: pi4,pi5,pi3
+  # One node at a time: the role restarts tailscaled when its logging opt-out changes, which
+  # drops that node's tailnet connection for a few seconds.
+  serial: 1
   roles:
     - tailscale
   become: yes
