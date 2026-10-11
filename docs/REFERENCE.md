@@ -474,7 +474,7 @@ rely on the switches alone, so those are the ones to re-check after an upgrade.
 | Grafana | usage statistics (stats.grafana.org), update checks, plugin update checks, news feed | `analytics.reporting_enabled`, `check_for_updates`, `check_for_plugin_updates`, `feedback_links_enabled`, `news.news_feed_enabled` all `false` (`apps/victoria-metrics/values.yaml`) |
 | Traefik (k3s) | update check to update.traefik.io, sharing version and public IP (anonymous usage is opt-in, off) | `HelmChartConfig` setting `global.checkNewVersion: false` (chart v40 value; the older `globalArguments` key is silently ignored by it) (`apps/k3s-addons/`); it is unused and could be removed with k3s `disable: [traefik]` |
 | Longhorn | upgrade checker to Longhorn's upgrade-responder (usage metrics only if enabled, they are not) | `defaultSettings.upgradeChecker: false` and `allowCollectingLonghornUsageMetrics: false` (`apps/longhorn/values.yaml`) |
-| Trivy | new-version check; anonymous usage reporting | `TRIVY_SKIP_VERSION_CHECK`, `TRIVY_DISABLE_TELEMETRY` via `trivy.valuesFromConfigMap` (`apps/trivy-operator/manifests/trivy-env-configmap.yaml`) |
+| Trivy | after every run the client calls check.trivy.dev, sending a machine identifier (hash of hostname + MAC), the command and its flags; skipped only if both `SKIP_VERSION_CHECK` and `DISABLE_TELEMETRY` are set | server: `TRIVY_SKIP_VERSION_CHECK`, `TRIVY_DISABLE_TELEMETRY` via `trivy.valuesFromConfigMap` (`apps/trivy-operator/manifests/trivy-env-configmap.yaml`); scan Jobs (the operator cannot pass them env): `check.trivy.dev` is NXDOMAIN in CoreDNS (`apps/k3s-addons/manifests/coredns-telemetry-sinkhole.yaml`) |
 | Temporal server | version service gets product, version, CPU arch, OS, DB type, cluster ID and connected SDKs | `TEMPORAL_VERSION_CHECK_DISABLED=true` (`apps/temporal/values.yaml`, `server.additionalEnv`) |
 | WhoDB | update check; daily anonymous install heartbeat to PostHog (other analytics are consent-gated in the UI) | `WHODB_DISABLE_UPDATE_CHECK`, `WHODB_HEARTBEAT_DISABLED` (`apps/whodb/values.yaml`) |
 | Open WebUI | update check (default on); telemetry/analytics libraries default off in the image | `ENABLE_VERSION_UPDATE_CHECK=false`, plus `ANONYMIZED_TELEMETRY`, `SCARF_NO_ANALYTICS`, `DO_NOT_TRACK` stated explicitly (`apps/open-webui/values.yaml`) |
@@ -486,6 +486,12 @@ the descheduler, Vector, VictoriaMetrics/VictoriaLogs/vlagent/vmalert, kube-stat
 (which only make the requests they exist for), shairport-sync, and k3s's CoreDNS, metrics-server and local-path provisioner.
 The disabled ProxySQL and OpenSearch configs have not been audited; check them before bringing either back. OpenSearch
 Dashboards in particular has its own telemetry setting.
+
+**DNS backstop.** `apps/k3s-addons/manifests/coredns-telemetry-sinkhole.yaml` makes four names that exist only for telemetry or update
+checks answer NXDOMAIN to every pod: `check.trivy.dev`, `update.traefik.io`, `stats.grafana.org` and
+`longhorn-upgrade-responder.rancher.io`. It is the only control for Trivy's scan Jobs (the operator cannot set their environment) and
+a second line for the others. It does not cover the node's own DNS (nodes do not use CoreDNS) or a program that hardcodes its resolver.
+If a new entry does not take effect, `kubectl -n kube-system rollout restart deploy/coredns` (one replica: a few seconds of DNS blip).
 
 **Tailnet-level settings this repo cannot change.** Network flow logs (Premium/Enterprise plans) and other logging are switched on or
 off in the Tailscale admin console, not by any device. A device that opts out of client logging stops uploading its logs; whether that

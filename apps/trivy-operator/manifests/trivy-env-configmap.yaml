@@ -1,10 +1,13 @@
-# TRIVY_* environment variables for every Trivy process the operator runs (the scan Jobs and
-# the built-in server), via `trivy.valuesFromConfigMap` in ../values.yaml. The chart has no
-# value for either of these, and this ConfigMap is the supported way to add them.
+# TRIVY_* environment variables for the built-in Trivy SERVER, via `trivy.valuesFromConfigMap`
+# in ../values.yaml. That value is applied to the server only: the operator builds each scan
+# Job's environment from a fixed list and has no passthrough, so it does NOT reach the scan Jobs
+# (confirmed on a running scan pod, and in the operator source). The scan Jobs' version check
+# and telemetry are blocked at DNS instead - apps/k3s-addons/manifests/
+# coredns-telemetry-sinkhole.yaml makes check.trivy.dev unresolvable.
 #
-# - TRIVY_SKIP_VERSION_CHECK: Trivy checks for a newer release and prints "Version X is now
-#   available" - a call out to the release service (seen in the scan logs).
-# - TRIVY_DISABLE_TELEMETRY: Trivy's own anonymous usage reporting.
+# - TRIVY_SKIP_VERSION_CHECK: Trivy checks for a newer release (check.trivy.dev/updates).
+# - TRIVY_DISABLE_TELEMETRY: the same request also carries a machine identifier, the command
+#   and its flags unless this is set. The request is skipped only when BOTH are set.
 # Neither affects scanning; the vulnerability database download (which IS needed) is separate.
 apiVersion: v1
 kind: ConfigMap

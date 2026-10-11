@@ -1,0 +1,34 @@
+# Cluster-wide DNS backstop for hosts whose ONLY job is telemetry or an update check: every
+# pod resolves them via CoreDNS, and these names answer NXDOMAIN, so the request fails at
+# once instead of leaving the cluster. k3s's CoreDNS imports /etc/coredns/custom/*.override
+# into its main server block from an optional ConfigMap named coredns-custom (kube-system),
+# which is what this is. Nothing here is a service anything depends on.
+#
+# Why: the per-service switches (docs/REFERENCE.md, "Telemetry and phone-home") are the
+# primary control, but one case cannot be reached by a switch. The Trivy operator builds each
+# scan Job's environment from a fixed list, so TRIVY_SKIP_VERSION_CHECK / TRIVY_DISABLE_TELEMETRY
+# cannot be set on the Jobs (only on the Trivy server), and Trivy's client then calls
+# https://check.trivy.dev/updates after every run, sending a machine identifier (a hash of the
+# pod's hostname and MAC), the command and its flags. It skips the request only when BOTH
+# of those are set. Blocking the name is the fix, and it also covers any Trivy run anywhere.
+# The others are belt-and-braces for services that already have their switch set.
+#
+#   check.trivy.dev                        Trivy client update check + telemetry (see above)
+#   update.traefik.io                      Traefik update check (shares version + public IP)
+#   stats.grafana.org                      Grafana usage-statistics report
+#   longhorn-upgrade-responder.rancher.io  Longhorn upgrade checker
+#
+# CoreDNS's `reload` may or may not notice a change to an imported file; if a new entry does
+# not take effect, restart it: kubectl -n kube-system rollout restart deploy/coredns
+# (one replica, so DNS blips for a few seconds). Check with:
+#   kubectl run dns-check --rm -it --restart=Never --image=busybox -- nslookup check.trivy.dev
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+data:
+  telemetry.override: |
+    template ANY ANY check.trivy.dev update.traefik.io stats.grafana.org longhorn-upgrade-responder.rancher.io {
+      rcode NXDOMAIN
+    }

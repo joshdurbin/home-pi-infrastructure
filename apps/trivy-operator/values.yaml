@@ -88,8 +88,9 @@ nodeCollector:
 # Job; with the server (operator.builtInTrivyServer above) the Jobs are lighter,
 # so these could come down, but they are left as they were.
 trivy:
-  # Extra TRIVY_* env vars for the scan Jobs and the server: no version check, no
-  # telemetry (manifests/trivy-env-configmap.yaml).
+  # Extra TRIVY_* env vars for the Trivy SERVER only: no version check, no telemetry
+  # (manifests/trivy-env-configmap.yaml). The operator cannot pass env to the scan Jobs;
+  # their check.trivy.dev call is blocked in CoreDNS (apps/k3s-addons/manifests/).
   valuesFromConfigMap: trivy-extra-env
   # The server's database/cache volume (the chart's server pod itself is sized by
   # the chart: 200m/512Mi requests, 1Gi limit). Longhorn, so the pod can move; the

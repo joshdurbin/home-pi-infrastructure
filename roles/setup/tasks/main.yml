@@ -75,4 +75,5 @@
       - smartmontools
       - iperf3
       - wireguard-tools
+      - termshark
     state: present
