@@ -1,0 +1,18 @@
+# Scrapes the ProxySQL operator's own controller metrics (port 8443, named
+# "metrics" - confirmed via `helm template` against the real chart, with
+# metrics.secureServing: false in values.yaml so it is plain HTTP). Same
+# hand-written VMPodScrape pattern as apps/cloudnative-pg/manifests/. The
+# ProxySQL pods themselves are scraped from apps/postgres/manifests/.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: proxysql-operator
+  namespace: proxysql-system
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: proxysql-operator
+      app.kubernetes.io/instance: proxysql-operator
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics

@@ -11,8 +11,11 @@ resources:
     cpu: 200m
     memory: 192Mi
 
-# Controller-runtime metrics are HTTPS-with-authn by default, which a plain
-# VMPodScrape can't scrape; this repo scrapes nothing from the operator, so
-# turn the endpoint off rather than leave an unused Service.
+# Controller-runtime metrics (reconcile rates/errors, workqueue depth), scraped
+# by manifests/vmpodscrape.yaml. The chart's default is HTTPS with a
+# token-review authn/authz filter, which a plain VMPodScrape can't satisfy, so
+# serve plain HTTP instead - the same trade every other scrape here makes
+# (cluster-internal only, nothing sensitive: counters and gauges).
 metrics:
-  enabled: false
+  enabled: true
+  secureServing: false

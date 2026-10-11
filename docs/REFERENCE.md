@@ -1025,6 +1025,8 @@ directly.
     `kubectl top pod -n postgres --containers` after the switch and tune the limits.
   - **Metrics**: ProxySQL's built-in endpoint (port 6070, `proxysql_*` series) scraped per pod by a
     `VMPodScrape`. No exporter needed.
+    The operator's own controller metrics (port 8443, plain HTTP via `metrics.secureServing: false`) are scraped by a
+    `VMPodScrape` in `apps/proxysql-operator/manifests/`.
   - **Scaling `replicas` rolls every ProxySQL pod** (the peer list is baked into the bootstrap config), so
     treat a replica-count change like a restart. The operator also creates the PodDisruptionBudget
     (`minAvailable: replicas - 1`).
