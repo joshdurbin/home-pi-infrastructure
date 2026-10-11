@@ -10,8 +10,36 @@ For each entry in `grafana_community_dashboards` (see `defaults/main.yml`):
 2. Substitutes its `${DS_XXX}` datasource placeholder(s) for this cluster's actual default datasource UID
    (looked up live via `GET /api/datasources` — currently `VictoriaMetrics`, the Prometheus-compatible
    datasource pointed at `vmselect`).
-3. Posts the result to this Grafana's `POST /api/dashboards/db`, `overwrite: true` — safe to re-run, it just
-   updates the same dashboards to whatever grafana.com currently serves for that ID.
+3. Looks the dashboard up in Grafana by `uid` and decides what to do (below). Only a dashboard that needs it is written,
+   via `POST /api/dashboards/db`.
+
+## Re-runs: what it writes and what it leaves alone
+
+The role does not blindly overwrite. Each save it makes adds one tag to the dashboard,
+`ansible:<fingerprint>@v<version>` - a fingerprint of exactly what was posted (so it changes when grafana.com publishes a
+new revision or the default datasource changes) and the dashboard version that save produced. The next run reads it back:
+
+| Situation | Result |
+|---|---|
+| dashboard does not exist | **created** |
+| still at the version in the tag, same fingerprint | **unchanged** - nothing is written |
+| still at the version in the tag, different fingerprint | **updated** (grafana.com or the datasource changed) |
+| saved again in Grafana since (version moved past the tag) | **left alone and reported** - someone edited it |
+| provisioned by the VictoriaMetrics chart | **skipped** (Grafana refuses API writes to those) |
+| exists but has no tag (imported by an older version of this role) | **adopted once**, which writes the tag |
+
+A run ends with a summary of which dashboards fell in each bucket. Two switches (`defaults/main.yml`):
+`-e grafana_dashboards_overwrite_edited=true` replaces dashboards that were edited in Grafana (their edits are lost), and
+`-e grafana_dashboards_force=true` re-imports everything regardless. `--check` shows the real decisions and writes nothing.
+
+Why the state is a tag and not the save message: verified against Grafana 13.1.1 that a save bumps `version` by exactly one,
+that Grafana ignores a save whose content is identical to what is stored (so a second "stamp" save never lands), and that a
+newly created dashboard's first version is always "Initial save" whatever message was sent. The tag shows on the dashboard
+as a small chip; removing it makes the next run treat the dashboard as an unmanaged import.
+
+Duplicate protection rests on `uid`: Grafana matches a re-import to the existing dashboard by it. Most grafana.com dashboards
+carry one; those that do not (OpenSearch Prometheus Exporter, id 20827) get a fixed `gcom-<id>` so they are matched too.
+Dashboards removed from `grafana_community_dashboards` are not deleted from Grafana.
 
 ## Why `/api/dashboards/db` and not `/api/dashboards/import`
 

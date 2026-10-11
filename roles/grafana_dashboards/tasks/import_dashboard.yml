@@ -7,12 +7,32 @@
 # sole ${DS_PROMETHEUS} input, referenced 54 times across its panels,
 # resolved to VictoriaMetrics's Prometheus-compatible datasource and
 # imported clean.
+#
+# It also does NOT blindly overwrite. Before posting it looks the dashboard up by uid and decides
+# create / update / unchanged / edited / provisioned. The state lives in the dashboard itself, as
+# one tag, "ansible:<16-hex fingerprint of what was posted>@v<version that save produced>":
+#   - same version as the tag says  -> nobody has saved it since we did, so it is ours and untouched;
+#       same fingerprint  -> unchanged, nothing is written
+#       different one     -> grafana.com (or the default datasource) changed: update
+#   - a later version than the tag says -> someone saved it in Grafana since: left alone and reported,
+#       unless grafana_dashboards_overwrite_edited / grafana_dashboards_force
+#   - no tag (imported by an earlier version of this role) -> adopted once if its history looks like
+#       ours, which writes the tag; from then on the rules above apply
+# Why a tag and not the save message: verified against this cluster's Grafana 13.1.1 that a save
+# bumps `version` by exactly one, that Grafana IGNORES a save whose content is identical to what is
+# stored (so a "stamp" save of unchanged content never lands and never converges), and that a created
+# dashboard's first version is always "Initial save". Content-embedded state avoids all three.
+# Also verified: meta.provisioned = true for dashboards the API can't write.
+#
+# The read-only tasks run in --check mode too (check_mode: false), so `--check` shows the
+# real decisions and only skips the writes.
 
 - name: 'Download {{ dashboard.name }} (id {{ dashboard.id }}) from grafana.com'
   ansible.builtin.uri:
     url: 'https://grafana.com/api/dashboards/{{ dashboard.id }}/revisions/latest/download'
     return_content: true
   register: grafana_dashboard_download
+  check_mode: false
   tags:
     - grafana
     - dashboards
@@ -21,14 +41,27 @@
 # to treat this as a create-or-update by uid rather than reject it outright.
 # __inputs/__requires/__elements are grafana.com metadata Grafana's own
 # dashboard schema doesn't expect on write.
+#
+# uid: Grafana matches re-imports to the existing dashboard by uid, so one is essential. Most
+# grafana.com dashboards carry their own; some do not (OpenSearch Prometheus Exporter, id 20827,
+# ships none). Without a uid every run would create another copy, so those get a fixed one derived
+# from the grafana.com id ("gcom-<id>"). The stored dashboard is the same either way.
 - name: 'Substitute datasource placeholders in {{ dashboard.name }}'
+  ansible.builtin.set_fact:
+    grafana_dashboard_raw: >-
+      {{ grafana_dashboard_download.content
+         | regex_replace('\$\{DS_[A-Za-z0-9_-]+\}', grafana_default_datasource_uid)
+         | from_json }}
+  tags:
+    - grafana
+    - dashboards
+
+- name: 'Build the model to post for {{ dashboard.name }}'
   ansible.builtin.set_fact:
     grafana_dashboard_model: >-
       {{
-        (grafana_dashboard_download.content
-          | regex_replace('\$\{DS_[A-Za-z0-9_-]+\}', grafana_default_datasource_uid)
-          | from_json)
-        | combine({'id': None})
+        grafana_dashboard_raw
+        | combine({'id': None, 'uid': ((grafana_dashboard_raw.uid | default('', true)) or ('gcom-' ~ dashboard.id))})
         | dict2items
         | rejectattr('key', 'in', ['__inputs', '__requires', '__elements'])
         | items2dict
@@ -37,13 +70,115 @@
     - grafana
     - dashboards
 
-# status_code allows both 200 (saved) and 400 through so failed_when below
-# can tell a real error apart from "this dashboard's uid is already owned by
-# apps/victoria-metrics's own file/ConfigMap-based provisioning" (Grafana
-# rejects API writes to those with "Cannot save provisioned dashboard") -
-# hit live for VictoriaMetrics's own vmagent/vmsingle dashboards, see the
-# comment on grafana_community_dashboards in defaults/main.yml.
-- name: 'Import {{ dashboard.name }} into Grafana'
+# The fingerprint covers exactly what would be posted (sorted keys, so it is stable), so it
+# changes when grafana.com publishes a new revision OR the default datasource uid changes.
+- name: 'Fingerprint {{ dashboard.name }}'
+  ansible.builtin.set_fact:
+    grafana_dashboard_uid: "{{ grafana_dashboard_model.uid | default('') }}"
+    grafana_dashboard_hash: "{{ (grafana_dashboard_model | to_json(sort_keys=True) | hash('sha256'))[:16] }}"
+  tags:
+    - grafana
+    - dashboards
+
+# Duplicate protection rests on the uid (see above), so never post without one.
+- name: 'Check {{ dashboard.name }} has a uid'
+  ansible.builtin.assert:
+    that: grafana_dashboard_uid | length > 0
+    fail_msg: "{{ dashboard.name }} (grafana.com id {{ dashboard.id }}) has no uid; refusing to import it, which would create a duplicate on every run."
+  tags:
+    - grafana
+    - dashboards
+
+- name: 'Look up {{ dashboard.name }} in Grafana by uid'
+  ansible.builtin.uri:
+    url: '{{ grafana_url }}/api/dashboards/uid/{{ grafana_dashboard_uid }}'
+    status_code:
+      - 200
+      - 404
+    return_content: true
+  register: grafana_dashboard_current
+  check_mode: false
+  tags:
+    - grafana
+    - dashboards
+
+- name: 'Read the version history of {{ dashboard.name }}'
+  ansible.builtin.uri:
+    url: '{{ grafana_url }}/api/dashboards/uid/{{ grafana_dashboard_uid }}/versions?limit=5'
+    return_content: true
+  register: grafana_dashboard_versions
+  check_mode: false
+  when:
+    - grafana_dashboard_current.status == 200
+    - not (grafana_dashboard_current.json.meta.provisioned | default(false))
+  tags:
+    - grafana
+    - dashboards
+
+# The tag this role last wrote, if any, and where the dashboard is now. versions come newest first;
+# the history is only used for dashboards with no tag yet (imported by an older version of this role,
+# which saved them with its message, or left at their single "Initial save").
+- name: 'Read the import marker on {{ dashboard.name }}'
+  ansible.builtin.set_fact:
+    grafana_dashboard_version_now: "{{ grafana_dashboard_current.json.dashboard.version | default(0) | int if grafana_dashboard_current.status == 200 else 0 }}"
+    grafana_dashboard_marker: >-
+      {{ ((grafana_dashboard_current.json.dashboard.tags | default([]) | default([], true)
+           | select('match', '^ansible:[0-9a-f]{16}@v[0-9]+$') | list) | first | default(''))
+         if grafana_dashboard_current.status == 200 else '' }}
+    grafana_dashboard_latest: >-
+      {{ (grafana_dashboard_versions.json.versions | default([]) | first | default({}))
+         if grafana_dashboard_versions.json is defined else {} }}
+  tags:
+    - grafana
+    - dashboards
+
+- name: 'Interpret the marker on {{ dashboard.name }}'
+  ansible.builtin.set_fact:
+    grafana_dashboard_stored_hash: "{{ (grafana_dashboard_marker | regex_findall('^ansible:([0-9a-f]{16})@v') | first) | default('') }}"
+    grafana_dashboard_stored_version: "{{ (grafana_dashboard_marker | regex_findall('@v([0-9]+)$') | first) | default(0) | int }}"
+    grafana_dashboard_looks_ours: >-
+      {{ (grafana_dashboard_latest.message | default('')).startswith(grafana_dashboards_import_message)
+         or (grafana_dashboard_latest.version | default(0) | int == 1 and grafana_dashboard_latest.message | default('') == 'Initial save') }}
+  tags:
+    - grafana
+    - dashboards
+
+- name: 'Decide what to do with {{ dashboard.name }}'
+  ansible.builtin.set_fact:
+    grafana_dashboard_action: >-
+      {%- if grafana_dashboard_current.status == 404 -%}create
+      {%- elif grafana_dashboard_current.json.meta.provisioned | default(false) -%}provisioned
+      {%- elif grafana_dashboard_marker | length > 0 -%}
+        {%- if grafana_dashboard_stored_version == grafana_dashboard_version_now -%}
+          {%- if grafana_dashboard_stored_hash == grafana_dashboard_hash -%}unchanged{%- else -%}update{%- endif -%}
+        {%- elif grafana_dashboards_force | bool or grafana_dashboards_overwrite_edited | bool -%}update
+        {%- else -%}edited
+        {%- endif -%}
+      {%- elif grafana_dashboard_looks_ours or grafana_dashboards_force | bool or grafana_dashboards_overwrite_edited | bool -%}update
+      {%- else -%}edited
+      {%- endif -%}
+  tags:
+    - grafana
+    - dashboards
+
+# What gets saved: the dashboard plus the marker for the version this very save will produce
+# (current + 1; a new dashboard starts at 1). Any tag of ours already on it is replaced.
+- name: 'Add the import marker to {{ dashboard.name }}'
+  ansible.builtin.set_fact:
+    grafana_dashboard_to_post: >-
+      {{ grafana_dashboard_model | combine({'tags':
+           ((grafana_dashboard_model.tags | default([]) | default([], true)) | reject('match', '^ansible:[0-9a-f]{16}@v[0-9]+$') | list)
+           + ['ansible:' ~ grafana_dashboard_hash ~ '@v' ~ (grafana_dashboard_version_now | int + 1)]}) }}
+  when: grafana_dashboard_action in ['create', 'update']
+  tags:
+    - grafana
+    - dashboards
+
+# status_code allows both 200 (saved) and 400 through so failed_when below can tell a real error
+# apart from "this dashboard's uid is owned by apps/victoria-metrics's own file/ConfigMap-based
+# provisioning" (Grafana rejects API writes to those with "Cannot save provisioned dashboard").
+# That is only a fallback now: meta.provisioned normally catches it before any write.
+- name: 'Import {{ dashboard.name }} into Grafana ({{ grafana_dashboard_action }})'
   ansible.builtin.uri:
     url: '{{ grafana_url }}/api/dashboards/db'
     method: POST
@@ -52,22 +187,32 @@
       - 200
       - 400
     body:
-      dashboard: '{{ grafana_dashboard_model }}'
+      dashboard: '{{ grafana_dashboard_to_post }}'
       overwrite: true
       folderId: 0
-      message: 'Imported by ansible (roles/grafana_dashboards)'
+      message: '{{ grafana_dashboards_import_message }} sha={{ grafana_dashboard_hash }}'
   register: grafana_dashboard_import
+  changed_when: grafana_dashboard_import.status == 200
   failed_when: >-
     grafana_dashboard_import.status == 400 and
     'provisioned' not in (grafana_dashboard_import.json.message | default(''))
+  when: grafana_dashboard_action in ['create', 'update']
   tags:
     - grafana
     - dashboards
 
-- name: "Note when {{ dashboard.name }} was skipped (already chart-provisioned)"
-  ansible.builtin.debug:
-    msg: "{{ dashboard.name }} (id {{ dashboard.id }}) is already provisioned by apps/victoria-metrics's own dashboard sidecar - skipped, not imported as a separate copy."
-  when: grafana_dashboard_import.status == 400
+- name: 'Record the outcome for {{ dashboard.name }}'
+  ansible.builtin.set_fact:
+    grafana_dashboard_results: >-
+      {{ grafana_dashboard_results + [{
+           'name': dashboard.name,
+           'uid': grafana_dashboard_uid,
+           'action': ('provisioned' if (grafana_dashboard_action in ['create', 'update']
+                                        and grafana_dashboard_import.status | default(0) == 400)
+                      else
+                      ('created' if grafana_dashboard_action == 'create'
+                       else ('updated' if grafana_dashboard_action == 'update' else grafana_dashboard_action)))
+         }] }}
   tags:
     - grafana
     - dashboards

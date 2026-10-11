@@ -4,6 +4,25 @@
 # tailnet_domain lives in group_vars/all/main.yaml.
 grafana_url: "https://grafana.{{ tailnet_domain }}"
 
+# How the role decides whether a dashboard needs importing (tasks/import_dashboard.yml). Each save it
+# makes adds one tag to the dashboard, "ansible:<fingerprint of what was posted>@v<version it produced>",
+# and the next run reads it back:
+#   - the dashboard is still at that version, same fingerprint  -> unchanged, nothing is written
+#   - still at that version, different fingerprint             -> grafana.com (or the default datasource)
+#                                                                  changed: update
+#   - it has moved past that version                           -> someone saved it in Grafana since: left
+#                                                                  alone and reported, unless
+#                                                                  grafana_dashboards_overwrite_edited
+#   - the dashboard is chart-provisioned                       -> skipped (Grafana refuses API writes to those)
+#   - it does not exist yet                                    -> created
+#   - it exists with no tag (imported by an older role)        -> adopted once, which writes the tag
+# The message below is also recorded on each save, for the version history.
+grafana_dashboards_import_message: 'Imported by ansible (roles/grafana_dashboards)'
+# true: replace dashboards that were edited in Grafana after the last import (loses those edits).
+grafana_dashboards_overwrite_edited: false
+# true: re-import every dashboard regardless of the checks above (e.g. to put them all back).
+grafana_dashboards_force: false
+
 # grafana.com dashboard IDs, limited to tech this cluster actually scrapes
 # today (confirmed live: apps/*/manifests/vm*scrape.yaml + what
 # apps/victoria-metrics's vmagent picks up via selectAllByDefault: true).

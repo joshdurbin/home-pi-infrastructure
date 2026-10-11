@@ -22,6 +22,7 @@
     url: '{{ grafana_url }}/api/datasources'
     return_content: true
   register: grafana_datasources
+  check_mode: false   # read-only; lets --check show the real decisions
   tags:
     - grafana
     - dashboards
@@ -35,12 +36,41 @@
     - grafana
     - dashboards
 
+- name: Start the per-dashboard results list
+  ansible.builtin.set_fact:
+    grafana_dashboard_results: []
+  tags:
+    - grafana
+    - dashboards
+
 - name: Import each community dashboard
   ansible.builtin.include_tasks: import_dashboard.yml
   loop: '{{ grafana_community_dashboards }}'
   loop_control:
     loop_var: dashboard
     label: '{{ dashboard.name }}'
+  tags:
+    - grafana
+    - dashboards
+
+# One line per outcome, so a run says what it actually did instead of "ok" for everything.
+- name: Summarise what the import did
+  ansible.builtin.debug:
+    msg: |-
+      {% for action, label in [('created', 'Created'), ('updated', 'Updated (grafana.com or datasource changed)'), ('unchanged', 'Unchanged (not written)'), ('provisioned', 'Skipped - provisioned by the VictoriaMetrics chart'), ('edited', 'LEFT ALONE - edited in Grafana since the last import')] %}
+      {{ label }}: {{ grafana_dashboard_results | selectattr('action', 'equalto', action) | map(attribute='name') | list | join(', ') or '-' }}
+      {% endfor %}
+  tags:
+    - grafana
+    - dashboards
+
+- name: Warn about dashboards that were edited by hand
+  ansible.builtin.debug:
+    msg: >-
+      {{ grafana_dashboard_results | selectattr('action', 'equalto', 'edited') | map(attribute='name') | list | join(', ') }}
+      were changed in Grafana after the last import, so this run did not overwrite them. Re-run with
+      -e grafana_dashboards_overwrite_edited=true to replace them (their edits are lost), or leave them.
+  when: grafana_dashboard_results | selectattr('action', 'equalto', 'edited') | list | length > 0
   tags:
     - grafana
     - dashboards
