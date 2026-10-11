@@ -6,8 +6,14 @@
 #
 # Traefik's static config has `global.checkNewVersion`, which by default periodically
 # contacts update.traefik.io and shares the running version and this network's public IP.
-# k3s's args set neither it nor sendAnonymousUsage (opt-in, off), so it is running on the
-# built-in default. Setting both explicitly keeps it off if a default ever changes.
+# The chart (k3s ships Traefik chart v40) defaults it to true and, when true, renders NO
+# argument - so the live Deployment has no --global flag at all and the binary's own default
+# (check) applies. Setting it false makes the chart render --global.checkNewVersion=false.
+# sendAnonymousUsage is opt-in and already off; it is set explicitly so it stays off.
+#
+# NOTE: these are the chart v40 value names. Older charts took `globalArguments: [...]`, which
+# v40 silently ignores (an unknown value is not an error) - an earlier version of this file used
+# that and had no effect. Check with: kubectl -n kube-system get deploy traefik -o yaml | grep global
 #
 # k3s re-runs the chart (the helm-install-traefik Job) when this changes, which redeploys
 # Traefik - harmless here, nothing uses it.
@@ -18,6 +24,6 @@ metadata:
   namespace: kube-system
 spec:
   valuesContent: |-
-    globalArguments:
-      - "--global.checknewversion=false"
-      - "--global.sendanonymoususage=false"
+    global:
+      checkNewVersion: false
+      sendAnonymousUsage: false
