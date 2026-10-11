@@ -1,0 +1,44 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: proxysql-operator
+  namespace: argocd
+  annotations:
+    # Installs the ProxySQLCluster/ProxySQLConfig CRDs that apps/postgres/
+    # (wave 2) declares its connection proxy with - same race class as
+    # cloudnative-pg/redis-operator, so it must sync strictly before it.
+    # No PVC of its own, so no Longhorn dependency.
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: proxysql-system
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      # Chart ships its CRDs under crds/ - ServerSideApply keeps them out of
+      # the last-applied annotation, same as the other operators here. Argo
+      # applies crds/ on every sync, so unlike plain `helm upgrade` the CRDs
+      # follow the chart version.
+      - ServerSideApply=true
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  sources:
+    - repoURL: https://proxysql.github.io/proxysql-on-k8s
+      chart: proxysql-operator
+      targetRevision: 0.7.0
+      helm:
+        releaseName: proxysql-operator
+        valueFiles:
+          - $values/apps/proxysql-operator/values.yaml
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      ref: values

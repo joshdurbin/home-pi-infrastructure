@@ -4,7 +4,8 @@ metadata:
   name: postgres
   namespace: argocd
   annotations:
-    # Needs cloudnative-pg's CRDs (Cluster, Pooler) to exist first. In
+    # Needs cloudnative-pg's CRDs (Cluster, Database) and proxysql-operator's
+    # CRDs (ProxySQLCluster, ProxySQLConfig) to exist first. In
     # `longhorn` storage mode (the default, see cluster/kustomization.yaml)
     # the Cluster's PVCs are Longhorn volumes, so it also needs Longhorn
     # (wave 0) - already guaranteed by being wave 2.
@@ -26,8 +27,8 @@ spec:
         duration: 5s
         factor: 2
         maxDuration: 3m
-  # No chart source - Cluster/Pooler CRs are complete manifests on their
-  # own, nothing to template. Two plain-git paths: manifests/ (poolers,
+  # No chart source - Cluster/ProxySQL CRs are complete manifests on their
+  # own, nothing to template. Two plain-git paths: manifests/ (ProxySQL,
   # roles, databases, scrapes - applied as-is) and cluster/ (a Kustomize
   # dir, because the Cluster's storage/placement mode is a switchable
   # component - see cluster/kustomization.yaml). Argo CD auto-detects the

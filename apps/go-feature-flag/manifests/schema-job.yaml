@@ -39,7 +39,7 @@ spec:
               drop: [ALL]
           env:
             - name: PGHOST
-              value: postgres-pooler-rw.postgres.svc.cluster.local
+              value: postgres-proxy.postgres.svc.cluster.local
             - name: PGPORT
               value: "5432"
             - name: PGDATABASE

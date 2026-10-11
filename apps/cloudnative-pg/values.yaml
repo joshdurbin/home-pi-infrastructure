@@ -11,7 +11,7 @@ affinity:
             app.kubernetes.io/name: cloudnative-pg
         topologyKey: kubernetes.io/hostname
 
-# Manages apps/postgres/'s single Cluster + two Poolers - a fraction of
+# Manages apps/postgres/'s single Cluster - a fraction of
 # the chart's own default request/limit is plenty for reconciling a
 # handful of small CRs, same reasoning as redis-operator's own sizing.
 resources:

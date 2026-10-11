@@ -2,7 +2,7 @@
 # otherwise need a hand-assembled Patroni+DCS setup - the operator (see
 # apps/cloudnative-pg/) handles failover and promotion itself, and
 # maintains <name>-rw/-ro/-r Services that always point at the current
-# primary/replicas, which pooler-rw.yaml/pooler-ro.yaml route through.
+# primary/replicas, which the ProxySQL proxy (manifests/proxysql.yaml) routes through.
 #
 # This is the *base* Cluster: everything except where the instances run and
 # what their volumes sit on. That part is a one-line switch in

@@ -51,11 +51,11 @@ flagSets:
       - "{{ goff_evaluation_api_key }}"
     retrievers:
       - kind: postgresql
-        # The primary, through the PgBouncer rw pooler (session mode), as the
+        # The primary, through the ProxySQL proxy (no multiplexing), as the
         # `goff` role that owns this database. The password is embedded in a URI,
         # so it is percent-encoded - including `/`, which the urlencode filter
         # leaves alone but which would end the userinfo part of the URI.
-        uri: "postgres://goff:{{ goff_db_password | urlencode | replace('/', '%2F') }}@postgres-pooler-rw.postgres.svc.cluster.local:5432/go_feature_flag?sslmode=require"
+        uri: "postgres://goff:{{ goff_db_password | urlencode | replace('/', '%2F') }}@postgres-proxy.postgres.svc.cluster.local:5432/go_feature_flag?sslmode=require"
         table: go_feature_flag
     # (The `log` exporter - evaluation events as JSON log lines - is on by
     # default in the relay proxy, so nothing is configured for it here.)

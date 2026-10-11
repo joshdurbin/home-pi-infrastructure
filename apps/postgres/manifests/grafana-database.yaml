@@ -2,7 +2,7 @@
 # is the victoria-metrics-k8s-stack subchart), created declaratively via
 # CloudNativePG's DatabaseRole/Database CRDs - same pattern as
 # open-webui-database.yaml and temporal-database.yaml beside this file.
-# Grafana connects through postgres-pooler-rw (session pool mode, so its
+# Grafana connects through postgres-proxy (session pool mode, so its
 # migration advisory locks work), not a direct instance connection.
 #
 # The password Secret (grafana-db-credentials) is seeded into both the

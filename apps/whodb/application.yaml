@@ -5,7 +5,7 @@ metadata:
   namespace: argocd
   annotations:
     # Has its own PVC (Longhorn, wave 0) and connects to the postgres
-    # Cluster's poolers (wave 2), the opensearch cluster and the two redis
+    # Cluster's proxy (wave 2), the opensearch cluster and the two redis
     # cache clusters - same tier as every other end-user-facing app with a
     # PVC.
     argocd.argoproj.io/sync-wave: "2"

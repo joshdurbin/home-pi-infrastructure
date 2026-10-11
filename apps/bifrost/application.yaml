@@ -4,7 +4,7 @@ metadata:
   name: bifrost
   namespace: argocd
   annotations:
-    # Needs the Postgres cluster + poolers (wave 2, same tier - its DB/role are
+    # Needs the Postgres cluster + proxy (wave 2, same tier - its DB/role are
     # CRs in apps/postgres; the pod simply retries until they exist). Same
     # tier as every other end-user facing app.
     argocd.argoproj.io/sync-wave: "2"

@@ -1,6 +1,6 @@
 # Egress-only (Tailscale reaching the web UI is ingress, unaffected): DNS
 # plus the three things WhoDB is pre-connected to -
-# - Postgres poolers (port 5432, postgres namespace; the poolers' own
+# - Postgres proxy (port 5432, postgres namespace; its own
 #   ingress is open by design, see apps/postgres/manifests/networkpolicy.yaml)
 # - OpenSearch (port 9200, opensearch namespace)
 # - the blocky-cache / searxng-cache / bifrost-cache Redis clusters in the

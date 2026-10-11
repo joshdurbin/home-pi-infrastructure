@@ -1,0 +1,18 @@
+# Reconciles the ProxySQLCluster/ProxySQLConfig CRs in apps/postgres/manifests/
+# (the connection proxy in front of CloudNativePG). It is cluster-scoped and
+# idle between reconciles, so it keeps the chart's own default request
+# (100m/128Mi) but gets a tighter limit than the chart's 500m/256Mi,
+# sized for the pi fleet.
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 192Mi
+
+# Controller-runtime metrics are HTTPS-with-authn by default, which a plain
+# VMPodScrape can't scrape; this repo scrapes nothing from the operator, so
+# turn the endpoint off rather than leave an unused Service.
+metrics:
+  enabled: false

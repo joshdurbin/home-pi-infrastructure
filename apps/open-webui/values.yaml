@@ -60,7 +60,7 @@ extraEnvVars:
         key: secret-key
   # Moves chats/users/settings onto the cluster's existing HA Postgres
   # (apps/postgres/manifests/open-webui-database.yaml), via
-  # postgres-pooler-rw - instead of the local SQLite file this previously
+  # postgres-proxy - instead of the local SQLite file this previously
   # used. Does NOT remove the need for the PVC below: file uploads and RAG
   # vector embeddings are separate concerns (STORAGE_PROVIDER/VECTOR_DB
   # env vars, both still local/default) that DATABASE_URL doesn't touch -

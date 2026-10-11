@@ -1,7 +1,7 @@
 # Bifrost's own Postgres user and database (apps/bifrost/), created
 # declaratively via CloudNativePG's DatabaseRole/Database CRDs - same
 # pattern as open-webui-database.yaml beside this file. Bifrost connects
-# through postgres-pooler-rw and owns its database (it creates its own
+# through postgres-proxy and owns its database (it creates its own
 # schema on start).
 #
 # The password Secret (bifrost-db-credentials) is seeded by the k8s_secrets

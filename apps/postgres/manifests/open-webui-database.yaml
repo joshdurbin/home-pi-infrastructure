@@ -1,8 +1,8 @@
 # Open WebUI's own Postgres user and database (apps/open-webui/), created
 # declaratively via CloudNativePG's DatabaseRole/Database CRDs - same
 # pattern as temporal-database.yaml beside this file. Open WebUI connects
-# through postgres-pooler-rw (apps/postgres/manifests/pooler-rw.yaml) like
-# everything else does, not a dedicated pooler pair.
+# through postgres-proxy (apps/postgres/manifests/proxysql.yaml) like
+# everything else does.
 #
 # Only moves the relational DB (chats/users/settings, previously SQLite at
 # /app/backend/data/webui.db) - Open WebUI still needs its own PVC

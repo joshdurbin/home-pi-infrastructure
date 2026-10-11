@@ -1,0 +1,120 @@
+# Connection proxy in front of the CloudNativePG cluster: ProxySQL 3.x (its
+# PostgreSQL protocol support), managed by the ProxySQL operator
+# (apps/proxysql-operator/). Replaces the two CNPG `Pooler`s (PgBouncer) this
+# directory used to hold. Applications connect to ONE Service,
+# postgres-proxy.postgres.svc:5432 (the listener is moved from ProxySQL's
+# default 6133 to 5432 so no app needed a port change) - never directly to a
+# postgres pod (see networkpolicy.yaml, which enforces that at the network layer).
+#
+# Read/write split is per USER, not per endpoint: each user below has a default
+# hostgroup, 0 = CNPG's "postgres-rw" Service (always the current primary - CNPG
+# re-points it on failover, so ProxySQL needs no promotion handling of its own)
+# and 1 = "postgres-ro" (the replica). Only `whodb` (read-only role) defaults to
+# 1. There are deliberately NO query rules: regex-routing SELECTs to the replica
+# misroutes `SELECT ... FOR UPDATE` and functions with side effects.
+#
+# Pods hold no data (persistence is off: the operator re-pushes the
+# ProxySQLConfig below to a restarted pod within seconds), so they can run
+# anywhere; 2 replicas on different nodes, so a drain takes one away while the
+# other keeps serving. The operator creates the PodDisruptionBudget itself
+# (minAvailable replicas-1) and a ClusterIP Service named after the cluster.
+#
+# Passwords: ProxySQL authenticates clients itself, so it needs each app's
+# password. The pgsqlUsers below read the SAME *-db-credentials Secrets CNPG's
+# DatabaseRoles use (seeded by the k8s_secrets Ansible role), so a password lives
+# in exactly one place. Admin/monitor credentials come from the proxysql-auth
+# Secret (same role).
+apiVersion: proxysql.com/v1alpha1
+kind: ProxySQLCluster
+metadata:
+  name: postgres-proxy
+  namespace: postgres
+spec:
+  replicas: 2
+  # Pinned to an exact release (the operator's default is the floating "3.0"
+  # tag). The multi-arch image includes linux/arm64, which the Pis need.
+  image:
+    repository: proxysql/proxysql
+    tag: "3.0.11"
+  auth:
+    secretName: proxysql-auth
+  persistence:
+    enabled: false
+  protocols:
+    # MySQL listener is on by default; nothing here speaks MySQL.
+    mysql:
+      enabled: false
+    pgsql:
+      enabled: true
+      port: 5432
+  # TLS is needed for the BACKEND leg: CNPG's pg_hba only admits `hostssl`
+  # connections, so ProxySQL must use TLS to postgres-rw/-ro and trust CNPG's CA
+  # (the postgres-ca Secret CNPG maintains). Turning `tls` on also gives the
+  # client-facing listener a managed (self-signed) certificate; apps here use
+  # sslmode=require, which does not verify it.
+  tls:
+    enabled: true
+    backend:
+      caSecretName: postgres-ca
+  # Sized for the pi fleet, not the operator's default (500m/512Mi requests x3).
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              proxysql.com/cluster: postgres-proxy
+          topologyKey: kubernetes.io/hostname
+---
+apiVersion: proxysql.com/v1alpha1
+kind: ProxySQLConfig
+metadata:
+  name: postgres-proxy
+  namespace: postgres
+spec:
+  clusterRef:
+    name: postgres-proxy
+  pgsqlServers:
+    - hostgroup: 0
+      hostname: postgres-rw.postgres.svc.cluster.local
+      port: 5432
+      useSSL: true
+      comment: CNPG primary (read-write)
+    - hostgroup: 1
+      hostname: postgres-ro.postgres.svc.cluster.local
+      port: 5432
+      useSSL: true
+      comment: CNPG replica (read-only)
+  pgsqlUsers:
+    # Read-write users -> primary.
+    - username: temporal
+      defaultHostgroup: 0
+      passwordSecretRef: {name: temporal-db-credentials, key: password}
+    - username: grafana
+      defaultHostgroup: 0
+      passwordSecretRef: {name: grafana-db-credentials, key: password}
+    - username: open_webui
+      defaultHostgroup: 0
+      passwordSecretRef: {name: open-webui-db-credentials, key: password}
+    - username: bifrost
+      defaultHostgroup: 0
+      passwordSecretRef: {name: bifrost-db-credentials, key: password}
+    - username: goff
+      defaultHostgroup: 0
+      passwordSecretRef: {name: goff-db-credentials, key: password}
+    # Read-only -> replica (apps/postgres/manifests/whodb-role.yaml).
+    - username: whodb
+      defaultHostgroup: 1
+      passwordSecretRef: {name: whodb-db-credentials, key: password}
+  pgsqlVariables:
+    # Keep every client pinned to one backend connection for the life of its
+    # session - the behaviour the PgBouncer poolers had (poolMode: session).
+    # Grafana's migrations take advisory locks and several clients use session
+    # state, which connection multiplexing would break.
+    pgsql-multiplexing: "false"

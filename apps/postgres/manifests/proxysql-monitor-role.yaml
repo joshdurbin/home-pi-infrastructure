@@ -1,0 +1,20 @@
+# The login ProxySQL's monitor module uses against postgres-rw/-ro for its
+# health checks (connect + ping). It must exist on the backend with the same
+# password as the `monitor-password` key of the proxysql-auth Secret; ProxySQL
+# is configured with that key (see proxysql.yaml), and this role reads the same
+# value from proxysql-monitor-credentials - both seeded from one variable by the
+# k8s_secrets Ansible role, so they cannot drift. Without it ProxySQL marks the
+# backends SHUNNED despite them being perfectly healthy.
+apiVersion: postgresql.cnpg.io/v1
+kind: DatabaseRole
+metadata:
+  name: monitor
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  name: monitor
+  ensure: present
+  login: true
+  passwordSecret:
+    name: proxysql-monitor-credentials
