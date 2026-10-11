@@ -500,8 +500,8 @@ kubectl -n longhorn patch settings.longhorn.io upgrade-checker --type merge -p '
 make deploy-tailscale   # one node at a time; --limit <node> via: ansible-playbook site.yml -i inventory.dist --tags tailscale --limit <node>
 ```
 
-**Verifying.** Effective Grafana settings: `curl -s http://<grafana>/api/admin/settings | jq '.analytics, .news'` (anonymous Admin is on).
-A pod's environment: `kubectl -n <ns> exec <pod> -- env | grep -iE 'telemetry|update|no_logs'`. Tailscale:
+**Verifying.** Grafana's effective settings: `kubectl -n monitoring exec <grafana-pod> -c grafana -- cat /etc/grafana/grafana.ini | grep -E 'reporting_enabled|check_for|news_feed'`
+(`/api/admin/settings` does not work here: anonymous access is an org Admin, not a Grafana server admin, so it returns 403). A pod's environment: `kubectl -n <ns> exec <pod> -- env | grep -iE 'telemetry|update|no_logs'`. Tailscale:
 `systemctl show tailscaled -p Environment` on a node, and `kubectl -n tailscale get deploy operator -o yaml | grep -A1 NO_LOGS`.
 Egress that actually leaves a namespace can be confirmed from the Pi side with `ss -tnp` / the router's connection log.
 
