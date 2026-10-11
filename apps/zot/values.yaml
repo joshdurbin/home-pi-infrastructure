@@ -1,0 +1,64 @@
+# In-cluster OCI registry (Zot, https://zotregistry.dev). Its first job is to
+# host images we have to build ourselves because upstream doesn't publish a
+# pullable one - today that is the ProxySQL operator (see docs/REFERENCE.md,
+# "Local registry (Zot)"). Nothing here is mirrored from upstream yet.
+#
+# Deliberately NOT the only image source for anything critical: Zot itself,
+# Argo CD, Longhorn and k3s all pull from their upstream registries, so a Zot
+# outage can never stop the cluster recovering itself. Only workloads whose
+# image exists nowhere else (proxysql-operator) depend on it.
+#
+# Reached by nodes through the NodePort below as localhost:30500 - containerd
+# treats localhost registries as plain HTTP, so no node-level containerd /
+# k3s registries.yaml change (and no k3s restart) is needed to pull from it.
+# Pods reference images as localhost:30500/<name>:<tag>.
+replicaCount: 1
+
+# One replica: the chart runs Zot as a StatefulSet with a per-pod volume claim
+# (the pvc block below sizes it), so an update replaces the pod in place and
+# there is no two-pods-one-volume deadlock to avoid.
+
+service:
+  type: NodePort
+  port: 5000
+  nodePort: 30500
+
+persistence: true
+pvc:
+  create: true
+  accessModes: ["ReadWriteOnce"]
+  storage: 30Gi
+  storageClassName: longhorn
+
+mountConfig: true
+configFiles:
+  config.json: |-
+    {
+      "distSpecVersion": "1.1.0",
+      "storage": {
+        "rootDirectory": "/var/lib/registry",
+        "dedupe": true,
+        "gc": true,
+        "gcDelay": "1h",
+        "gcInterval": "6h"
+      },
+      "http": {
+        "address": "0.0.0.0",
+        "port": "5000"
+      },
+      "log": { "level": "info" },
+      "extensions": {
+        "metrics": {
+          "enable": true,
+          "prometheus": { "path": "/metrics" }
+        }
+      }
+    }
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

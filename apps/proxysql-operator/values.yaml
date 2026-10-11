@@ -3,6 +3,16 @@
 # idle between reconciles, so it keeps the chart's own default request
 # (100m/128Mi) but gets a tighter limit than the chart's 500m/256Mi,
 # sized for the pi fleet.
+# The upstream image (ghcr.io/proxysql/proxysql-operator) is private - open
+# upstream issue ProxySQL/proxysql-on-k8s#83 - so it is built from the release
+# tag and pushed to the in-cluster Zot (apps/zot/); see docs/REFERENCE.md,
+# "Local registry (Zot)". localhost:30500 is Zot's NodePort, which every
+# node's containerd reaches over plain HTTP. If upstream makes the package
+# public, delete this block and the operator pulls from ghcr again.
+image:
+  repository: localhost:30500/proxysql-operator
+  tag: "0.7.0"
+
 resources:
   requests:
     cpu: 50m

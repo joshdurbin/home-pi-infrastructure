@@ -1,0 +1,16 @@
+# Zot's Prometheus endpoint (the metrics extension enabled in values.yaml,
+# served on the registry port at /metrics). Hand-written VMPodScrape, same
+# reasoning as apps/cloudnative-pg/manifests/vmpodscrape.yaml.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: zot
+  namespace: zot
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: zot
+      app.kubernetes.io/instance: zot
+  podMetricsEndpoints:
+    - port: zot
+      path: /metrics

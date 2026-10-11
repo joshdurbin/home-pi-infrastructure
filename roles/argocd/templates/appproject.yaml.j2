@@ -17,6 +17,7 @@ spec:
     - https://ot-container-kit.github.io/helm-charts
     - https://cloudnative-pg.github.io/charts
     - https://proxysql.github.io/proxysql-on-k8s
+    - https://zotregistry.dev/helm-charts
     - https://go.temporal.io/helm-charts
     - https://opensearch-project.github.io/opensearch-k8s-operator/
     - https://helm.vector.dev
@@ -66,6 +67,8 @@ spec:
     - namespace: postgres
       server: https://kubernetes.default.svc
     - namespace: proxysql-system
+      server: https://kubernetes.default.svc
+    - namespace: zot
       server: https://kubernetes.default.svc
     - namespace: temporal
       server: https://kubernetes.default.svc

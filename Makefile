@@ -1,4 +1,4 @@
-.PHONY: help install deploy deploy-system deploy-k3s deploy-users deploy-secrets deploy-argocd deploy-dashboards destroy-cluster verify logs clean status syntax-check lint
+.PHONY: help install deploy deploy-system deploy-k3s deploy-users deploy-secrets deploy-argocd deploy-dashboards build-proxysql-operator destroy-cluster verify logs clean status syntax-check lint
 
 INVENTORY := inventory.dist
 VAULT_PASS := --ask-vault-pass
@@ -18,6 +18,7 @@ help:
 	@echo "  make deploy-secrets       Seed cluster Secrets/ConfigMaps only"
 	@echo "  make deploy-argocd        Bootstrap Argo CD only"
 	@echo "  make deploy-dashboards    Import Grafana dashboards (not part of make deploy)"
+	@echo "  make build-proxysql-operator  Build the ProxySQL operator image and push it to the in-cluster Zot"
 	@echo ""
 	@echo "Destruction:"
 	@echo "  make destroy-cluster      WIPE k3s + Longhorn data on every node (asks to confirm)"
@@ -64,6 +65,10 @@ deploy-argocd:
 deploy-dashboards:
 	@echo "Importing Grafana dashboards (needs Grafana up and the control host on the tailnet)..."
 	ansible-playbook site.yml -i $(INVENTORY) $(VAULT_PASS) --tags dashboards
+
+build-proxysql-operator:
+	@echo "Building the ProxySQL operator image and pushing it to Zot..."
+	./scripts/build-proxysql-operator.sh
 
 destroy-cluster:
 	ansible-playbook destroy.yml -i $(INVENTORY)

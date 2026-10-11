@@ -1,0 +1,30 @@
+# Egress-only, ingress deliberately open (this repo's usual shape): the nodes'
+# containerd pulls through the NodePort and a workstation pushes through
+# `kubectl port-forward`, neither of which a pod/namespace selector can name.
+# Zot needs nothing outbound today (it only stores what is pushed to it), so
+# egress is DNS only. If Zot ever gets the `sync` extension to mirror upstream
+# registries, add 443 egress here.
+#
+# NOTE: no authentication either - anything in the cluster can push to or pull
+# from it. Acceptable for a homelab registry of self-built images; add Zot's
+# htpasswd auth + an imagePullSecret before putting anything sensitive in it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: zot-egress
+  namespace: zot
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
