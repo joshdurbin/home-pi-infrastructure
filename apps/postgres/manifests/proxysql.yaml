@@ -64,7 +64,19 @@ spec:
     limits:
       cpu: "1"
       memory: 512Mi
+  # NOT on the Pi 5 nodes (labelled pi5=true): the ProxySQL image's bundled
+  # jemalloc is built for 4K memory pages and aborts on start there with
+  # "jemalloc: Unsupported system page size" (the Pi 5 kernel uses 16K pages) -
+  # the pods CrashLoop. The Pi 4Bs run a 4K-page kernel. The Pi 3B+ is tainted
+  # (host_vars/rpi-3bplus-1.yaml), so in practice this means the three Pi 4Bs.
+  # Remove this if a ProxySQL release fixes the allocator's page-size handling.
   affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: pi5
+                operator: DoesNotExist
     podAntiAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
         - labelSelector:

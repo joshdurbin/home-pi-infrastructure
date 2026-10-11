@@ -1027,6 +1027,9 @@ directly.
     `VMPodScrape`. No exporter needed.
     The operator's own controller metrics (port 8443, plain HTTP via `metrics.secureServing: false`) are scraped by a
     `VMPodScrape` in `apps/proxysql-operator/manifests/`.
+  - **Runs on the Pi 4Bs only**: the ProxySQL image (3.0.11) aborts on the Pi 5 nodes with `jemalloc: Unsupported
+    system page size` - the Pi 5 kernel uses 16K pages and the bundled jemalloc is built for 4K - so the pods
+    have a required node affinity on `pi5` not existing. The Pi 3B+ is tainted, leaving `rpi-4b-1/2/3`.
   - **Scaling `replicas` rolls every ProxySQL pod** (the peer list is baked into the bootstrap config), so
     treat a replica-count change like a restart. The operator also creates the PodDisruptionBudget
     (`minAvailable: replicas - 1`).
