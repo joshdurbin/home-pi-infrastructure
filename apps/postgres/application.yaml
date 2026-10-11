@@ -4,8 +4,8 @@ metadata:
   name: postgres
   namespace: argocd
   annotations:
-    # Needs cloudnative-pg's CRDs (Cluster, Database) and proxysql-operator's
-    # CRDs (ProxySQLCluster, ProxySQLConfig) to exist first. In
+    # Needs cloudnative-pg's CRDs (Cluster, Pooler) to exist first (and, only if
+    # ProxySQL is re-enabled, proxysql-operator's - apps/proxysql-operator/). In
     # `longhorn` storage mode (the default, see cluster/kustomization.yaml)
     # the Cluster's PVCs are Longhorn volumes, so it also needs Longhorn
     # (wave 0) - already guaranteed by being wave 2.
@@ -27,8 +27,8 @@ spec:
         duration: 5s
         factor: 2
         maxDuration: 3m
-  # No chart source - Cluster/ProxySQL CRs are complete manifests on their
-  # own, nothing to template. Two plain-git paths: manifests/ (ProxySQL,
+  # No chart source - Cluster/Pooler CRs are complete manifests on their
+  # own, nothing to template. Two plain-git paths: manifests/ (poolers,
   # roles, databases, scrapes - applied as-is) and cluster/ (a Kustomize
   # dir, because the Cluster's storage/placement mode is a switchable
   # component - see cluster/kustomization.yaml). Argo CD auto-detects the
@@ -37,6 +37,17 @@ spec:
     - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
       targetRevision: master
       path: apps/postgres/manifests
+      # PROXYSQL IS SCALED TO ZERO: these four files (the ProxySQLCluster/Config, its
+      # monitor role, and its network policy and scrape) are excluded, so Argo CD
+      # prunes them while the files stay where they are, and the CNPG PgBouncer poolers
+      # (pooler-*.yaml) are the connection path again. ProxySQL 3.0.11 rejects the
+      # mixed per-column result formats that pgx and lib/pq send (Grafana, Bifrost,
+      # Temporal all failed with "per-column result formats are not supported",
+      # SQLSTATE 0A000); fixed upstream in #6206 on the v3.0 branch (2026-09-29) but
+      # not in any release yet. To bring it back, delete this `directory` block and
+      # follow docs/REFERENCE.md, "ProxySQL (scaled to zero)".
+      directory:
+        exclude: '{proxysql.yaml,proxysql-monitor-role.yaml,proxysql-networkpolicy.yaml,proxysql-vmpodscrape.yaml}'
     - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
       targetRevision: master
       path: apps/postgres/cluster

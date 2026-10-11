@@ -54,12 +54,12 @@ grafana:
   grafana.ini:
     # State (users, preferences, annotations, provisioned-dashboard
     # bookkeeping) lives in the cluster's HA Postgres via
-    # postgres-proxy (apps/postgres/manifests/grafana-database.yaml),
+    # postgres-pooler-rw (apps/postgres/manifests/grafana-database.yaml),
     # not a local grafana.db - which is why persistence below is off.
     # Password comes in as GF_DATABASE_PASSWORD (envValueFrom below).
     database:
       type: postgres
-      host: postgres-proxy.postgres.svc.cluster.local:5432
+      host: postgres-pooler-rw.postgres.svc.cluster.local:5432
       name: grafana
       user: grafana
     auth:

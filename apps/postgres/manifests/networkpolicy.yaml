@@ -1,29 +1,32 @@
 # Two separate policies, deliberately NOT one podSelector: {} covering the
-# whole namespace - a single broad policy would also lock down the ProxySQL
-# pods' own ingress, which defeats the point of having them: application
-# pods (in many namespaces) need to be able to reach the proxy freely, and the
-# ProxySQL operator (proxysql-system) needs its admin port. Only the actual
-# Postgres instance pods get locked down to "proxy + operator + monitoring
-# only" - everything else in this namespace (the proxy) follows this repo's
-# normal pattern of an egress-only restriction with ingress deliberately left
-# open (same shape as apps/blocky/manifests/networkpolicy.yaml etc.).
+# whole namespace - a single broad policy would also lock down the pooler
+# pods' own ingress, which defeats the point of having them: future
+# application pods (in namespaces we don't know yet) need to be able to
+# reach the poolers freely. Only the actual Postgres instance pods get
+# locked down to "poolers + operator + monitoring only" - everything else
+# in this namespace (the poolers) follows this repo's normal pattern of an
+# egress-only restriction with ingress deliberately left open (same shape
+# as apps/blocky/manifests/networkpolicy.yaml etc.), since their whole job
+# is to be reachable from wherever a future application ends up living.
 
-# Postgres instance pods: "applications connect through the proxy, never
+# Postgres instance pods: "applications connect to the pooler pool, never
 # to the databases directly" enforced at the network layer, not just
-# convention - only the ProxySQL pods, the cnpg-system operator, and
+# convention - only the two poolers, the cnpg-system operator, and
 # monitoring's vmagent may reach these pods at all.
 #
-# podSelector matches on cnpg.io/podRole: instance, not just cnpg.io/cluster.
-# This was confirmed live (broke Temporal's first rollout) back when CNPG
-# Poolers existed: CNPG labels those pods with cnpg.io/cluster too, so
-# cnpg.io/cluster alone also matched them. There are no Poolers now, but
-# podRole is still the precise selector for "a Postgres instance", so it stays.
+# podSelector matches on cnpg.io/podRole: instance, not just cnpg.io/cluster
+# - confirmed live (broke Temporal's first rollout): CNPG labels the Pooler
+# pods with cnpg.io/cluster too (so it can track which Cluster a Pooler
+# belongs to), so a podSelector on cnpg.io/cluster alone also matches the
+# poolers - silently pulling them into this same Ingress+Egress lockdown
+# and defeating the "poolers stay open" design below. cnpg.io/podRole
+# (instance vs pooler) is what actually distinguishes them.
 #
 # Ports, confirmed against CloudNativePG's own networking docs:
 # - 5432 (postgres) + 8000 (instance manager) from cnpg-system: the
 #   operator needs both to manage/coordinate each instance.
-# - 5432 from the ProxySQL pods (proxysql.com/cluster label) - the actual
-#   client-facing path applications use, and ProxySQL's own health checks.
+# - 5432 from the two poolers (cnpg.io/poolerName label) - the actual
+#   client-facing path applications use.
 # - 9187 (metrics) from monitoring's vmagent.
 # - 5432 from other postgres-cluster pods, for streaming replication once
 #   instances: 2 gives this cluster a primary and a replica.
@@ -71,8 +74,9 @@ spec:
           port: 8000
     - from:
         - podSelector:
-            matchLabels:
-              proxysql.com/cluster: postgres-proxy
+            matchExpressions:
+              - key: cnpg.io/poolerName
+                operator: Exists
       ports:
         - protocol: TCP
           port: 5432
@@ -115,25 +119,24 @@ spec:
         - protocol: TCP
           port: 5432
 ---
-# The ProxySQL pods - egress-only, ingress deliberately unrestricted (see
-# comment above): applications elsewhere in the cluster need to reach the
-# proxy freely, the ProxySQL operator needs its admin port (6032), and
-# monitoring's vmagent its metrics port (6070). Only bounds what the proxy
-# itself can reach: CoreDNS, the postgres Cluster's own pods (to actually
-# proxy to Postgres - the postgres-rw/-ro Services resolve to those pods), and
-# the other ProxySQL pods on the admin port (ProxySQL Cluster config sync).
-# Unlike the CNPG Poolers this replaces, ProxySQL never talks to the
-# Kubernetes API (the operator does, from proxysql-system), so no API-server
-# ipBlock is needed.
+# The two Poolers - egress-only, ingress deliberately unrestricted (see
+# comment above): applications elsewhere in the cluster need to reach
+# these freely. Only bounds what the poolers themselves can reach out to:
+# CoreDNS, the Kubernetes API server (confirmed live: CNPG's PgBouncer
+# instance manager needs this too, not just the Postgres instances - see
+# the cluster policy's own comment above for why this is an ipBlock on the
+# real node IPs/port rather than the "kubernetes" Service's ClusterIP),
+# and the postgres Cluster's own pods (to actually proxy to Postgres).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: postgres-proxy-egress
+  name: postgres-pooler-egress
   namespace: postgres
 spec:
   podSelector:
-    matchLabels:
-      proxysql.com/cluster: postgres-proxy
+    matchExpressions:
+      - key: cnpg.io/poolerName
+        operator: Exists
   policyTypes:
     - Egress
   egress:
@@ -148,16 +151,15 @@ spec:
         - protocol: TCP
           port: 53
     - to:
+        - ipBlock:
+            cidr: 192.168.1.0/24
+      ports:
+        - protocol: TCP
+          port: 6443
+    - to:
         - podSelector:
             matchLabels:
               cnpg.io/cluster: postgres
       ports:
         - protocol: TCP
           port: 5432
-    - to:
-        - podSelector:
-            matchLabels:
-              proxysql.com/cluster: postgres-proxy
-      ports:
-        - protocol: TCP
-          port: 6032

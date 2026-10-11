@@ -1,0 +1,19 @@
+# Scrape for the ProxySQL pods (proxysql.yaml). EXCLUDED from the postgres Argo CD
+# app while ProxySQL is scaled to zero - re-enable together with proxysql.yaml.
+# ProxySQL's built-in Prometheus endpoint (REST API, port 6070, named
+# "metrics" on the pod), enabled by default by the operator. Series are
+# prefixed proxysql_ (connection counts per protocol, questions, backend
+# status, memory per module). Scraped per pod, not through the Service, which
+# would sample one pod per scrape.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: postgres-proxy
+  namespace: postgres
+spec:
+  selector:
+    matchLabels:
+      proxysql.com/cluster: postgres-proxy
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics

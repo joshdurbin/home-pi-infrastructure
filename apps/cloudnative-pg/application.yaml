@@ -4,7 +4,7 @@ metadata:
   name: cloudnative-pg
   namespace: argocd
   annotations:
-    # Installs its own CRDs (Cluster, Database, etc.) that apps/postgres/
+    # Installs its own CRDs (Cluster, Pooler, etc.) that apps/postgres/
     # depends on - same race class as redis-operator/victoria-metrics, so it
     # must sync strictly before apps/postgres (wave 2). No PVC of its own,
     # so no Longhorn dependency either.

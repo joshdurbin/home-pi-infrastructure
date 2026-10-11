@@ -1,0 +1,75 @@
+# NetworkPolicy additions for the ProxySQL proxy (proxysql.yaml). EXCLUDED from the
+# postgres Argo CD app while ProxySQL is scaled to zero (apps/postgres/
+# application.yaml, directory.exclude) - re-enable together with proxysql.yaml.
+#
+# Policies are additive (their allows are unioned), so instead of editing the
+# main postgres-cluster-network policy (networkpolicy.yaml, which allows the
+# PgBouncer poolers) this adds the one extra rule ProxySQL needs: the ProxySQL pods
+# may reach the Postgres instances on 5432 (client traffic and its health checks).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-cluster-from-proxysql
+  namespace: postgres
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: postgres
+      cnpg.io/podRole: instance
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              proxysql.com/cluster: postgres-proxy
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# The ProxySQL pods - egress-only, ingress deliberately unrestricted (see
+# comment above): applications elsewhere in the cluster need to reach the
+# proxy freely, the ProxySQL operator needs its admin port (6032), and
+# monitoring's vmagent its metrics port (6070). Only bounds what the proxy
+# itself can reach: CoreDNS, the postgres Cluster's own pods (to actually
+# proxy to Postgres - the postgres-rw/-ro Services resolve to those pods), and
+# the other ProxySQL pods on the admin port (ProxySQL Cluster config sync).
+# Unlike the CNPG Poolers this replaces, ProxySQL never talks to the
+# Kubernetes API (the operator does, from proxysql-system), so no API-server
+# ipBlock is needed.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-proxy-egress
+  namespace: postgres
+spec:
+  podSelector:
+    matchLabels:
+      proxysql.com/cluster: postgres-proxy
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              proxysql.com/cluster: postgres-proxy
+      ports:
+        - protocol: TCP
+          port: 6032

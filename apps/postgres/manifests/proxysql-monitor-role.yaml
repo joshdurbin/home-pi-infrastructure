@@ -1,3 +1,8 @@
+# DISABLED - ProxySQL is scaled to zero: this file is excluded from the postgres Argo CD
+# app (apps/postgres/application.yaml, directory.exclude), so nothing here is
+# deployed and the CNPG PgBouncer poolers (pooler-*.yaml) carry the traffic. Kept
+# intact for when ProxySQL has a release with the mixed result-format fix.
+#
 # The login ProxySQL's monitor module uses against postgres-rw/-ro for its
 # health checks (connect + ping). It must exist on the backend with the same
 # password as the `monitor-password` key of the proxysql-auth Secret; ProxySQL

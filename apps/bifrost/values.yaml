@@ -2,7 +2,7 @@
 # provider, with a web UI (/) for providers, keys, logs and spend. Replaces
 # LiteLLM.
 #
-# - Database: the cluster's CloudNativePG Postgres via postgres-proxy
+# - Database: the cluster's CloudNativePG Postgres via postgres-pooler-rw
 #   (apps/postgres/manifests/bifrost-database.yaml) for both the config store
 #   and the request-log store. Password from the bifrost-db-credentials Secret
 #   seeded by k8s_secrets.
@@ -37,7 +37,7 @@ postgresql:
   enabled: false
   external:
     enabled: true
-    host: postgres-proxy.postgres.svc.cluster.local
+    host: postgres-pooler-rw.postgres.svc.cluster.local
     port: 5432
     user: bifrost
     database: bifrost

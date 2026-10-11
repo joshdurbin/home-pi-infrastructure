@@ -25,8 +25,8 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # postgres-proxy (apps/postgres/manifests/open-webui-database.yaml)
-    # - the ProxySQL pods' own NetworkPolicy leaves its ingress open to any
+    # postgres-pooler-rw (apps/postgres/manifests/open-webui-database.yaml)
+    # - the pooler's own NetworkPolicy leaves its ingress open to any
     #   namespace by design (apps/postgres/manifests/networkpolicy.yaml),
     #   so this rule only needs to open this pod's own egress side.
     - to:

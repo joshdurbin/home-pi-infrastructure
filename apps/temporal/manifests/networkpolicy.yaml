@@ -1,11 +1,11 @@
 # Egress-only, same shape as every other app's NetworkPolicy in this repo -
 # ingress (the frontend gRPC API, the Web UI) is unaffected and left open,
 # since Temporal's frontend is itself meant to be a general access point
-# for future application workloads, the same way the Postgres proxy
+# for future application workloads, the same way the two Postgres poolers
 # are. Bounds what these pods can reach out to:
-# - CoreDNS, to resolve postgres-proxy's Service DNS name.
-# - The postgres namespace on 5432 - the proxy this connects through
-#   (apps/postgres/manifests/proxysql.yaml), never a database pod
+# - CoreDNS, to resolve postgres-pooler-rw's Service DNS name.
+# - The postgres namespace on 5432 - the pooler this connects through
+#   (apps/postgres/manifests/pooler-rw.yaml), never a database pod
 #   directly.
 # - Other temporal pods, unrestricted by port - confirmed live (broke every
 #   server component in a cascading crash loop): frontend/history/matching/

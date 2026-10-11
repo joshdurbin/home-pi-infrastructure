@@ -1,3 +1,7 @@
+# ProxySQL itself is SCALED TO ZERO (see docs/REFERENCE.md, "ProxySQL (scaled to
+# zero)"): the operator is left installed and running so it can clear the finalizer
+# on the ProxySQLConfig when apps/postgres prunes it. Once that has synced,
+# `replicaCount: 0` here stops the operator too (it is idle either way).
 # Reconciles the ProxySQLCluster/ProxySQLConfig CRs in apps/postgres/manifests/
 # (the connection proxy in front of CloudNativePG). It is cluster-scoped and
 # idle between reconciles, so it keeps the chart's own default request

@@ -22,7 +22,7 @@ server:
             pluginName: postgres12_pgx
             driverName: postgres12_pgx
             databaseName: temporal
-            connectAddr: "postgres-proxy.postgres.svc.cluster.local:5432"
+            connectAddr: "postgres-pooler-rw.postgres.svc.cluster.local:5432"
             connectProtocol: tcp
             user: temporal
             existingSecret: temporal-db-credentials
@@ -34,7 +34,7 @@ server:
             pluginName: postgres12_pgx
             driverName: postgres12_pgx
             databaseName: temporal_visibility
-            connectAddr: "postgres-proxy.postgres.svc.cluster.local:5432"
+            connectAddr: "postgres-pooler-rw.postgres.svc.cluster.local:5432"
             connectProtocol: tcp
             user: temporal
             existingSecret: temporal-db-credentials

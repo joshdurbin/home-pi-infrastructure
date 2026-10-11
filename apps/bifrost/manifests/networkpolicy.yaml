@@ -1,7 +1,7 @@
 # Egress-only (Tailscale and Open WebUI reaching the API/UI is ingress,
 # unaffected):
 # - CoreDNS
-# - Postgres proxy, 5432 in the postgres namespace (its own
+# - Postgres poolers, 5432 in the postgres namespace (the poolers' own
 #   ingress is open by design, see apps/postgres/manifests/networkpolicy.yaml)
 # - the shared Redis caches, 6379 to redis-cache (bifrost-cache; not used by
 #   Bifrost yet, see docs/REFERENCE.md#bifrost)

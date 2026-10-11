@@ -4,7 +4,7 @@
 #
 # The role owns its database, which it needs: the relay proxy reads the
 # go_feature_flag table, a schema Job creates that table (it is not
-# auto-created), and WhoDB connects as this role through the proxy so
+# auto-created), and WhoDB connects as this role through the rw pooler so
 # flags can be edited in a UI.
 #
 # The password Secret (goff-db-credentials) is seeded by the k8s_secrets Ansible

@@ -87,7 +87,7 @@ home-pi-infrastructure/
 │   │                              # One directory per app: application.yaml, values.yaml, and
 │   │                              # (where needed) manifests/.
 │   ├── longhorn, victoria-metrics, opensearch, argocd-metrics
-│   ├── cloudnative-pg, proxysql-operator, zot, postgres, temporal
+│   ├── cloudnative-pg, proxysql-operator (ProxySQL, scaled to zero), zot, postgres, temporal
 │   ├── redis-operator, redis-operator-metrics, redis-cache
 │   ├── blocky, searxng, homepage, whodb
 │   ├── bifrost, open-webui, go-feature-flag
@@ -950,11 +950,11 @@ A primary + streaming-replica Postgres cluster, managed by the [CloudNativePG](h
 operator (`apps/cloudnative-pg/`) rather than a hand-assembled Patroni+DCS setup - the operator itself is
 the "control plane" that handles failover and primary/replica promotion, no separate component needed for
 that. The actual cluster (`apps/postgres/`) is internal-only for now (no Tailscale Ingress, no external
-exposure) - deliberately, applications are meant to reach it only through the ProxySQL proxy below, never
+exposure) - deliberately, applications are meant to reach it only through the two poolers below, never
 directly.
 
 - **Operator**: `apps/cloudnative-pg/`, namespace `cnpg-system`, official `cnpg/cloudnative-pg` chart.
-  Installs the `Cluster`/`Database`/etc. CRDs `apps/postgres/` depends on. Exports its own controller metrics
+  Installs the `Cluster`/`Pooler`/etc. CRDs `apps/postgres/` depends on. Exports its own controller metrics
   (port 8080) via a hand-written `VMPodScrape` - same reasoning throughout this section as
   [Redis Clusters](#redis-clusters-blocky--searxng--bifrost-caching)'s own VM*Scrapes: CNPG's native `PodMonitor`
   toggle depends on the VM operator's unverified ServiceMonitor/PodMonitor converter, so this repo's proven
@@ -995,50 +995,21 @@ directly.
   4. Replace the old primary the same way as step 2 (delete its PVC and pod); wait for the rebuild.
   5. Done when both instances' PVCs show the new StorageClass: `kubectl -n postgres get pvc`.
   There is no WAL archive or backup (see below), so confirm both instances are healthy between steps.
-- **The connection proxy** (`apps/postgres/manifests/proxysql.yaml`): ProxySQL 3.x (its PostgreSQL protocol
-  support), managed by the [ProxySQL operator](https://github.com/ProxySQL/proxysql-on-k8s)
-  (`apps/proxysql-operator/`, namespace `proxysql-system`, wave 1 like the other operators). One
-  `ProxySQLCluster` named `postgres-proxy` (2 pods on different nodes, no PVC) behind one Service,
-  `postgres-proxy.postgres.svc.cluster.local:5432` (image `proxysql/proxysql:3.0.11`, pinned) - the listener is moved from ProxySQL's default 6133 to
-  5432 so apps needed only a host change. This replaced the two CNPG `Pooler`s (PgBouncer).
-  - **Read/write split is per user**, not per endpoint: a `ProxySQLConfig` maps hostgroup 0 to CNPG's
-    `postgres-rw` Service (the current primary - CNPG re-points it on failover, so ProxySQL needs no promotion
-    logic) and hostgroup 1 to `postgres-ro`. Every app role defaults to 0; the read-only `whodb` role defaults
-    to 1. There are deliberately no query rules (regex routing misroutes `SELECT ... FOR UPDATE` and
-    side-effecting functions).
-  - **Passwords** are read from the same `*-db-credentials` Secrets CNPG's `DatabaseRole`s use, so each lives in
-    one place. The admin/radmin/monitor logins (`proxysql-auth` Secret) are derived in
-    `group_vars/all/cluster_secrets.yaml` as SHA-256 of an existing vault secret plus a label - no new vault
-    entries; swap in real vault values there if you want them rotated independently. ProxySQL's `monitor`
-    login also exists in Postgres (`proxysql-monitor-role.yaml`, a `DatabaseRole`) - without it ProxySQL marks
-    the healthy backends SHUNNED.
-  - **TLS**: CNPG's `pg_hba` only admits `hostssl`, so ProxySQL connects to the backends with `useSSL: true` and
-    trusts CNPG's CA (`tls.backend.caSecretName: postgres-ca`). Turning `tls` on also gives the client-facing
-    listener a self-signed certificate; the apps here use `sslmode=require`, which does not verify it.
-  - **Multiplexing is off** (`pgsql-multiplexing: "false"`): each client keeps one backend connection for its
-    session, the same as the old `poolMode: session`. Grafana's migrations take advisory locks and several
-    clients use session state, which multiplexing would break.
-  - **Cost vs PgBouncer**: measured PgBouncer was ~180Mi / ~50m across its four pods (31-53Mi each, idle).
-    ProxySQL is expected to be roughly 2-3x that in memory (~300-500Mi across both pods; an estimate, not yet
-    measured) for a single endpoint with query-aware routing that nothing here uses. Requests are 100m/128Mi
-    and limits 1 CPU/512Mi per pod, plus the operator at 50m/64Mi. Compare with
-    `kubectl top pod -n postgres --containers` after the switch and tune the limits.
-  - **Metrics**: ProxySQL's built-in endpoint (port 6070, `proxysql_*` series) scraped per pod by a
-    `VMPodScrape`. No exporter needed.
-    The operator's own controller metrics (port 8443, plain HTTP via `metrics.secureServing: false`) are scraped by a
-    `VMPodScrape` in `apps/proxysql-operator/manifests/`.
-  - **Runs on the Pi 4Bs only**: the ProxySQL image (3.0.11) aborts on the Pi 5 nodes with `jemalloc: Unsupported
-    system page size` - the Pi 5 kernel uses 16K pages and the bundled jemalloc is built for 4K - so the pods
-    have a required node affinity on `pi5` not existing. The Pi 3B+ is tainted, leaving `rpi-4b-1/2/3`.
-  - **Scaling `replicas` rolls every ProxySQL pod** (the peer list is baked into the bootstrap config), so
-    treat a replica-count change like a restart. The operator also creates the PodDisruptionBudget
-    (`minAvailable: replicas - 1`).
-- **Enforcing "apps talk to the proxy, never the databases directly"**: at the network layer, not just
+- **The two Poolers** (`apps/postgres/manifests/pooler-{rw,ro}.yaml`): PgBouncer, fully managed by
+  CloudNativePG's own `Pooler` CRD - config, auth (a dedicated `cnpg_pooler_pgbouncer` role + lookup
+  function the operator creates itself), and TLS are all operator-managed, confirmed directly against
+  CloudNativePG's docs, not hand-rolled. `postgres-pooler-rw` always routes to the current primary via
+  CNPG's own `postgres-rw` Service; `postgres-pooler-ro` routes to replicas via `postgres-ro` - both
+  Services are kept correct by the operator across a failover, so nothing in this repo tracks "which pod is
+  primary" itself. `instances: 2` on each pooler, on different nodes with a PDB (PgBouncer holds no data of
+  its own, so it can run anywhere). Native Prometheus metrics on port 9127 per pod, no separate
+  exporter needed (unlike ProxySQL, which was considered and dropped - see below).
+- **Enforcing "apps talk to the pool, never the databases directly"**: at the network layer, not just
   convention. Two separate NetworkPolicies (`apps/postgres/manifests/networkpolicy.yaml`) - one locks the
-  actual Postgres pods down to ingress only from the ProxySQL pods, the `cnpg-system` operator, and
-  `monitoring`'s vmagent; the other is egress-only on the ProxySQL pods themselves (same shape as every other
+  actual Postgres pods down to ingress only from the two poolers, the `cnpg-system` operator, and
+  `monitoring`'s vmagent; the other is egress-only on the poolers themselves (same shape as every other
   app's NetworkPolicy in this repo), leaving their own ingress open since their whole purpose is being
-  reachable from wherever an application lives (and the operator needs their admin port).
+  reachable from wherever a future application ends up living.
 - **Users/permissions**: CloudNativePG's declarative `DatabaseRole` and `Database` CRDs (not the older,
   inline `Cluster.spec.managed.roles` form) create and own individual roles and databases from git, each
   reconciled independently of the `Cluster` object itself. First real user: Temporal's own `temporal` role
@@ -1046,20 +1017,39 @@ directly.
   `apps/postgres/manifests/temporal-database.yaml`. These CRDs cover role *attributes* (login, password via
   a Secret reference) and database ownership declaratively. They do **not** cover GRANT-level permissions on
   specific schemas/tables beyond ownership - that stays each application's own concern (init SQL,
-  migrations), same as most Postgres operators. **A new app role also needs a `pgsqlUsers` entry in
-  `proxysql.yaml`** - ProxySQL authenticates clients itself, so a role it does not know cannot connect.
-- **History**: ProxySQL was first evaluated and dropped for PgBouncer (via CNPG's `Pooler`) because its Postgres
-  backends had to be seeded by hand-run SQL against the admin interface (no declarative config) and no
-  maintained metrics exporter existed. The ProxySQL operator's `ProxySQLConfig` and built-in metrics endpoint
-  removed both objections, hence this switch.
+  migrations), same as most Postgres operators.
+- **ProxySQL (scaled to zero)**: tried as the connection proxy in place of the poolers and rolled back. Its whole
+  configuration is still in `apps/postgres/manifests/proxysql*.yaml` and `apps/proxysql-operator/`, switched off by a
+  `directory.exclude` in `apps/postgres/application.yaml`. Why it did not work: **ProxySQL 3.0.11 rejects the mixed
+  per-column result formats pgx (Bifrost, Temporal) and lib/pq (Grafana) send** - `ERROR: per-column result formats are
+  not supported: all result columns must request the same format code (SQLSTATE 0A000)` - so all three crashed on
+  start. Fixed upstream in sysown/proxysql#6206 (merged 2026-09-29 into the `v3.0` branch) but **not in any release**
+  (latest is v3.0.11, 2026-08-27; Docker Hub has nothing newer). Re-try when a v3.0.x after that ships.
+  - **To bring it back**: set `image.tag` in `apps/postgres/manifests/proxysql.yaml` to the fixed release; delete the
+    `directory` block from `apps/postgres/application.yaml`; point the apps' hosts at `postgres-proxy` (the
+    `postgres-pooler-rw`/`-ro` references in `apps/*/values.yaml`, `group_vars/all/cluster_secrets.yaml` and
+    `apps/go-feature-flag/`); remove `pooler-*.yaml` once it is verified; `make deploy-secrets`.
+  - **Design, as built**: one `ProxySQLCluster` `postgres-proxy` (2 pods, no PVC) on port 5432 behind one Service;
+    read/write split per *user* (hostgroup 0 = `postgres-rw`, 1 = `postgres-ro`; only `whodb` defaults to 1; no query
+    rules); user passwords read from the existing `*-db-credentials` Secrets; backend TLS to CNPG's CA
+    (`useSSL` + `tls.backend.caSecretName: postgres-ca`); `pgsql-multiplexing: "false"` to match the old session mode.
+  - **Runs on the Pi 4Bs only**: the ProxySQL image aborts on the Pi 5 nodes with `jemalloc: Unsupported system page size`
+    (16K-page kernel, allocator built for 4K), hence the `pi5` DoesNotExist node affinity in `proxysql.yaml`.
+  - **Where the pieces are**: the operator (`apps/proxysql-operator/`) is left installed and running (it must be up to
+    clear the `ProxySQLConfig` finalizer when the config is pruned; once that has synced you can set
+    `replicaCount: 0` in its `values.yaml`). Its image is built into Zot ([Local registry](#local-registry-zot)) because
+    upstream's is private (ProxySQL/proxysql-on-k8s#83). The `proxysql-auth` / `proxysql-monitor-credentials` Secrets
+    stay in `cluster_secrets.yaml`.
+  - **Measured cost, for reference**: PgBouncer is ~180Mi / ~50m across its four pods (31-53Mi each, idle); ProxySQL was
+    expected to be roughly 2-3x that in memory.
 - **No backups configured**: deliberate, for now. Durability comes only from Postgres streaming replication
   across the two instances - no point-in-time recovery, and losing both at once loses everything. Revisit with CloudNativePG's Barman Cloud plugin (`cnpg/plugin-barman-cloud`) if/when
   object storage exists in this cluster.
 
 **Troubleshooting:**
 ```bash
-# Cluster + proxy health
-kubectl -n postgres get cluster,pxc,pxcfg,pods
+# Cluster + pooler health
+kubectl -n postgres get cluster,pooler,pods
 
 # Which pod is currently primary
 kubectl -n postgres get cluster postgres -o jsonpath='{.status.currentPrimary}'
@@ -1067,15 +1057,14 @@ kubectl -n postgres get cluster postgres -o jsonpath='{.status.currentPrimary}'
 # CNPG's own view of the cluster
 kubectl -n postgres cnpg status postgres   # requires the kubectl-cnpg plugin
 
-# Proxy reachable; backends not SHUNNED (status.shunnedBackends should be 0)
-kubectl -n postgres get svc postgres-proxy
-kubectl -n postgres get pxcfg postgres-proxy -o jsonpath='{.status}'
+# Poolers actually reachable
+kubectl -n postgres get svc postgres-pooler-rw postgres-pooler-ro
 ```
 
 ## Local registry (Zot)
 
 An in-cluster OCI registry, [Zot](https://zotregistry.dev) (`apps/zot/`, namespace `zot`, wave 1, chart
-`project-zot/zot`), for images that exist nowhere pullable. Today that is one image: the ProxySQL operator, whose
+`project-zot/zot`), for images that exist nowhere pullable. Today that is one image: the ProxySQL operator (installed, but ProxySQL itself is scaled to zero), whose
 upstream package (`ghcr.io/proxysql/proxysql-operator`) is private - open upstream issue
 [ProxySQL/proxysql-on-k8s#83](https://github.com/ProxySQL/proxysql-on-k8s/issues/83), every tag, anonymous 401 /
 authenticated 403.
@@ -1107,7 +1096,7 @@ authenticated 403.
 [Temporal](https://temporal.io/) workflow orchestration, deployed via the official `temporal/temporal` Helm
 chart (`apps/temporal/`, chart repo `https://go.temporal.io/helm-charts`) with its bundled Cassandra/Elasticsearch/
 Postgres subcharts all disabled - it connects to the existing [Postgres cluster](#postgres-cloudnativepg)
-through `postgres-proxy` instead of running its own datastore, the same "apps talk to the pool, never a
+through `postgres-pooler-rw` instead of running its own datastore, the same "apps talk to the pool, never a
 database directly" pattern as everything else in this repo.
 
 - **Database/role**: `apps/postgres/manifests/temporal-database.yaml` creates a CNPG `DatabaseRole` named
@@ -1115,9 +1104,9 @@ database directly" pattern as everything else in this repo.
   `temporal` and `temporal_visibility` - reconciled by the CloudNativePG operator against the `postgres`
   `Cluster`, not hand-run SQL. See [Users/permissions](#postgres-cloudnativepg) above.
 - **Persistence**: both the `default` (workflow history/state) and `visibility` (search/list-workflows)
-  stores point at the same Postgres cluster via `postgres-proxy.postgres.svc.cluster.local:5432`, using
+  stores point at the same Postgres cluster via `postgres-pooler-rw.postgres.svc.cluster.local:5432`, using
   the `postgres12_pgx` SQL driver - standard/SQL-backed visibility, not Elasticsearch, so there's no separate
-  search cluster to run or keep in sync. Since this reuses the existing proxy, Temporal adds no new
+  search cluster to run or keep in sync. Since this reuses the existing poolers, Temporal adds no new
   connection-pooling component of its own.
 - **`numHistoryShards: 4`**: a one-way door - this value is baked into the schema on first deploy and cannot
   be changed later without standing up a new cluster. Set low deliberately for a homelab's workflow volume;
@@ -1125,7 +1114,7 @@ database directly" pattern as everything else in this repo.
 - **Web UI**: `web.enabled: true`, exposed via the Tailscale Operator like every other UI in this repo - see
   [Exposing UIs via Tailscale Operator](#exposing-uis-via-tailscale-operator) and the Accessing Things table
   in the main README. The frontend gRPC API itself (`temporal-frontend:7233`) is left reachable
-  cluster-internally with no additional restriction, the same way the Postgres proxy is, since it's meant
+  cluster-internally with no additional restriction, the same way the Postgres poolers are, since it's meant
   to be a general access point for future application workloads.
 - **Metrics**: all four server components (frontend/history/matching/worker) export native Prometheus
   metrics on port 9090 - scraped via a hand-written `VMPodScrape`
@@ -1276,7 +1265,7 @@ Provider keys live in Bifrost, not here; there is no Ollama and nothing credenti
   above. `websocket.manager` left as the in-memory default (`redis.enabled: false`) - only needed for
   multi-replica websocket fan-out, and this is a single replica.
 - **Database**: `DATABASE_URL` points at the cluster's existing CloudNativePG Postgres, through
-  `postgres-proxy` - same "apps talk to the pool, never the database directly" pattern as Temporal
+  `postgres-pooler-rw` - same "apps talk to the pool, never the database directly" pattern as Temporal
   (`apps/postgres/manifests/open-webui-database.yaml`, a `DatabaseRole`/`Database` pair). Moves
   chats/users/settings off local SQLite onto the HA, replicated cluster. Does **not** remove the need for
   the PVC below - file uploads (`STORAGE_PROVIDER`) and RAG vector embeddings (`VECTOR_DB`) are separate
@@ -1289,7 +1278,7 @@ Provider keys live in Bifrost, not here; there is no Ollama and nothing credenti
   Homepage's own `HOMEPAGE_ALLOWED_HOSTS` was (required for the app to run at all, not a provider API
   key). Wired via `extraEnvVars` + a pre-created Secret, seeded by the `k8s_secrets` bridge with a new
   `openwebui_secret_key` Vault variable - see [Secrets & Variables](#secrets--variables).
-- **Egress NetworkPolicy**: DNS + Postgres (`postgres-proxy`, port 5432) - couldn't fully confirm or
+- **Egress NetworkPolicy**: DNS + Postgres (`postgres-pooler-rw`, port 5432) - couldn't fully confirm or
   rule out a startup update-check call in the time available, so this otherwise stays conservative rather
   than guessing a broad `443` rule it might not need. Whichever LLM backend gets configured later (an
   external API, or an in-cluster Ollama) will need its own egress rule added at that point regardless.
@@ -1316,7 +1305,7 @@ replaces the former pgAdmin and RedisInsight apps. Runs the official `clidey/who
 - **Pre-registered connections**: WhoDB login profiles, set via `WHODB_<TYPE>` env vars (JSON arrays; format
   confirmed against `core/src/envconfig` in clidey/whodb).
   - **Postgres** (`WHODB_POSTGRES`): one profile per database (`postgres`, `grafana`, `open_webui`,
-    `temporal`, `temporal_visibility`) via `postgres-proxy`, as the read-only `whodb` role
+    `temporal`, `temporal_visibility`) via `postgres-pooler-ro`, as the read-only `whodb` role
     (`apps/postgres/manifests/whodb-role.yaml`, member of `pg_read_all_data`). For writes use
     `kubectl -n postgres exec -it postgres-1 -c postgres -- psql -U postgres`.
   - **OpenSearch** (`WHODB_OPENSEARCH`): `opensearch.opensearch:9200` as `admin` (the cluster requires TLS +
@@ -1348,7 +1337,7 @@ requires an explicit image tag: `values.yaml` pins `image.tag` to `v2.2.5`, the 
 than the chart's own (stale) `appVersion` 1.5.12. The chart's generated `config.json` was validated against the
 current v2 schema (`https://www.getbifrost.ai/schema`); re-check that and re-pin both deliberately on bumps.
 
-- **Database**: the cluster's CloudNativePG Postgres through `postgres-proxy`, database/role `bifrost`
+- **Database**: the cluster's CloudNativePG Postgres through `postgres-pooler-rw`, database/role `bifrost`
   (`apps/postgres/manifests/bifrost-database.yaml`), for both the config store and the request-log store.
 - **Providers and keys**: added in the UI (stored encrypted in Postgres), not in git. Models are addressed as
   `<provider>/<model>`, e.g. `anthropic/claude-sonnet-5-5`.
@@ -1385,7 +1374,7 @@ database password and API keys, so it is rendered by Ansible into a Secret and m
 so the chart can't carry the secrets any other way.
 
 - **Storage**: Postgres. Database `go_feature_flag`, role `goff` (`apps/postgres/manifests/go-feature-flag-database.yaml`),
-  reached through `postgres-proxy`. Flags are rows in the `go_feature_flag` table (`flag_name`, `flagset`, `config`
+  reached through `postgres-pooler-rw`. Flags are rows in the `go_feature_flag` table (`flag_name`, `flagset`, `config`
   JSONB). The relay proxy reads but doesn't create the table, so a PreSync Job (`manifests/schema-job.yaml`) creates it
   (idempotent). The relay proxy polls every 10 s, so an edited row is live within that long;
   `POST /admin/v1/retriever/refresh` (admin key) forces an immediate re-poll.
@@ -1502,7 +1491,7 @@ does **not** have the spare capacity for more than one node out at a time, so th
 | Postgres primary | Evicted (no PDB: `enablePDB: false`); CNPG promotes the replica and re-creates the old primary on another node. `smartShutdownTimeout: 10` so the primary shuts down fast and the failover isn't delayed by the 180s default |
 | Postgres replica | Evicted and rescheduled elsewhere (required anti-affinity keeps it off the primary's node); its Longhorn volume follows |
 | CNPG operator | 2 replicas, leader-elected - the standby can promote even if the active one was on the drained node |
-| ProxySQL (Postgres proxy) | 2 on different nodes (required anti-affinity) + operator-managed PDB |
+| PgBouncer poolers (rw, ro) | 2 each on different nodes + PDB |
 | Longhorn | `nodeDrainPolicy: block-if-contains-last-replica`: a node can be drained while every volume has a second healthy replica; Longhorn refuses a second concurrent node. CSI controllers run 2 replicas |
 | Blocky (LAN DNS) | 1 replica: a drain reschedules it, ~10-30s gap in which LAN DNS is down (accepted; flip to 2 replicas with anti-affinity + a PDB to remove it). Updates start the new pod first (`RollingUpdate`, surge 1) and it is readiness-gated |
 | VictoriaMetrics (vminsert, vmstorage, vmselect, vmagent) | 2 of each on different nodes + PDBs; vmstorage holds a full copy per pod (`replicationFactor: 2`), vmagents scrape independently and are de-duplicated. Ingestion and queries continue with either node out |
@@ -1531,7 +1520,7 @@ operators. None are on a path that other workloads need to keep running.
 - While a storage node (`rpi-5-2`/`rpi-5-3`) is out, every Longhorn volume has one replica until it returns.
 - Control plane: `rpi-5-1/2/3` are the etcd members; one at a time keeps quorum (2 of 3).
 - **Not yet verified on the live cluster**: the real write-outage time when the primary's node is drained. Test:
-  run a write loop through `postgres-proxy`, drain the primary's node, and measure the gap.
+  run a write loop through `postgres-pooler-rw`, drain the primary's node, and measure the gap.
 
 ## Testing failover (Postgres, Redis)
 
@@ -1550,7 +1539,7 @@ kubectl -n postgres delete pod <primary-instance>                   # add --grac
 watch kubectl cnpg status postgres -n postgres          # or re-run status until healthy
 ```
 Done when `status` shows a healthy primary and a streaming replica again. The `postgres-rw` Service and the
-`postgres-proxy` ProxySQL follow the new primary on their own; apps reconnect without config changes. A failover
+`postgres-pooler-rw` PgBouncer follow the new primary on their own; apps reconnect without config changes. A failover
 takes a few seconds to tens of seconds (`failoverDelay: 0`); a planned `promote` is quicker.
 
 **Redis** (one shared Sentinel in `redis-cache`; the caches are `blocky-cache`, `searxng-cache`, `bifrost-cache`,

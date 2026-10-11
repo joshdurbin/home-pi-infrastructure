@@ -1,3 +1,8 @@
+# DISABLED - ProxySQL is scaled to zero: this file is excluded from the postgres Argo CD
+# app (apps/postgres/application.yaml, directory.exclude), so nothing here is
+# deployed and the CNPG PgBouncer poolers (pooler-*.yaml) carry the traffic. Kept
+# intact for when ProxySQL has a release with the mixed result-format fix.
+#
 # Connection proxy in front of the CloudNativePG cluster: ProxySQL 3.x (its
 # PostgreSQL protocol support), managed by the ProxySQL operator
 # (apps/proxysql-operator/). Replaces the two CNPG `Pooler`s (PgBouncer) this

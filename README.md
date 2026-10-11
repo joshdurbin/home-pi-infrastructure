@@ -138,7 +138,7 @@ Ansible owns the machines and the secrets; Argo CD owns everything that runs in 
 From there, Longhorn (storage), VictoriaMetrics/Grafana (metrics), OpenSearch/OpenSearch
 Dashboards (logs), Blocky (DNS), SearXNG (search), the redis-operator
 (Blocky's and SearXNG's own small caching clusters), WhoDB (a UI for browsing Postgres, OpenSearch and those caches),
-CloudNativePG (a two-instance Postgres cluster on Longhorn volumes, free to schedule anywhere, behind a ProxySQL proxy), Bifrost (an LLM gateway backed by Postgres and its own Redis cache), GO Feature Flag (a feature-flag service stored in that Postgres), Temporal (a
+CloudNativePG (a two-instance Postgres cluster on Longhorn volumes, free to schedule anywhere, behind PgBouncer poolers), Bifrost (an LLM gateway backed by Postgres and its own Redis cache), GO Feature Flag (a feature-flag service stored in that Postgres), Temporal (a
 workflow orchestration platform, backed by that same Postgres cluster), shairport-sync on the dedicated audio node (AirPlay to a USB DAC), a Tor Snowflake proxy (committed, scaled to 0), Homepage (a dashboard linking out
 to every other UI below), Open WebUI (a chat UI for LLMs, backed by Bifrost), the descheduler (periodically rebalances pods across nodes), Trivy Operator (continuous
 vulnerability scanning), and the Tailscale Operator all come up on their own — Argo CD manages them from
@@ -277,5 +277,5 @@ kubectl get nodes
 
 [docs/REFERENCE.md](docs/REFERENCE.md) covers: project structure, the GitOps split between Ansible and
 Argo CD, per-app configuration (Longhorn, VictoriaMetrics, OpenSearch, Blocky, SearXNG,
-redis-operator, WhoDB, Postgres/CloudNativePG (+ ProxySQL proxy), Temporal, Homepage, Open WebUI, descheduler, Trivy
+redis-operator, WhoDB, Postgres/CloudNativePG, Temporal, Homepage, Open WebUI, descheduler, Trivy
 Operator, Tailscale Operator), user management, node maintenance, and troubleshooting.

@@ -1,0 +1,29 @@
+# Read-only endpoint: routes to replicas only, via CNPG's own
+# "postgres-ro" Service. Now that cluster.yaml's instances: 2 gives this
+# cluster an actual replica (rpi-5-1 + rpi-5-4), this Service has a live
+# backend to route to.
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: postgres-pooler-ro
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  type: ro
+  # 2 instances on different nodes: PgBouncer holds no data, so a drain just
+  # takes one away while the other keeps serving (the -ro Service load-balances).
+  # With 1 instance, every drain of its node cut all apps off from Postgres.
+  instances: 2
+  template:
+    spec:
+      containers: []
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  cnpg.io/poolerName: postgres-pooler-ro
+              topologyKey: kubernetes.io/hostname
+  pgbouncer:
+    poolMode: session

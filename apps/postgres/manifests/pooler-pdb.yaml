@@ -1,0 +1,24 @@
+# Keep at least one PgBouncer up through any voluntary disruption (drain).
+# With 2 instances per pooler on different nodes (pooler-{rw,ro}.yaml) a
+# drain evicts one, waits for its replacement to be Ready, then the next.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: postgres-pooler-rw
+  namespace: postgres
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      cnpg.io/poolerName: postgres-pooler-rw
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: postgres-pooler-ro
+  namespace: postgres
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      cnpg.io/poolerName: postgres-pooler-ro
