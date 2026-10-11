@@ -135,8 +135,8 @@ Ansible owns the machines and the secrets; Argo CD owns everything that runs in 
    ```
    All nodes should show `Ready`, all Argo CD Applications `Synced`/`Healthy`.
 
-From there, Longhorn (storage), VictoriaMetrics/Grafana (metrics), OpenSearch/OpenSearch
-Dashboards (logs), Blocky (DNS), SearXNG (search), the redis-operator
+From there, Longhorn (storage), VictoriaMetrics/Grafana (metrics), VictoriaLogs
+(logs; OpenSearch is scaled to zero), Blocky (DNS), SearXNG (search), the redis-operator
 (Blocky's and SearXNG's own small caching clusters), WhoDB (a UI for browsing Postgres, OpenSearch and those caches),
 CloudNativePG (a two-instance Postgres cluster on Longhorn volumes, free to schedule anywhere, behind PgBouncer poolers), Bifrost (an LLM gateway backed by Postgres and its own Redis cache), GO Feature Flag (a feature-flag service stored in that Postgres), Temporal (a
 workflow orchestration platform, backed by that same Postgres cluster), shairport-sync on the dedicated audio node (AirPlay to a USB DAC), a Tor Snowflake proxy (committed, scaled to 0), Homepage (a dashboard linking out
@@ -250,7 +250,8 @@ Once Tailscale is set up and synced:
 | Grafana | `https://grafana.<tailnet>.ts.net` |
 | Alertmanager | `https://alertmanager.<tailnet>.ts.net` |
 | VictoriaMetrics | `https://victoriametrics.<tailnet>.ts.net/select/0/vmui/` |
-| OpenSearch Dashboards | `https://opensearch.<tailnet>.ts.net` |
+| VictoriaLogs | `https://victorialogs.<tailnet>.ts.net/select/vmui/` |
+| Zot (image registry) | `https://zot.<tailnet>.ts.net` |
 | Longhorn | `https://longhorn.<tailnet>.ts.net` |
 | SearXNG | `https://search.<tailnet>.ts.net` |
 | Blocky metrics | `https://blocky.<tailnet>.ts.net` |

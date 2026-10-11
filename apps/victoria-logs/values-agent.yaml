@@ -1,0 +1,58 @@
+# vlagent: the fan-out in front of the two VictoriaLogs pods. Vector sends each log
+# line ONCE, to this agent's Service; the agent replicates it to both
+# VictoriaLogs pods. This exists so Vector keeps just two sinks (container logs,
+# journald) - writing to both pods directly meant four sinks, double the
+# buffering, compression and outbound requests per node, which is exactly what
+# starved the Pi 4Bs when Vector shipped to OpenSearch and VictoriaLogs at once
+# (see the comments in apps/opensearch/values-vector.yaml). Moving the
+# duplication into two small pods keeps it off the Pi 4Bs' disks and CPU.
+#
+# Per vlagent's docs it keeps an INDEPENDENT on-disk buffer per destination, so
+# a VictoriaLogs pod that is down neither blocks delivery to the other nor loses
+# what it missed: the agent holds it (up to maxDiskUsagePerURL) and replays it
+# when the pod is back. Two agents (the Service balances Vector across them) so
+# the ingest path has no single point either.
+replicaCount: 2
+
+# Logs are replicated to every URL listed. The path defaults to /insert/native.
+# Pod-addressed (the StatefulSet's stable per-pod DNS names, apps/victoria-logs/
+# values.yaml) because each URL has to be one specific copy, not the Service.
+remoteWrite:
+  - url: http://vls-victoria-logs-single-server-0.vls-victoria-logs-single-server.monitoring.svc.cluster.local:9428
+  - url: http://vls-victoria-logs-single-server-1.vls-victoria-logs-single-server.monitoring.svc.cluster.local:9428
+
+# Per destination, on an emptyDir (node disk). Plenty to ride out a restart of a
+# VictoriaLogs pod; the chart's 1GiB x 2 would be a lot of node disk to put at
+# risk for a Pi.
+maxDiskUsagePerURL: 512MiB
+
+# What Vector sends to (apps/opensearch/values-vector.yaml).
+service:
+  enabled: true
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+# Required anti-affinity so the two agents sit on different nodes; the Pi 5s are
+# preferred (not required) to keep the on-disk buffers off the Pi 4B SSDs, which
+# are already the bottleneck.
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: pi5
+              operator: In
+              values: ["true"]
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: victoria-logs-agent
+            app.kubernetes.io/instance: vla
+        topologyKey: kubernetes.io/hostname

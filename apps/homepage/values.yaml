@@ -99,6 +99,10 @@ configMaps:
                 href: https://argocd.{{ $d }}
                 description: GitOps continuous delivery
                 icon: mdi-infinity
+            - Zot:
+                href: https://zot.{{ $d }}
+                description: In-cluster image registry (self-built images)
+                icon: mdi-package-variant-closed
 
         - Monitoring:
             - Grafana:
@@ -115,10 +119,16 @@ configMaps:
                 icon: mdi-chart-line
 
         - Logging:
-            - OpenSearch Dashboards:
-                href: https://opensearch.{{ $d }}
-                description: Log search and visualization
+            - VictoriaLogs:
+                href: https://victorialogs.{{ $d }}/select/vmui/
+                description: Log search (LogsQL), two copies
                 icon: mdi-text-search
+            # OpenSearch Dashboards is scaled to zero (apps/opensearch/README.md);
+            # restore this entry together with its Ingress when bringing it back:
+            # - OpenSearch Dashboards:
+            #     href: https://opensearch.{{ $d }}
+            #     description: Log search and visualization
+            #     icon: mdi-text-search
 
         - Kubernetes:
             - Headlamp:

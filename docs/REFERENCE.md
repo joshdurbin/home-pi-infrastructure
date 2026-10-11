@@ -18,7 +18,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [GitOps (Argo CD)](#gitops-argo-cd)
 - [Storage (Longhorn)](#storage-longhorn)
 - [Monitoring (VictoriaMetrics, Grafana)](#monitoring-victoriametrics-grafana)
-- [Logging (OpenSearch)](#logging-opensearch)
+- [Logging (VictoriaLogs; OpenSearch scaled to zero)](#logging-victorialogs)
 - [DNS (Blocky)](#dns-blocky)
 - [Search (SearXNG)](#search-searxng)
 - [Redis Clusters (Blocky + SearXNG + Bifrost Caching)](#redis-clusters-blocky--searxng--bifrost-caching)
@@ -68,7 +68,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
   on any node with capacity. Size container memory limits for the smallest node that can run them: the Pi 4Bs
   report ~3.9GiB (`kubectl get nodes -o jsonpath='{.status.capacity.memory}'`).
 
-See also [Logging](#logging-opensearch), [Storage (Longhorn)](#storage-longhorn) and
+See also [Logging](#logging-victorialogs), [Storage (Longhorn)](#storage-longhorn) and
 [Monitoring](#monitoring-victoriametrics-grafana).
 
 
@@ -86,7 +86,7 @@ home-pi-infrastructure/
 │   │                              # anything outside it. Same repo, two independent consumers.
 │   │                              # One directory per app: application.yaml, values.yaml, and
 │   │                              # (where needed) manifests/.
-│   ├── longhorn, victoria-metrics, opensearch, argocd-metrics
+│   ├── longhorn, victoria-metrics, victoria-logs, opensearch (scaled to zero), argocd-metrics
 │   ├── cloudnative-pg, proxysql-operator (ProxySQL, scaled to zero), zot, postgres, temporal
 │   ├── redis-operator, redis-operator-metrics, redis-cache
 │   ├── blocky, searxng, homepage, whodb
@@ -661,7 +661,7 @@ kubectl -n monitoring port-forward svc/vmks-grafana 3000:80
 Visit `http://localhost:3000` — no login required.
 
 Pre-configured datasources (all provisioned automatically): **VictoriaMetrics** (x2 — Prometheus-compatible
-and native) and **Alertmanager** (logs live in OpenSearch Dashboards; see [Logging](#logging-opensearch) below).
+and native), **Alertmanager**, and **VictoriaLogs** (the logs store; see [Logging](#logging-victorialogs) below).
 
 Dashboards can be imported from grafana.com via `roles/grafana_dashboards/` (`make deploy-dashboards`; it is not part of `make deploy`) — see that role's own README for what's included and why, and for the
 handful already provisioned automatically by the chart itself (Kubernetes cluster/node views, CoreDNS,
@@ -675,7 +675,42 @@ kubectl -n monitoring port-forward svc/vmselect-vmks-victoria-metrics-k8s-stack 
 VictoriaMetrics' own UI is at `http://localhost:8481/select/0/vmui/`; the raw PromQL-compatible API is at
 `/select/0/prometheus/api/v1/query`. (Over Tailscale: `https://victoriametrics.<tailnet>.ts.net/select/0/vmui/`.)
 
-## Logging (OpenSearch)
+## Logging (VictoriaLogs)
+
+Container and host (journald) logs for the whole cluster, retained for **7 days**, in **VictoriaLogs**
+(`apps/victoria-logs/`, namespace `monitoring`, chart `victoria-logs-single`, release `vls`). Two pods, each a
+full, independent copy on its own 5Gi Longhorn volume, required anti-affinity so they sit on different nodes, and a
+PDB (`maxUnavailable: 1`) - so any one pod or node can be lost and logs keep flowing and stay queryable.
+
+- **Why two independent instances, not VictoriaLogs' cluster mode**: the cluster chart (vlinsert/vlselect/vlstorage)
+  *shards* logs across its storage nodes and has no `replicationFactor` - unlike `vmcluster` - so losing a
+  vlstorage loses its share of the history and queries return 502. VictoriaLogs' docs recommend independent
+  instances fed in parallel for HA, which is what gives the VictoriaMetrics-style "two full copies".
+- **Shipping**: one Vector DaemonSet (`apps/opensearch/values-vector.yaml` - still there, for history) with **two**
+  sinks (container logs, journald), each sending every line *once* to **vlagent**
+  (`apps/victoria-logs/values-agent.yaml`, 2 pods on different nodes, Pi 5s preferred), which replicates it to both
+  VictoriaLogs pods. Keeping Vector at two sinks matters: writing to both pods from Vector meant four sinks, and
+  doubling the buffering, compression and outbound requests per node is what starved the Pi 4Bs before. vlagent keeps an
+  independent on-disk buffer per destination (512MiB each), so a VictoriaLogs pod that is down neither blocks the
+  other nor loses what it missed - the agent replays it when the pod returns.
+- **Querying**: the Service name resolves to every Ready pod, so Grafana's `VictoriaLogs` datasource
+  (`apps/victoria-logs/manifests/grafana-datasource-configmap.yaml`, plugin `victoriametrics-logs-datasource`
+  installed in `apps/victoria-metrics/values.yaml`) and the UI land on either copy. UI over Tailscale:
+  `https://victorialogs.<tailnet>.ts.net/select/vmui/` (a ClusterIP Service `victorialogs-ui` fronts the headless
+  one, as `vmselect-ui` does for VictoriaMetrics). LogsQL: <https://docs.victoriametrics.com/victorialogs/logsql/>.
+- **Metrics**: `VMPodScrape`s (`apps/victoria-logs/manifests/vmpodscrape.yaml`) scrape both VictoriaLogs pods and both vlagent pods (watch vlagent's per-destination buffer if a pod is down).
+- **Run leaner**: `server.replicaCount: 1` in `apps/victoria-logs/values.yaml` and drop the second `remoteWrite` URL in
+  `values-agent.yaml`.
+
+### OpenSearch (scaled to zero)
+
+The previous log store. It is switched off but **all of its configuration is still in the repo**
+(`apps/opensearch/`): `apps/opensearch/cluster/application.yaml` excludes its manifests from Argo CD with a
+`directory.exclude`, which prunes the cluster (pods and Services go; the PVCs stay) without touching the files; its
+Vector sinks are the commented block at the end of `values-vector.yaml`; its Tailscale Ingress and Homepage entry
+are commented out. The operator (`opensearch-operator`, ~256Mi) stays installed. **Bring it back** by following
+`apps/opensearch/README.md`, "Scaled to zero". The rest of this section describes OpenSearch as configured when
+it is running.
 
 Container + host logs for the whole cluster, retained for **~7 days** (index-boundary granularity, not
 an exact cutoff - see below). Namespace: `opensearch`. The **OpenSearch Kubernetes Operator** reconciles
@@ -1502,7 +1537,7 @@ does **not** have the spare capacity for more than one node out at a time, so th
 | Bifrost, Homepage | 1 replica each (stateless - state is in Postgres/Redis); a drain reschedules them, gaps of roughly 1-2 min, 30-90s and 10-30s (Pi start-up, plus an image pull on a node that hasn't run them) |
 
 **Accepted blips** (single replica by design; recover when the pod reschedules, typically under a minute or two):
-Blocky, Bifrost and Homepage, Open WebUI and WhoDB (RWO volume), SearXNG, Temporal (all services), (OpenSearch and its Dashboards run two of each on different nodes, as do Grafana, vmalert and Alertmanager),
+Blocky, Bifrost and Homepage, Open WebUI and WhoDB (RWO volume), SearXNG, Temporal (all services), (VictoriaLogs runs two full copies on different nodes, as do Grafana, vmalert and Alertmanager),
 Alertmanager (Vector buffers or retries), vmalert, Argo CD, and the other
 operators. None are on a path that other workloads need to keep running.
 
@@ -1642,7 +1677,9 @@ hostname shown there):
 | Grafana | `https://grafana.<tailnet>.ts.net` |
 | Alertmanager | `https://alertmanager.<tailnet>.ts.net` |
 | VictoriaMetrics | `https://victoriametrics.<tailnet>.ts.net/select/0/vmui/` |
-| OpenSearch Dashboards | `https://opensearch.<tailnet>.ts.net` |
+| VictoriaLogs | `https://victorialogs.<tailnet>.ts.net/select/vmui/` |
+| Zot (image registry) | `https://zot.<tailnet>.ts.net` |
+| OpenSearch Dashboards | scaled to zero (Ingress disabled) |
 | Longhorn | `https://longhorn.<tailnet>.ts.net` |
 | Blocky (`/metrics`) | `https://blocky.<tailnet>.ts.net` |
 | SearXNG | `https://search.<tailnet>.ts.net` |
@@ -1874,7 +1911,7 @@ Update `inventory.dist` if your network differs.
   `apps/temporal/` - see [Temporal](#temporal)), `opensearch_admin_password` (used by `apps/opensearch/`
   - unlike Grafana's admin login, this one is a real, actively-used credential, since the OpenSearch
   Kubernetes Operator makes auth mandatory on the cluster itself; min 8 chars, upper, lower, digit,
-  special char - see [Logging](#logging-opensearch)), `openwebui_secret_key` (signs Open WebUI's session
+  special char - see [Logging](#logging-victorialogs)), `openwebui_secret_key` (signs Open WebUI's session
   cookies, `WEBUI_SECRET_KEY` - not an LLM-provider credential; no API key for any backend lives in this
   repo at all, that's configured through Open WebUI's own Settings UI after it's running), and
   `openwebui_db_password` (used by both `apps/postgres/manifests/open-webui-database.yaml` and

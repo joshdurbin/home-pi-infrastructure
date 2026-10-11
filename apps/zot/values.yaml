@@ -48,6 +48,8 @@ configFiles:
       },
       "log": { "level": "info" },
       "extensions": {
+        "search": { "enable": true },
+        "ui": { "enable": true },
         "metrics": {
           "enable": true,
           "prometheus": { "path": "/metrics" }

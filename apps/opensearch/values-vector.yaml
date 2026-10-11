@@ -1,9 +1,13 @@
-# Ships this cluster's logs to OpenSearch (apps/opensearch/manifests/ has the
-# index template and retention policy; Dashboards is the log UI): container logs
-# (kubernetes_logs) to logs-*, host/journald logs to logs-host-*. Sourced from
-# Vector's own chart (https://helm.vector.dev). VictoriaLogs used to be a second
-# backend here and is gone - fewer sinks means roughly half the buffering,
-# compression and outbound requests per node.
+# Ships this cluster's logs to VictoriaLogs (apps/victoria-logs/): container
+# logs (kubernetes_logs) and host/journald logs, two sinks, each sending to the
+# vlagent Service, which replicates to both VictoriaLogs pods - two full copies,
+# one per node. Sourced from Vector's own chart (https://helm.vector.dev).
+#
+# This file lives in apps/opensearch/ for history: Vector used to ship only to
+# OpenSearch (logs-* and logs-host-* indices). OpenSearch is scaled to zero now
+# but its configuration is all still in this repo, including those two sinks
+# (commented out at the bottom of this file) - see apps/opensearch/README.md,
+# "Scaled to zero", to bring it back.
 
 # Default is "Aggregator" (StatefulSet) - "Agent" (DaemonSet) is required to
 # get one Vector pod per node tailing that node's own /var/log (the chart's
@@ -123,27 +127,32 @@ customConfig:
       type: prometheus_exporter
       address: 0.0.0.0:9090
       inputs: [internal_metrics]
-    # https://opensearch:9200 - "opensearch" is manifests/cluster.yaml's
-    # general.serviceName, not "opensearch-client" (that was the plain
-    # chart's own service naming, from before this app switched to the
-    # operator). api_version: v8 avoids the deprecated bulk-action `_type`
-    # field older API versions send, which OpenSearch 2.x+ rejects outright
-    # (https://github.com/vectordotdev/vector/issues/23342). tls.verify_certificate:
-    # false trusts the operator's self-signed cert (security.tls.http.generate:
-    # true in cluster.yaml) - nothing here talks to a real CA-issued cert.
-    # auth reads the same admin credentials Dashboards uses (envFrom above).
-    opensearch:
+    # VictoriaLogs, via vlagent (apps/victoria-logs/values-agent.yaml): TWO sinks,
+    # one per stream, each sending every line ONCE to the agent Service. The agent
+    # - not Vector - replicates to both VictoriaLogs pods. Writing to both pods
+    # from here was four sinks, which doubles the buffering, compression and
+    # outbound requests per node and is what starved the Pi 4Bs before (see the
+    # resources comment above).
+    # - Path: Vector's elasticsearch sink appends /_bulk to the endpoint, and the
+    #   bulk endpoint is /insert/elasticsearch/_bulk (the bare root is rejected
+    #   with "unsupported path requested"). _time_field/_stream_fields/_msg_field
+    #   are query params; only AccountID/ProjectID (multi-tenancy) are headers.
+    # - Bounded on purpose (vectordotdev/vector#25212: the elasticsearch sink
+    #   retries without limit and grows until OOMKilled): small batches and
+    #   buffers, finite retries (about 2 minutes of outage, then that batch is
+    #   dropped), memory buffers only (disk buffers would add I/O on the Pi 4B
+    #   SSDs, already the bottleneck). `block` is safe here: there is one
+    #   destination, and the agent absorbs a VictoriaLogs pod being down.
+    # - Container logs and journald are separate sinks: journald events carry none
+    #   of the kubernetes.* fields, so they need their own stream fields, and keep
+    #   their own .message (the parser transform renames only the k8s .message).
+    vlogs:
       type: elasticsearch
       inputs: [parser]
-      endpoints: ['https://opensearch:9200']
+      endpoints: ['http://vla-victoria-logs-agent.monitoring.svc.cluster.local:9429/insert/elasticsearch/']
       mode: bulk
       api_version: v8
       compression: gzip
-      # Bounded on purpose (vectordotdev/vector#25212: the elasticsearch sink
-      # retries without limit during sustained failures and grows until
-      # OOMKilled). Small batches/buffers, finite retries (about 2 minutes of
-      # outage, then that batch is dropped), memory buffers only - disk buffers
-      # would add I/O on the Pi 4B SSDs, which are already the bottleneck.
       batch:
         max_bytes: 1048576
         timeout_secs: 5
@@ -151,38 +160,26 @@ customConfig:
         type: memory
         max_events: 200
         when_full: block
+      healthcheck:
+        enabled: false
+      query:
+        _time_field: timestamp
+        _stream_fields: stream,kubernetes.pod_name,kubernetes.container_name,kubernetes.pod_namespace
+        _msg_field: log
       request:
         concurrency: 2
         timeout_secs: 30
         retry_attempts: 15
-      healthcheck:
-        enabled: false
-      tls:
-        verify_certificate: false
-      auth:
-        strategy: basic
-        user: '${username}'
-        password: '${password}'
-      bulk:
-        index: 'logs-%Y.%m.%d'
-    # Same retargeting as the sink above - separate sink for the same reason
-    # as before: journald events don't carry any kubernetes.* fields, so a
-    # shared index naming scheme would still be fine, but keeping journal
-    # entries in their own daily index (logs-host-*, also covered by
-    # manifests/ism-policy.yaml's logs-* ismTemplate pattern) keeps them
-    # easy to filter/browse separately in Dashboards.
-    opensearch_host:
+        headers:
+          AccountID: '0'
+          ProjectID: '0'
+    vlogs_host:
       type: elasticsearch
       inputs: [journal]
-      endpoints: ['https://opensearch:9200']
+      endpoints: ['http://vla-victoria-logs-agent.monitoring.svc.cluster.local:9429/insert/elasticsearch/']
       mode: bulk
       api_version: v8
       compression: gzip
-      # Bounded on purpose (vectordotdev/vector#25212: the elasticsearch sink
-      # retries without limit during sustained failures and grows until
-      # OOMKilled). Small batches/buffers, finite retries (about 2 minutes of
-      # outage, then that batch is dropped), memory buffers only - disk buffers
-      # would add I/O on the Pi 4B SSDs, which are already the bottleneck.
       batch:
         max_bytes: 1048576
         timeout_secs: 5
@@ -190,17 +187,108 @@ customConfig:
         type: memory
         max_events: 200
         when_full: block
+      healthcheck:
+        enabled: false
+      query:
+        _time_field: timestamp
+        _stream_fields: host,_SYSTEMD_UNIT,PRIORITY
+        _msg_field: message
       request:
         concurrency: 2
         timeout_secs: 30
         retry_attempts: 15
-      healthcheck:
-        enabled: false
-      tls:
-        verify_certificate: false
-      auth:
-        strategy: basic
-        user: '${username}'
-        password: '${password}'
-      bulk:
-        index: 'logs-host-%Y.%m.%d'
+        headers:
+          AccountID: '0'
+          ProjectID: '0'
+
+# ---------------------------------------------------------------------------
+# OpenSearch sinks (disabled): OpenSearch is scaled to zero. To use it again,
+# follow apps/opensearch/README.md ("Scaled to zero"), then move these two
+# sinks back under customConfig.sinks above (delete the leading "# " from each
+# line; the indentation underneath it is already right) - that makes OpenSearch a second destination alongside VictoriaLogs
+# (and, being Vector-side, doubles the sink count again - the thing that hurt the
+# Pi 4Bs; prefer fanning out in an agent like vlagent if you do). The opensearch-admin-credentials envFrom and the
+# VECTOR_DANGEROUSLY_ALLOW_ENV_VAR_INTERPOLATION setting above are what they need
+# and are left in place.
+# ---------------------------------------------------------------------------
+#     # https://opensearch:9200 - "opensearch" is manifests/cluster.yaml's
+#     # general.serviceName, not "opensearch-client" (that was the plain
+#     # chart's own service naming, from before this app switched to the
+#     # operator). api_version: v8 avoids the deprecated bulk-action `_type`
+#     # field older API versions send, which OpenSearch 2.x+ rejects outright
+#     # (https://github.com/vectordotdev/vector/issues/23342). tls.verify_certificate:
+#     # false trusts the operator's self-signed cert (security.tls.http.generate:
+#     # true in cluster.yaml) - nothing here talks to a real CA-issued cert.
+#     # auth reads the same admin credentials Dashboards uses (envFrom above).
+#     opensearch:
+#       type: elasticsearch
+#       inputs: [parser]
+#       endpoints: ['https://opensearch:9200']
+#       mode: bulk
+#       api_version: v8
+#       compression: gzip
+#       # Bounded on purpose (vectordotdev/vector#25212: the elasticsearch sink
+#       # retries without limit during sustained failures and grows until
+#       # OOMKilled). Small batches/buffers, finite retries (about 2 minutes of
+#       # outage, then that batch is dropped), memory buffers only - disk buffers
+#       # would add I/O on the Pi 4B SSDs, which are already the bottleneck.
+#       batch:
+#         max_bytes: 1048576
+#         timeout_secs: 5
+#       buffer:
+#         type: memory
+#         max_events: 200
+#         when_full: block
+#       request:
+#         concurrency: 2
+#         timeout_secs: 30
+#         retry_attempts: 15
+#       healthcheck:
+#         enabled: false
+#       tls:
+#         verify_certificate: false
+#       auth:
+#         strategy: basic
+#         user: '${username}'
+#         password: '${password}'
+#       bulk:
+#         index: 'logs-%Y.%m.%d'
+#     # Same retargeting as the sink above - separate sink for the same reason
+#     # as before: journald events don't carry any kubernetes.* fields, so a
+#     # shared index naming scheme would still be fine, but keeping journal
+#     # entries in their own daily index (logs-host-*, also covered by
+#     # manifests/ism-policy.yaml's logs-* ismTemplate pattern) keeps them
+#     # easy to filter/browse separately in Dashboards.
+#     opensearch_host:
+#       type: elasticsearch
+#       inputs: [journal]
+#       endpoints: ['https://opensearch:9200']
+#       mode: bulk
+#       api_version: v8
+#       compression: gzip
+#       # Bounded on purpose (vectordotdev/vector#25212: the elasticsearch sink
+#       # retries without limit during sustained failures and grows until
+#       # OOMKilled). Small batches/buffers, finite retries (about 2 minutes of
+#       # outage, then that batch is dropped), memory buffers only - disk buffers
+#       # would add I/O on the Pi 4B SSDs, which are already the bottleneck.
+#       batch:
+#         max_bytes: 1048576
+#         timeout_secs: 5
+#       buffer:
+#         type: memory
+#         max_events: 200
+#         when_full: block
+#       request:
+#         concurrency: 2
+#         timeout_secs: 30
+#         retry_attempts: 15
+#       healthcheck:
+#         enabled: false
+#       tls:
+#         verify_certificate: false
+#       auth:
+#         strategy: basic
+#         user: '${username}'
+#         password: '${password}'
+#       bulk:
+#         index: 'logs-host-%Y.%m.%d'

@@ -1,0 +1,29 @@
+# The chart has no PodDisruptionBudget. With the two copies on different nodes
+# (required anti-affinity in ../values.yaml) a drain evicts one, waits for its
+# replacement to be Ready, then the next - the other copy keeps taking logs and
+# answering queries throughout.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: vls-victoria-logs-single-server
+  namespace: monitoring
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: victoria-logs-single
+      app.kubernetes.io/instance: vls
+---
+# Same for the two vlagent pods (values-agent.yaml): one stays up through a drain,
+# so Vector's Service always has a Ready agent.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: vla-victoria-logs-agent
+  namespace: monitoring
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: victoria-logs-agent
+      app.kubernetes.io/instance: vla

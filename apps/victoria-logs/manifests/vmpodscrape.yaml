@@ -1,0 +1,33 @@
+# VictoriaLogs' own metrics (/metrics on the HTTP port), scraped per pod so both
+# copies are seen. Hand-written VMPodScrape, same reasoning as
+# apps/cloudnative-pg/manifests/vmpodscrape.yaml; the port is named "http" in
+# the chart's StatefulSet (confirmed via `helm template`).
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: victoria-logs
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: victoria-logs-single
+      app.kubernetes.io/instance: vls
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+---
+# vlagent's metrics (/metrics on its HTTP port, named "http"): per-destination
+# buffer size and drops, the thing to watch if a VictoriaLogs pod is down.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: victoria-logs-agent
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: victoria-logs-agent
+      app.kubernetes.io/instance: vla
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics

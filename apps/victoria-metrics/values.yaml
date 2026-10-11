@@ -68,6 +68,10 @@ grafana:
       enabled: true
       org_role: Admin
   plugins:
+    # victoriametrics-logs-datasource: the VictoriaLogs datasource
+    # (apps/victoria-logs/manifests/grafana-datasource-configmap.yaml) needs it
+    # installed to render at all.
+    - victoriametrics-logs-datasource
     - victoriametrics-metrics-datasource
   envValueFrom:
     GF_DATABASE_PASSWORD:

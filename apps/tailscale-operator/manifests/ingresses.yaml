@@ -225,22 +225,66 @@ spec:
                 port:
                   number: 8080
 ---
-# Service name confirmed via `helm template opensearch-dashboards
-# opensearch/opensearch-dashboards --version 3.8.0 -f
-# apps/opensearch/values-dashboards.yaml` (port 5601) - not yet confirmed
-# live against a real cluster the way every other backend name in this file
-# was, since the app hasn't synced anywhere yet.
+# OpenSearch Dashboards is scaled to zero (apps/opensearch/README.md, "Scaled to
+# zero"), so its Ingress is disabled - it would only expose a dead proxy. To
+# restore it, delete the leading "# " from every line of the block below.
+# # Service name confirmed via `helm template opensearch-dashboards
+# # opensearch/opensearch-dashboards --version 3.8.0 -f
+# # apps/opensearch/values-dashboards.yaml` (port 5601) - not yet confirmed
+# # live against a real cluster the way every other backend name in this file
+# # was, since the app hasn't synced anywhere yet.
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: opensearch
+#   namespace: opensearch
+#   annotations:
+#     tailscale.com/proxy-group: ingress-proxies
+# spec:
+#   ingressClassName: tailscale
+#   tls:
+#     - hosts: [opensearch]
+#   rules:
+#     - http:
+#         paths:
+#           - path: /
+#             pathType: Prefix
+#             backend:
+#               service:
+#                 name: opensearch-dashboards
+#                 port:
+#                   number: 5601
+---
+# VictoriaLogs (apps/victoria-logs/). Its Service is headless (ClusterIP: None),
+# which a Tailscale Ingress rejects, so this ordinary ClusterIP Service in front
+# of the same two pods is what the Ingress below targets (same trick as
+# vmselect-ui above). Either pod holds all the data. The UI is at /select/vmui/
+# (Homepage links there).
+apiVersion: v1
+kind: Service
+metadata:
+  name: victorialogs-ui
+  namespace: monitoring
+spec:
+  selector:
+    app.kubernetes.io/name: victoria-logs-single
+    app.kubernetes.io/instance: vls
+  ports:
+    - name: http
+      port: 9428
+      targetPort: 9428
+---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: opensearch
-  namespace: opensearch
+  name: victorialogs
+  namespace: monitoring
   annotations:
     tailscale.com/proxy-group: ingress-proxies
 spec:
   ingressClassName: tailscale
   tls:
-    - hosts: [opensearch]
+    - hosts: [victorialogs]
   rules:
     - http:
         paths:
@@ -248,9 +292,34 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: opensearch-dashboards
+                name: victorialogs-ui
                 port:
-                  number: 5601
+                  number: 9428
+---
+# Zot's web UI (the `ui` and `search` extensions in apps/zot/values.yaml). The
+# registry API shares the port, so pushing/pulling through this hostname works
+# too, but nodes and the build script use localhost:30500 / a port-forward.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: zot
+  namespace: zot
+  annotations:
+    tailscale.com/proxy-group: ingress-proxies
+spec:
+  ingressClassName: tailscale
+  tls:
+    - hosts: [zot]
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: zot
+                port:
+                  number: 5000
 ---
 # Landing page linking out to every other Ingress in this file
 # (apps/homepage/values.yaml, configMaps.config) - hostname "home" rather than

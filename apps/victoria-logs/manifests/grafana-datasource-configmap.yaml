@@ -1,0 +1,28 @@
+# Grafana's sidecar-based datasource provisioning (grafana_datasource: "1"
+# label - same mechanism as every dashboard ConfigMap's grafana_dashboard: "1"
+# label elsewhere in this repo); the chart has no native datasource block.
+# Needs the victoriametrics-logs-datasource plugin (apps/victoria-metrics/
+# values.yaml, grafana.plugins).
+#
+# url is the chart's headless Service (vls-victoria-logs-single-server, port
+# 9428 - confirmed via `helm template vls victoriametrics/victoria-logs-single
+# --version 0.13.10`). Its DNS name resolves to every Ready pod, so a query
+# lands on either copy (they hold the same data); a pod that is down drops out
+# of the record. Writes go through vlagent (values-agent.yaml), which feeds both.
+# isDefault: false - Grafana's default stays the metrics datasource.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: victorialogs-grafana-ds
+  namespace: monitoring
+  labels:
+    grafana_datasource: "1"
+data:
+  victorialogs-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: VictoriaLogs
+        type: victoriametrics-logs-datasource
+        access: proxy
+        url: http://vls-victoria-logs-single-server.monitoring.svc.cluster.local:9428
+        isDefault: false

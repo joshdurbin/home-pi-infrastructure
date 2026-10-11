@@ -1,0 +1,54 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: victoria-logs
+  namespace: argocd
+  annotations:
+    # Longhorn-backed PVCs (the server StatefulSet), so it syncs after Longhorn
+    # (wave 0). It has no CRDs of its own and nothing else must exist first:
+    # Vector (apps/opensearch/cluster/, wave 2) simply retries until these pods
+    # are up, as every bulk sink here already does for a backend that isn't
+    # ready.
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    # The monitoring namespace (already in the AppProject's destinations),
+    # alongside the rest of the VictoriaMetrics family and Grafana.
+    namespace: monitoring
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  sources:
+    - repoURL: https://victoriametrics.github.io/helm-charts
+      chart: victoria-logs-single
+      targetRevision: 0.13.10
+      helm:
+        releaseName: vls
+        valueFiles:
+          - $values/apps/victoria-logs/values.yaml
+    # vlagent: the fan-out Vector writes to once; it replicates to both server
+    # pods above with a per-destination on-disk buffer. See values-agent.yaml.
+    - repoURL: https://victoriametrics.github.io/helm-charts
+      chart: victoria-logs-agent
+      targetRevision: 0.2.10
+      helm:
+        releaseName: vla
+        valueFiles:
+          - $values/apps/victoria-logs/values-agent.yaml
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      ref: values
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      path: apps/victoria-logs/manifests

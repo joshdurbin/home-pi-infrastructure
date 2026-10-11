@@ -1,0 +1,57 @@
+# The log store: VictoriaLogs, two independent instances that EACH receive every
+# log line, each on its own Longhorn volume, on different nodes. Vector sends each
+# line once to vlagent (values-agent.yaml), which replicates it to both. It replaces OpenSearch
+# (apps/opensearch/, scaled to zero and kept in the repo).
+#
+# Why two single-node instances and not VictoriaLogs' cluster chart: the
+# cluster mode (vlinsert/vlselect/vlstorage) SHARDS logs across its storage
+# nodes and does not replicate them - there is no replicationFactor, unlike
+# vmcluster (apps/victoria-metrics/) - so losing one vlstorage loses its share
+# of the history and queries return 502 until it is back. VictoriaLogs' own
+# docs recommend independent instances fed in parallel for HA, which also
+# gives what the VictoriaMetrics setup has: two full copies, either pod (or its
+# node) can be lost, nothing is single.
+#
+#   vls-victoria-logs-single-server-0   full copy, PVC server-volume-...-0
+#   vls-victoria-logs-single-server-1   full copy, PVC server-volume-...-1
+#
+# Queries (Grafana, the UI) go through the Service, which spreads them across
+# whichever pods are Ready; because both hold everything, either answers the
+# same. A pod that is down misses nothing it can't replay: vlagent buffers per
+# destination on disk (up to maxDiskUsagePerURL) and delivers when the pod is
+# back; only an outage longer than that buffer leaves a gap, and the other copy
+# still has it. To run leaner, set replicaCount to 1 here and drop the second
+# remoteWrite URL in values-agent.yaml.
+server:
+  replicaCount: 2
+  # Same as OpenSearch's retention (7d) and the old single instance.
+  retentionPeriod: 7d
+  persistentVolume:
+    enabled: true
+    accessModes:
+      - ReadWriteOnce
+    # 5Gi, not the 10Gi the single instance had: OpenSearch (ingesting this
+    # same stream) used ~250MB over 46h, so 7d is ~1-2GB per copy. Each volume
+    # also gets Longhorn's own 2 replicas.
+    size: 5Gi
+    storageClassName: longhorn
+  # 512Mi: what this ran at before. Revisit with `kubectl -n monitoring top pod`
+  # / OOMKilled if the real log volume turns out heavier.
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      cpu: 10m
+      memory: 512Mi
+  # Required anti-affinity: one copy per node, so a node loss never takes both.
+  # Nothing is pinned to a board type - unlike OpenSearch (Amazon Linux image,
+  # Pi 5 only) VictoriaLogs runs on the Pi 4Bs too, and the volumes are
+  # Longhorn so the pods are free to move.
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: victoria-logs-single
+              app.kubernetes.io/instance: vls
+          topologyKey: kubernetes.io/hostname

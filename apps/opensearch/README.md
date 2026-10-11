@@ -1,5 +1,9 @@
 # OpenSearch
 
+> **Scaled to zero.** The log store is VictoriaLogs now (`apps/victoria-logs/`, two full copies - see
+> `docs/REFERENCE.md`, "Logging"). Everything below is how OpenSearch is configured *when it runs*; it is all still
+> here, switched off. See "Scaled to zero" at the end of this file to bring it back.
+
 This cluster's log store: one Vector DaemonSet ships every container's logs plus host journald into
 OpenSearch + OpenSearch Dashboards (VictoriaLogs, the previous store, is gone). Minimal layout - one client
 pod and one data pod, no redundancy - with the structure kept so it scales back up by changing replica counts
@@ -129,3 +133,39 @@ kubectl -n monitoring get pvc | grep vls      # the orphaned VictoriaLogs volume
 kubectl -n monitoring delete pvc <name>
 kubectl -n monitoring delete cm victorialogs-grafana-ds   # if still present
 ```
+
+## Scaled to zero
+
+OpenSearch is switched off but its configuration is untouched. Four things make that so, each reversible:
+
+1. **`cluster/application.yaml`** gives the `apps/opensearch/manifests` source a `directory.exclude` naming all four
+   files, so Argo CD prunes the `OpenSearchCluster`, ISM policy, index template and scrape. The operator then removes
+   the pods and Services. (`replicas: 0` on the pools was not an option: the operator's scaler sends master-eligible
+   nodes - both pools here - through a voting-config exclusion before removing them and cannot remove the last
+   voter, so it would hang.) The `opensearch-operator` app itself stays installed (~256Mi).
+2. **`values-vector.yaml`**: the two OpenSearch sinks are the commented block at the end; Vector ships only to
+   VictoriaLogs. The `opensearch-admin-credentials` Secret (seeded by Ansible) and the Vector `envFrom` that reads it
+   are left in place.
+3. **Tailscale Ingress** (`apps/tailscale-operator/manifests/ingresses.yaml`) and the **Homepage** entry are commented
+   out.
+4. Not touched: WhoDB's `opensearch` connection (`group_vars/all/cluster_secrets.yaml`) and its egress rule still
+   exist, so that one connection simply fails until OpenSearch is back.
+
+**What is kept**: the PVCs (`data-opensearch-data-{0,1}` 10Gi, `data-opensearch-client-{0,1}` 2Gi, each with Longhorn's
+own replicas) - the operator does not delete them. Delete them to reclaim the space
+(`kubectl -n opensearch delete pvc -l opensearch.org/opensearch-cluster=opensearch`), or leave them so the indices
+come back when you re-enable it (anything past the 7d retention is then removed by the ISM policy).
+
+**If the prune hangs**: the ISM policy and index template custom resources carry operator finalizers, and the operator
+deletes the policy through the cluster's API - if the cluster is already gone first, they can sit in `Terminating`.
+Check with `kubectl -n opensearch get opensearchcluster,opensearchismpolicy,opensearchindextemplate` and clear a stuck one with
+`kubectl -n opensearch patch <kind>/<name> --type=merge -p '{"metadata":{"finalizers":null}}'`.
+
+**Bring it back**:
+1. Delete the `directory:` block (and its comment) from `cluster/application.yaml`. The cluster comes up and, with
+   the kept PVCs, so do its indices.
+2. In `values-vector.yaml`, uncomment the two sinks (delete the leading `# `) and move them under `customConfig.sinks`.
+3. Uncomment the Ingress in `apps/tailscale-operator/manifests/ingresses.yaml` and the Homepage entry in
+   `apps/homepage/values.yaml`.
+4. OpenSearch is then a third destination alongside the two VictoriaLogs copies; remove the VictoriaLogs sinks too if
+   you want it back as the only store.
