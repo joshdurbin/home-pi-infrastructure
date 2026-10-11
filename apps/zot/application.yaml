@@ -4,10 +4,13 @@ metadata:
   name: zot
   namespace: argocd
   annotations:
-    # Its volume is a Longhorn PVC (wave 0), so it must sync after Longhorn.
-    # Wave 1 also puts it before every wave 2 app, in case one of those ever
-    # pulls an image from it.
-    argocd.argoproj.io/sync-wave: "1"
+    # Wave 0, alongside Longhorn, so it comes up before every other app and the
+    # image pulls those make can already be cached. Its volume is a Longhorn PVC but
+    # that does not deadlock: the PVC just stays Pending until Longhorn (same wave,
+    # syncing in parallel) is ready, then binds. Pulls made before Zot is up simply
+    # go to the upstream registry (the node-level fallback), so the order only affects
+    # how warm the cache is, never whether anything starts.
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   project: home-pi
   destination:

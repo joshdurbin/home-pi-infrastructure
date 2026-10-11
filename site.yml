@@ -46,6 +46,21 @@
       tags: [k3s]
   become: yes
 
+# Point each node's containerd at Zot's pull-through cache (apps/zot/). One node at a
+# time: k3s has to restart on a node for it to load /etc/rancher/k3s/registries.yaml, so
+# this waits for the node to be Ready again before touching the next one, and stops the
+# whole play if any node fails to come back. A no-op (no restart) once the file is in place.
+# Run on its own with `make deploy-registries`.
+- name: Configure the registry mirrors
+  hosts: k3s_cluster
+  serial: 1
+  any_errors_fatal: true
+  gather_facts: false
+  roles:
+    - role: k3s_registries
+      tags: [registries]
+  become: yes
+
 - name: Helm deployment
   hosts: server
   gather_facts: false

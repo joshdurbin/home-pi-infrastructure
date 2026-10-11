@@ -1,17 +1,28 @@
-# In-cluster OCI registry (Zot, https://zotregistry.dev). Its first job is to
-# host images we have to build ourselves because upstream doesn't publish a
-# pullable one - today that is the ProxySQL operator (see docs/REFERENCE.md,
-# "Local registry (Zot)"). Nothing here is mirrored from upstream yet.
+# In-cluster OCI registry (Zot, https://zotregistry.dev), doing two jobs:
 #
-# Deliberately NOT the only image source for anything critical: Zot itself,
-# Argo CD, Longhorn and k3s all pull from their upstream registries, so a Zot
-# outage can never stop the cluster recovering itself. Only workloads whose
-# image exists nowhere else (proxysql-operator) depend on it.
+# 1. A PULL-THROUGH CACHE for the registries this cluster pulls from (Docker Hub,
+#    ghcr.io, quay.io, registry.k8s.io, mirror.gcr.io, ecr-public). Each node's k3s
+#    is configured (roles/k3s_registries) to try Zot first and fall back to the
+#    real registry if Zot does not answer or does not have the image, so an image
+#    that moves between nodes is served from the LAN instead of the internet, and
+#    Docker Hub's anonymous pull limit is hit far less often.
+# 2. Home for images we have to build ourselves because upstream doesn't publish a
+#    pullable one - today the ProxySQL operator (localhost:30500/proxysql-operator).
 #
-# Reached by nodes through the NodePort below as localhost:30500 - containerd
-# treats localhost registries as plain HTTP, so no node-level containerd /
-# k3s registries.yaml change (and no k3s restart) is needed to pull from it.
-# Pods reference images as localhost:30500/<name>:<tag>.
+# How a cache miss works (sync extension, on demand): the node asks Zot for an image,
+# Zot does not have it and answers 404 at once (onDemandInBackground), the node
+# falls back to the upstream registry and pulls it there as before, and Zot fetches
+# the image in the background so the NEXT pull anywhere in the cluster is a hit.
+# Nothing ever waits on Zot, and Zot being down just means pulls go upstream.
+#
+# Deliberately never the only source for anything critical: with the fallback,
+# Zot (and Argo CD, Longhorn, k3s) can always be (re)pulled from upstream, so a
+# Zot outage or an empty volume cannot stop the cluster recovering itself.
+#
+# Reached by nodes through the NodePort below as localhost:30500 (containerd
+# treats localhost registries as plain HTTP). Mirrored repositories are stored under
+# a per-registry prefix - docker-hub/, ghcr/, quay/, k8s/, mirror-gcr/, ecr-public/ -
+# which the k3s mirror config rewrites image names into.
 replicaCount: 1
 
 # One replica: the chart runs Zot as a StatefulSet with a per-pod volume claim
@@ -27,40 +38,197 @@ persistence: true
 pvc:
   create: true
   accessModes: ["ReadWriteOnce"]
-  storage: 30Gi
+  # Sizing: the 62 images running today are ~4.9GiB on disk for arm64 (~2.2GiB
+  # compressed). Zot's on-demand sync copies the WHOLE multi-arch index of every
+  # image it caches, not just arm64 - roughly 3x the arm64 size for these images -
+  # and old versions stay until retention trims them. ~7GiB for today's set, ~15GiB
+  # with a few generations of upgrades; 40Gi leaves ~2.5x headroom on top of that.
+  # The retention policy below drops cached tags that have been neither pulled nor
+  # synced for 30 days (a tag is kept if EITHER is recent), so it does not grow
+  # without bound; repositories outside the mirror prefixes - the self-built
+  # proxysql-operator - are never touched by it. Longhorn keeps 2 replicas, so this is 80Gi raw.
+  # NOTE: a StatefulSet's volumeClaimTemplate is immutable - see docs/REFERENCE.md,
+  # "Local registry (Zot)", for resizing an existing volume.
+  storage: 40Gi
   storageClassName: longhorn
 
 mountConfig: true
 configFiles:
   config.json: |-
-    {
-      "distSpecVersion": "1.1.0",
-      "storage": {
-        "rootDirectory": "/var/lib/registry",
-        "dedupe": true,
-        "gc": true,
-        "gcDelay": "1h",
-        "gcInterval": "6h"
-      },
-      "http": {
-        "address": "0.0.0.0",
-        "port": "5000"
-      },
-      "log": { "level": "info" },
-      "extensions": {
-        "search": { "enable": true },
-        "ui": { "enable": true },
-        "metrics": {
-          "enable": true,
-          "prometheus": { "path": "/metrics" }
+      {
+        "distSpecVersion": "1.1.0",
+        "storage": {
+          "rootDirectory": "/var/lib/registry",
+          "dedupe": true,
+          "gc": true,
+          "gcDelay": "1h",
+          "gcInterval": "6h",
+          "retention": {
+            "dryRun": false,
+            "delay": "24h",
+            "policies": [
+              {
+                "repositories": [
+                  "docker-hub/**",
+                  "ghcr/**",
+                  "quay/**",
+                  "k8s/**",
+                  "mirror-gcr/**",
+                  "ecr-public/**"
+                ],
+                "deleteReferrers": false,
+                "deleteUntagged": true,
+                "keepTags": [
+                  {
+                    "patterns": [
+                      ".*"
+                    ],
+                    "pulledWithin": "720h"
+                  },
+                  {
+                    "patterns": [
+                      ".*"
+                    ],
+                    "pushedWithin": "720h"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "http": {
+          "address": "0.0.0.0",
+          "port": "5000",
+          "compat": [
+            "docker2s2"
+          ]
+        },
+        "log": {
+          "level": "info"
+        },
+        "extensions": {
+          "search": {
+            "enable": true
+          },
+          "ui": {
+            "enable": true
+          },
+          "metrics": {
+            "enable": true,
+            "prometheus": {
+              "path": "/metrics"
+            }
+          },
+          "sync": {
+            "registries": [
+              {
+                "urls": [
+                  "https://mirror.gcr.io",
+                  "https://registry-1.docker.io"
+                ],
+                "onDemand": true,
+                "onDemandInBackground": true,
+                "tlsVerify": true,
+                "maxRetries": 3,
+                "retryDelay": "5m",
+                "content": [
+                  {
+                    "prefix": "**",
+                    "destination": "/docker-hub"
+                  }
+                ]
+              },
+              {
+                "urls": [
+                  "https://ghcr.io"
+                ],
+                "onDemand": true,
+                "onDemandInBackground": true,
+                "tlsVerify": true,
+                "maxRetries": 3,
+                "retryDelay": "5m",
+                "content": [
+                  {
+                    "prefix": "**",
+                    "destination": "/ghcr"
+                  }
+                ]
+              },
+              {
+                "urls": [
+                  "https://quay.io"
+                ],
+                "onDemand": true,
+                "onDemandInBackground": true,
+                "tlsVerify": true,
+                "maxRetries": 3,
+                "retryDelay": "5m",
+                "content": [
+                  {
+                    "prefix": "**",
+                    "destination": "/quay"
+                  }
+                ]
+              },
+              {
+                "urls": [
+                  "https://registry.k8s.io"
+                ],
+                "onDemand": true,
+                "onDemandInBackground": true,
+                "tlsVerify": true,
+                "maxRetries": 3,
+                "retryDelay": "5m",
+                "content": [
+                  {
+                    "prefix": "**",
+                    "destination": "/k8s"
+                  }
+                ]
+              },
+              {
+                "urls": [
+                  "https://mirror.gcr.io"
+                ],
+                "onDemand": true,
+                "onDemandInBackground": true,
+                "tlsVerify": true,
+                "maxRetries": 3,
+                "retryDelay": "5m",
+                "content": [
+                  {
+                    "prefix": "**",
+                    "destination": "/mirror-gcr"
+                  }
+                ]
+              },
+              {
+                "urls": [
+                  "https://ecr-public.aws.com"
+                ],
+                "onDemand": true,
+                "onDemandInBackground": true,
+                "tlsVerify": true,
+                "maxRetries": 3,
+                "retryDelay": "5m",
+                "content": [
+                  {
+                    "prefix": "**",
+                    "destination": "/ecr-public"
+                  }
+                ]
+              }
+            ]
+          }
         }
       }
-    }
 
+# Sync fetches whole images and writes them to the volume, so a bit more than the
+# registry-only footprint.
 resources:
   requests:
-    cpu: 50m
-    memory: 128Mi
+    cpu: 100m
+    memory: 192Mi
   limits:
-    cpu: 500m
-    memory: 512Mi
+    cpu: "1"
+    memory: 1Gi

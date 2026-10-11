@@ -1,0 +1,44 @@
+---
+# Points every node's containerd at Zot's pull-through cache (see defaults/main.yaml).
+#
+# k3s only reads /etc/rancher/k3s/registries.yaml at startup, so a change needs a k3s
+# restart on that node. This role is meant to run `serial: 1` (site.yml): restart one node
+# at a time and wait for it to be Ready before moving on, so the control plane never
+# loses etcd quorum and workloads are not all disturbed together. Restarting the k3s
+# service does not restart the pods: the container shims keep running while the
+# embedded containerd comes back.
+#
+# Deliberately not the k3s-ansible `registries_config_yaml` variable: that role writes
+# the file but never restarts k3s, so a change would sit unapplied until the next
+# unrelated restart.
+- name: Install the k3s registry mirrors config
+  ansible.builtin.template:
+    src: registries.yaml.j2
+    dest: /etc/rancher/k3s/registries.yaml
+    owner: root
+    group: root
+    mode: "0644"
+  register: k3s_registries_file
+
+- name: Restart k3s on this node to load the mirrors
+  ansible.builtin.systemd:
+    name: "{{ 'k3s' if inventory_hostname in groups['server'] else 'k3s-agent' }}"
+    state: restarted
+  when: k3s_registries_file.changed
+
+# Ask a DIFFERENT control-plane node (this one's API may be restarting) to wait for this
+# node to report Ready again.
+- name: Wait for this node to be Ready
+  ansible.builtin.command: >-
+    k3s kubectl wait --for=condition=Ready node/{{ inventory_hostname }} --timeout=300s
+  delegate_to: "{{ groups['server'] | difference([inventory_hostname]) | first }}"
+  changed_when: false
+  when: k3s_registries_file.changed
+
+# Proof containerd actually took the mirrors: k3s renders one hosts.toml per registry.
+- name: Confirm containerd generated the mirror config
+  ansible.builtin.slurp:
+    src: /var/lib/rancher/k3s/agent/etc/containerd/certs.d/docker.io/hosts.toml
+  register: k3s_registries_hosts
+  failed_when: >-
+    (k3s_registries_zot_endpoint not in (k3s_registries_hosts.content | b64decode))

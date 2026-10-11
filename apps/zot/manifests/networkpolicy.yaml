@@ -1,9 +1,11 @@
 # Egress-only, ingress deliberately open (this repo's usual shape): the nodes'
 # containerd pulls through the NodePort and a workstation pushes through
 # `kubectl port-forward`, neither of which a pod/namespace selector can name.
-# Zot needs nothing outbound today (it only stores what is pushed to it), so
-# egress is DNS only. If Zot ever gets the `sync` extension to mirror upstream
-# registries, add 443 egress here.
+# Zot's pull-through cache fetches from the upstream registries (Docker Hub,
+# ghcr.io, quay.io, registry.k8s.io, mirror.gcr.io, ecr-public) over HTTPS, which
+# are CDN-backed and not a fixed IP set worth allowlisting - so egress is DNS plus
+# 443 to anywhere outside the cluster's own private ranges (the pod and service
+# CIDRs and the LAN), keeping it from being a path to cluster-internal services.
 #
 # NOTE: no authentication either - anything in the cluster can push to or pull
 # from it. Acceptable for a homelab registry of self-built images; add Zot's
@@ -28,3 +30,13 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

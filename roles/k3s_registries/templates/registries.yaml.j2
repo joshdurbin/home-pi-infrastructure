@@ -1,0 +1,11 @@
+# Managed by Ansible (roles/k3s_registries). Pull-through cache: try Zot first, the real
+# registry is always tried last by k3s (do NOT start k3s with
+# --disable-default-registry-endpoint, or Zot becomes a single point of failure).
+mirrors:
+{% for m in k3s_registries_mirrors %}
+  "{{ m.registry }}":
+    endpoint:
+      - "{{ k3s_registries_zot_endpoint }}"
+    rewrite:
+      "^(.*)$": "{{ m.prefix }}/$1"
+{% endfor %}

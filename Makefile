@@ -1,4 +1,4 @@
-.PHONY: help install deploy deploy-system deploy-k3s deploy-users deploy-secrets deploy-argocd deploy-dashboards build-proxysql-operator destroy-cluster verify logs clean status syntax-check lint
+.PHONY: help install deploy deploy-system deploy-k3s deploy-users deploy-secrets deploy-argocd deploy-dashboards deploy-registries build-proxysql-operator destroy-cluster verify logs clean status syntax-check lint
 
 INVENTORY := inventory.dist
 VAULT_PASS := --ask-vault-pass
@@ -18,6 +18,7 @@ help:
 	@echo "  make deploy-secrets       Seed cluster Secrets/ConfigMaps only"
 	@echo "  make deploy-argocd        Bootstrap Argo CD only"
 	@echo "  make deploy-dashboards    Import Grafana dashboards (not part of make deploy)"
+	@echo "  make deploy-registries    Point each node at the Zot pull-through cache (restarts k3s, one node at a time)"
 	@echo "  make build-proxysql-operator  Build the ProxySQL operator image and push it to the in-cluster Zot"
 	@echo ""
 	@echo "Destruction:"
@@ -61,6 +62,10 @@ deploy-secrets:
 deploy-argocd:
 	@echo "Bootstrapping Argo CD only..."
 	ansible-playbook site.yml -i $(INVENTORY) $(VAULT_PASS) --tags helm,argocd
+
+deploy-registries:
+	@echo "Configuring registry mirrors (restarts k3s on each node, one at a time)..."
+	ansible-playbook site.yml -i $(INVENTORY) $(VAULT_PASS) --tags registries
 
 deploy-dashboards:
 	@echo "Importing Grafana dashboards (needs Grafana up and the control host on the tailnet)..."

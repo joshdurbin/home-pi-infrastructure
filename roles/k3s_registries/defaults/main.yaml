@@ -1,0 +1,19 @@
+---
+# Where each node's containerd looks first for images: Zot's NodePort on the node
+# itself (apps/zot/). containerd treats localhost registries as plain HTTP.
+k3s_registries_zot_endpoint: "http://localhost:30500"
+
+# One mirror per upstream registry the cluster pulls from. `registry` is the name as it
+# appears in image references (a bare image like `redis` is docker.io); `prefix` is the
+# path Zot stores that registry's repositories under - it must match the `destination`
+# of the matching entry in apps/zot/values.yaml's sync config. k3s appends the real
+# registry as the LAST endpoint of every mirror, so if Zot is down, or answers 404 for an
+# image it has not cached yet (it then fetches it in the background), the node pulls
+# from the upstream registry exactly as it did before.
+k3s_registries_mirrors:
+  - { registry: docker.io, prefix: docker-hub }
+  - { registry: ghcr.io, prefix: ghcr }
+  - { registry: quay.io, prefix: quay }
+  - { registry: registry.k8s.io, prefix: k8s }
+  - { registry: mirror.gcr.io, prefix: mirror-gcr }
+  - { registry: ecr-public.aws.com, prefix: ecr-public }

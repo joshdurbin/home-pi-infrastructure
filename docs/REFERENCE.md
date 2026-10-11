@@ -1098,33 +1098,76 @@ kubectl -n postgres get svc postgres-pooler-rw postgres-pooler-ro
 
 ## Local registry (Zot)
 
-An in-cluster OCI registry, [Zot](https://zotregistry.dev) (`apps/zot/`, namespace `zot`, wave 1, chart
-`project-zot/zot`), for images that exist nowhere pullable. Today that is one image: the ProxySQL operator (installed, but ProxySQL itself is scaled to zero), whose
-upstream package (`ghcr.io/proxysql/proxysql-operator`) is private - open upstream issue
-[ProxySQL/proxysql-on-k8s#83](https://github.com/ProxySQL/proxysql-on-k8s/issues/83), every tag, anonymous 401 /
-authenticated 403.
+An in-cluster OCI registry, [Zot](https://zotregistry.dev) (`apps/zot/`, namespace `zot`, **sync-wave 0** alongside Longhorn,
+chart `project-zot/zot`), doing two jobs:
 
-- **Storage**: a 30Gi Longhorn volume (the chart runs Zot as a StatefulSet), with dedupe and a 6-hourly garbage
-  collection. Longhorn keeps its own 2 replicas of that volume on the storage nodes, so expect ~60Gi of raw disk.
-- **Reaching it**: a NodePort, `30500`. Every node's containerd reaches it as `localhost:30500`, and containerd
-  treats `localhost` registries as plain HTTP - so **no containerd / k3s `registries.yaml` change and no k3s restart**
-  is needed to pull from it. Pods use `image: localhost:30500/<name>:<tag>`.
-- **Pushing**: `make build-proxysql-operator` (`scripts/build-proxysql-operator.sh`). It clones the operator's release
-  tag, cross-compiles the manager for linux/arm64, appends it as one layer onto upstream's distroless base with the
-  same `/manager` entrypoint and nonroot user, and pushes through `kubectl port-forward svc/zot`. No Docker daemon
-  needed; it requires `git`, `go`, `kubectl` and `crane` (`brew install crane`). Re-run it with a new version
-  whenever the operator chart's `targetRevision` moves.
-- **Not the only image source for anything critical**: Zot, Argo CD, Longhorn and k3s all pull from their upstream
-  registries, so a Zot outage can never stop the cluster recovering. Only the ProxySQL operator depends on it - if Zot
-  or its volume is lost, the operator keeps running (the image is already on the node) but cannot be rescheduled to a
-  node that doesn't have it cached until the build script is re-run.
-- **No auth**: any pod can push to or pull from it. Fine for self-built images in a homelab; add Zot's htpasswd auth and an
-  imagePullSecret before storing anything else.
-- **Not done (deliberately)**: a pull-through cache of upstream registries. That needs Zot's `sync` extension plus
-  node-level containerd mirror config (k3s `registries.yaml`, applied by Ansible, which restarts k3s on each node) -
-  worth doing separately, keeping upstream as the fallback, if the Pis' pulls from Docker Hub/ghcr become a problem.
-- **Back out**: if ProxySQL publishes a public image, remove the `image:` block from
-  `apps/proxysql-operator/values.yaml`, then delete `apps/zot/` and `scripts/build-proxysql-operator.sh`.
+1. **A pull-through cache** for every registry the cluster pulls from - Docker Hub, `ghcr.io`, `quay.io`,
+   `registry.k8s.io`, `mirror.gcr.io` and `ecr-public.aws.com`. An image that moves between nodes is served from the LAN
+   rather than the internet, and Docker Hub's anonymous pull limit is hit far less often.
+2. **Home for images we build ourselves** because upstream's is not pullable - today the ProxySQL operator
+   (`localhost:30500/proxysql-operator`; upstream's package is private, [ProxySQL/proxysql-on-k8s#83](https://github.com/ProxySQL/proxysql-on-k8s/issues/83)).
+
+**How a pull works.** Each node's k3s is configured (`roles/k3s_registries`, below) to try Zot first for every one of those
+registries, and k3s always tries the real registry *last*:
+- *Hit*: Zot has the image, the node pulls it from `localhost:30500`.
+- *Miss*: Zot answers `404` immediately (`onDemandInBackground`), the node falls back to the real registry and pulls there as it
+  always did, and Zot fetches the image in the background - so the **next** pull anywhere in the cluster is a hit. The first pull
+  of anything is therefore never slower than before.
+- *Zot down, restarting, or its volume gone*: connection refused, the node falls back to the real registry. Nothing in the
+  cluster (Zot, Argo CD, Longhorn, k3s itself) depends on Zot to start, so it can always recover. Do **not** start k3s with
+  `--disable-default-registry-endpoint` - that removes the fallback.
+
+**What is cached, and what is not.** Image pulls made by containerd on the nodes. Not cached: pulls Trivy makes itself when it
+scans an image, and anything referenced as `localhost:30500/...` (the self-built images - those have no upstream to fall back to).
+Mutable tags (`:latest`) would be served stale from the cache; none of the images in use today use one, so pin versions.
+
+**Storage.** A 40Gi Longhorn volume (80Gi raw with Longhorn's two replicas), with dedupe and 6-hourly garbage collection.
+- *Sizing*: the 62 images running when this was set up are ~4.9GiB on disk (arm64), ~2.2GiB compressed. Zot's on-demand sync
+  copies the **whole multi-arch index** of every image it caches (its `platforms` filter only applies to periodic sync, not on-demand),
+  so roughly 3x that: ~7GiB for today's set, ~15GiB after a few generations of upgrades. 40Gi leaves ~2.5x headroom.
+- *Retention*: cached tags that have been neither pulled nor synced for 30 days are removed, only under the mirror prefixes
+  (`docker-hub/`, `ghcr/`, `quay/`, `k8s/`, `mirror-gcr/`, `ecr-public/`) - the self-built `proxysql-operator` is never touched. Watch the
+  size with `zot_repo_storage_bytes` (metrics are scraped; see `apps/zot/manifests/vmpodscrape.yaml`).
+
+**Upstream rate limits.** Docker Hub counts manifest requests, and syncing a whole multi-arch index fetches one manifest per
+platform (plus attestation manifests), so Zot's population can use *more* of the anonymous quota than the cluster's own pulls would.
+Two mitigations are built in: Docker Hub content is fetched from `mirror.gcr.io` (Google's Docker Hub cache, no pull limit)
+first and `registry-1.docker.io` second, and sync retries (`maxRetries: 3`, `retryDelay: 5m`) when it is rate limited. If it still
+runs into 429s, give Zot Docker Hub credentials (a `credentialsFile` in the sync config, from a Secret) - not wired up.
+
+**Node configuration** (`roles/k3s_registries`, `make deploy-registries`). Writes `/etc/rancher/k3s/registries.yaml` - one mirror per
+registry, endpoint `http://localhost:30500`, with a `rewrite` that maps the image name under that registry's prefix in Zot
+(`docker.io/library/redis` becomes `docker-hub/library/redis`). k3s only reads the file at startup, so a change restarts k3s on each node
+(the pods keep running; the container shims survive), **one node at a time**, waiting for it to be Ready before the next. It is a
+no-op once the file is in place. Not done through the k3s-ansible `registries_config_yaml` variable because that role never restarts k3s.
+
+**Rollout order** (a node only starts using Zot once it has the file, so do these in order):
+1. Push; Argo syncs Zot (wave 0). If the volume is still the old 30Gi one, resize it first (below).
+2. Wait for `zot-0` Ready: `kubectl -n zot get pod zot-0`.
+3. `make deploy-registries`.
+4. Check it is working: `kubectl -n monitoring` / VictoriaMetrics `zot_http_requests_total` by status code, and
+   `kubectl -n zot exec zot-0 -- ls /var/lib/registry` shows the mirror prefixes appearing as images are pulled.
+
+**Resizing the volume.** A StatefulSet's `volumeClaimTemplate` is immutable, so changing `pvc.storage` in `apps/zot/values.yaml` alone makes
+Argo's sync fail on an existing install. Expand the live claim, then let Argo recreate the StatefulSet around it:
+```bash
+kubectl -n zot patch pvc zot-pvc-zot-0 -p '{"spec":{"resources":{"requests":{"storage":"40Gi"}}}}'   # Longhorn expands it
+kubectl -n zot delete statefulset zot --cascade=orphan       # keeps the pod and the volume; Argo recreates the StatefulSet
+```
+(While it only holds the self-built operator image you can instead delete the claim and re-run `make build-proxysql-operator`.)
+
+**Pushing a self-built image**: `make build-proxysql-operator` (`scripts/build-proxysql-operator.sh`). It clones the operator's release
+tag, cross-compiles the manager for linux/arm64, appends it as one layer onto upstream's distroless base with the same `/manager`
+entrypoint and nonroot user, and pushes through `kubectl port-forward svc/zot`. No Docker daemon; needs `git`, `go`, `kubectl` and
+`crane` (`brew install crane`). Re-run it when the operator chart's `targetRevision` moves.
+
+**No auth**: any pod can push to or pull from Zot. Fine for a homelab cache and self-built images; add Zot's htpasswd auth and an
+imagePullSecret before storing anything sensitive. Its NetworkPolicy allows DNS and HTTPS to the internet (outside the cluster's
+private ranges) - the sync needs it.
+
+**Back out**: delete the `k3s_registries` play from `site.yml`, remove `/etc/rancher/k3s/registries.yaml` from the nodes and restart k3s
+on each (or leave Zot as is - without the file nothing uses it). To drop only the ProxySQL operator's image, remove the `image:` block from
+`apps/proxysql-operator/values.yaml` once upstream publishes a public one.
 
 ## Temporal
 
