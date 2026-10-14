@@ -1,0 +1,14 @@
+# The operator makes PodDisruptionBudgets for the client and data pools (nodePools[].pdb in
+# cluster.yaml) but has no field for Dashboards, so this is the same thing by hand: a drain
+# evicts one of the two Dashboards pods at a time, never both. Selector is the label the
+# operator puts on them (also used by the anti-affinity in cluster.yaml).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: opensearch-dashboards
+  namespace: opensearch
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      opensearch.cluster.dashboards: opensearch

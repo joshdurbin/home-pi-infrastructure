@@ -91,6 +91,15 @@ spec:
       enable: false
     opensearchCredentialsSecret:
       name: opensearch-admin-credentials
+    # opensearch_dashboards.yml. No phone-home: Dashboards ships a telemetry plugin (usage
+    # statistics, opt-in prompt) and a newsfeed that fetches from opensearch.org. Both off, and the
+    # opt-in switch hidden so nobody turns it on from the UI (docs/REFERENCE.md "Telemetry and
+    # phone-home").
+    additionalConfig:
+      telemetry.enabled: 'false'
+      telemetry.optIn: 'false'
+      telemetry.allowChangingOptInStatus: 'false'
+      newsfeed.enabled: 'false'
     # Same Amazon-Linux-based image/CPU requirement as the OpenSearch nodes
     # themselves - confirmed live: crashed with the same "Fatal glibc error"
     # on an rpi-4b before this was added (one of two Dashboards replicas
@@ -186,8 +195,11 @@ spec:
                   matchLabels:
                     opensearch.org/opensearch-cluster: opensearch
                 topologyKey: kubernetes.io/hostname
+      # The CRD field is `enable` - NOT `enabled`. The wrong spelling is an unknown field that Argo CD's
+      # apply drops silently (a strict server-side dry run rejects it), so for a while this pool had no
+      # PodDisruptionBudget at all despite saying otherwise. Check: kubectl -n opensearch get pdb
       pdb:
-        enabled: true
+        enable: true
         maxUnavailable: 1
       jvm: '-Xmx512M -Xms512M'
       resources:
@@ -244,8 +256,11 @@ spec:
                   matchLabels:
                     opensearch.org/opensearch-cluster: opensearch
                 topologyKey: kubernetes.io/hostname
+      # The CRD field is `enable` - NOT `enabled`. The wrong spelling is an unknown field that Argo CD's
+      # apply drops silently (a strict server-side dry run rejects it), so for a while this pool had no
+      # PodDisruptionBudget at all despite saying otherwise. Check: kubectl -n opensearch get pdb
       pdb:
-        enabled: true
+        enable: true
         maxUnavailable: 1
       jvm: '-Xmx768M -Xms768M'
       resources:

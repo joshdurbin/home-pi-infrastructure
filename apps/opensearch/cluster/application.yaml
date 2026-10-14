@@ -46,14 +46,3 @@ spec:
     - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
       targetRevision: master
       path: apps/opensearch/manifests
-      # OPENSEARCH IS SCALED TO ZERO: every file in that directory is excluded, so
-      # Argo CD prunes the OpenSearchCluster (the operator removes its pods and
-      # Services; the PVCs are kept), the ISM policy, the index template and the
-      # scrape - while the files stay exactly where they are. To bring it back,
-      # delete this `directory` block and follow apps/opensearch/README.md
-      # ("Scaled to zero"). Not done with `replicas: 0` in the cluster because the
-      # operator's scaler sends master-eligible nodes (both pools here) through a
-      # voting-config exclusion before removing them and cannot remove the last
-      # voter, so a zero would hang.
-      directory:
-        exclude: '{cluster.yaml,index-template.yaml,ism-policy.yaml,vmservicescrape.yaml}'
