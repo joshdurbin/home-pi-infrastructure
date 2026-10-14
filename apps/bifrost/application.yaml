@@ -32,7 +32,7 @@ spec:
     # appVersion). Re-pin both deliberately on bumps.
     - repoURL: https://maximhq.github.io/bifrost/helm-charts
       chart: bifrost
-      targetRevision: 2.1.43
+      targetRevision: 2.1.44
       helm:
         releaseName: bifrost
         valueFiles:
