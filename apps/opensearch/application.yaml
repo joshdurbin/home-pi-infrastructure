@@ -51,18 +51,11 @@ spec:
   sources:
     - repoURL: https://opensearch-project.github.io/opensearch-k8s-operator/
       chart: opensearch-operator
-      # 3.0.2, not 3.0.14 (this app's first pin) or 2.8.2 (a rejected
-      # intermediate downgrade) - see values-operator.yaml's own comment for
-      # the full chain: 3.0.14's default image was never published upstream
-      # (confirmed bug, opensearch-k8s-operator#1515/#1610), and 2.8.2 turned
-      # out to have the *same* class of chart/image drift for a different
-      # flag. 3.0.2 is the newest chart version still declaring
-      # appVersion: 3.0.0-alpha - the one real 3.x image that actually
-      # exists - keeping this on the modern opensearch.org API group rather
-      # than settling for an older 2.x line. apps/opensearch/manifests/*.yaml
-      # were re-validated with jsonschema against this chart version's own
-      # bundled CRDs, not just assumed compatible.
-      targetRevision: 3.0.2
+      # 3.0.14: chart and operator image (3.0.0, published 2026-09-30) match again. The earlier pin
+      # of 3.0.2 existed only because 3.0.14's image was missing - see values-operator.yaml.
+      # apps/opensearch/manifests/*.yaml must still validate against this chart's own bundled CRDs
+      # (strict server-side dry run) - re-check after any chart bump.
+      targetRevision: 3.0.14
       helm:
         releaseName: opensearch-operator
         valueFiles:
