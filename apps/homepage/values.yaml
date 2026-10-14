@@ -122,15 +122,14 @@ configMaps:
                 icon: mdi-chart-line
 
         - Logging:
-            - VictoriaLogs:
-                href: https://victorialogs.{{ $d }}/select/vmui/
-                description: Log search (LogsQL), two copies
+            - OpenSearch Dashboards:
+                href: https://opensearch.{{ $d }}
+                description: Log search and visualization
                 icon: mdi-text-search
-            # OpenSearch Dashboards is scaled to zero (apps/opensearch/README.md);
-            # restore this entry together with its Ingress when bringing it back:
-            # - OpenSearch Dashboards:
-            #     href: https://opensearch.{{ $d }}
-            #     description: Log search and visualization
+            # VictoriaLogs is scaled to zero (apps/victoria-logs/); restore with its Ingress:
+            # - VictoriaLogs:
+            #     href: https://victorialogs.{{ $d }}/select/vmui/
+            #     description: Log search (LogsQL), two copies
             #     icon: mdi-text-search
 
         - Kubernetes:

@@ -23,7 +23,9 @@
 # still has it. To run leaner, set replicaCount to 1 here and drop the second
 # remoteWrite URL in values-agent.yaml.
 server:
-  replicaCount: 2
+  # Scaled to zero: OpenSearch is the log store now (apps/opensearch/). The PVCs
+  # (5Gi each) stay; set back to 2 to return.
+  replicaCount: 0
   # Same as OpenSearch's retention (7d) and the old single instance.
   retentionPeriod: 7d
   persistentVolume:

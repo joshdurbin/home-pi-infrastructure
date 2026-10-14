@@ -52,3 +52,6 @@ spec:
     - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
       targetRevision: master
       path: apps/victoria-logs/manifests
+      # Scaled to zero: no Grafana datasource pointing at pods that are not running.
+      directory:
+        exclude: grafana-datasource-configmap.yaml

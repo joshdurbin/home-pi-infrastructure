@@ -1,13 +1,9 @@
 # OpenSearch
 
-> **Scaled to zero.** The log store is VictoriaLogs now (`apps/victoria-logs/`, two full copies - see
-> `docs/REFERENCE.md`, "Logging"). Everything below is how OpenSearch is configured *when it runs*; it is all still
-> here, switched off. See "Scaled to zero" at the end of this file to bring it back.
-
-This cluster's log store: one Vector DaemonSet ships every container's logs plus host journald into
-OpenSearch + OpenSearch Dashboards (VictoriaLogs, the previous store, is gone). Minimal layout - one client
-pod and one data pod, no redundancy - with the structure kept so it scales back up by changing replica counts
-(see "Scaling" below).
+This is the cluster's log store and a **shared search cluster**: other apps (e.g. Temporal advanced
+visibility) are meant to use it too. One Vector DaemonSet ships every container's logs plus host journald into
+OpenSearch + OpenSearch Dashboards. Full redundancy: 2 client + 2 data + 2 Dashboards pods (see "Redundancy and
+scaling"). VictoriaLogs, the store before this, is scaled to zero (`apps/victoria-logs/`, config kept).
 
 **Not Kibana** - Elastic revoked Kibana's OSS license in 2021; OpenSearch forked it into a
 separately-maintained product called OpenSearch Dashboards. Same job, different name.
@@ -40,9 +36,8 @@ operator:
   resource under the operator, not a separate chart/release).
 - **`ism-policy.yaml`** (`OpenSearchISMPolicy`) - the retention policy, replacing a hand-rolled curl Job
   an earlier version of this app used.
-- **`index-template.yaml`** (`OpenSearchIndexTemplate`) - `number_of_replicas: 0` for `logs-*` indices,
-  same reason the Job used to set it: this cluster runs a single data node, so a replica shard could
-  never be allocated a home.
+- **`index-template.yaml`** (`OpenSearchIndexTemplate`) - `number_of_replicas: 1` for `logs-*` indices,
+  so each shard has a copy on both data nodes.
 
 All three custom resources were validated against the operator's own bundled CRD schemas
 (`opensearch.org_opensearchclusters.yaml` etc., extracted from the chart) with `jsonschema` before being
@@ -108,7 +103,7 @@ and I/O are bounded on the Pi 4Bs (see the comments in `values-vector.yaml`).
 
 ## Temporal integration
 
-Not wired up - Temporal's visibility store (`apps/temporal/values.yaml`) uses Postgres SQL today, not
+Not wired up yet (it is the reason the cluster is shared) - Temporal's visibility store (`apps/temporal/values.yaml`) uses Postgres SQL today, not
 Elasticsearch/OpenSearch, and nothing here changes that. Compatibility exists if ever wanted later:
 Temporal officially supports OpenSearch 2+ as of Server v1.32.0 (this cluster's version) via the same
 `datastores.visibility.elasticsearch` config block used for Elasticsearch - see the commented-out
@@ -122,50 +117,16 @@ About 7Gi of container memory limits: client 2 x 1536Mi + data 2 x 1536Mi + dash
 (256Mi); half the OpenSearch part when run lean. Every OpenSearch pod is pinned to a Pi 5 (`pi5=true`): the Amazon
 Linux image can't run on a Pi 4B CPU.
 
-## One-time cleanup after VictoriaLogs was removed
+## VictoriaLogs is scaled to zero, not removed
 
-Deleting `apps/victoria-logs/application.yaml` prunes the `victoria-logs` child Application via the
-root app-of-apps, but Argo CD does **not** cascade-delete that Application's own managed resources
-without a finalizer (none was set) - its StatefulSet/PVC are orphaned. After the removal syncs:
-```bash
-kubectl delete application victoria-logs -n argocd --cascade=foreground
-kubectl -n monitoring get pvc | grep vls      # the orphaned VictoriaLogs volume
-kubectl -n monitoring delete pvc <name>
-kubectl -n monitoring delete cm victorialogs-grafana-ds   # if still present
-```
+`apps/victoria-logs/` sets `replicaCount: 0` on the server and the vlagent and excludes the Grafana datasource
+ConfigMap, so its 5Gi PVCs, config, Ingress/Service (commented) and the `vlogs`/`vlogs_host` Vector sinks (git history)
+remain. Delete the app (and `kubectl -n monitoring delete pvc -l app.kubernetes.io/instance=vls`) to reclaim the space.
 
-## Scaled to zero
+## Taking OpenSearch down again
 
-OpenSearch is switched off but its configuration is untouched. Four things make that so, each reversible:
-
-1. **`cluster/application.yaml`** gives the `apps/opensearch/manifests` source a `directory.exclude` naming all four
-   files, so Argo CD prunes the `OpenSearchCluster`, ISM policy, index template and scrape. The operator then removes
-   the pods and Services. (`replicas: 0` on the pools was not an option: the operator's scaler sends master-eligible
-   nodes - both pools here - through a voting-config exclusion before removing them and cannot remove the last
-   voter, so it would hang.) The `opensearch-operator` app itself stays installed (~256Mi).
-2. **`values-vector.yaml`**: the two OpenSearch sinks are the commented block at the end; Vector ships only to
-   VictoriaLogs. The `opensearch-admin-credentials` Secret (seeded by Ansible) and the Vector `envFrom` that reads it
-   are left in place.
-3. **Tailscale Ingress** (`apps/tailscale-operator/manifests/ingresses.yaml`) and the **Homepage** entry are commented
-   out.
-4. Not touched: WhoDB's `opensearch` connection (`group_vars/all/cluster_secrets.yaml`) and its egress rule still
-   exist, so that one connection simply fails until OpenSearch is back.
-
-**What is kept**: the PVCs (`data-opensearch-data-{0,1}` 10Gi, `data-opensearch-client-{0,1}` 2Gi, each with Longhorn's
-own replicas) - the operator does not delete them. Delete them to reclaim the space
-(`kubectl -n opensearch delete pvc -l opensearch.org/opensearch-cluster=opensearch`), or leave them so the indices
-come back when you re-enable it (anything past the 7d retention is then removed by the ISM policy).
-
-**If the prune hangs**: the ISM policy and index template custom resources carry operator finalizers, and the operator
-deletes the policy through the cluster's API - if the cluster is already gone first, they can sit in `Terminating`.
-Check with `kubectl -n opensearch get opensearchcluster,opensearchismpolicy,opensearchindextemplate` and clear a stuck one with
+Exclude the four files with a `directory.exclude` on the `apps/opensearch/manifests` source in
+`cluster/application.yaml` (`replicas: 0` doesn't work: the operator can't remove the last master-eligible voter).
+The operator deletes the pods **and the PVCs** (a fresh cluster on return - the indices are gone). The ISM policy and
+index template carry finalizers; if the prune hangs, clear them with
 `kubectl -n opensearch patch <kind>/<name> --type=merge -p '{"metadata":{"finalizers":null}}'`.
-
-**Bring it back**:
-1. Delete the `directory:` block (and its comment) from `cluster/application.yaml`. The cluster comes up and, with
-   the kept PVCs, so do its indices.
-2. In `values-vector.yaml`, uncomment the two sinks (delete the leading `# `) and move them under `customConfig.sinks`.
-3. Uncomment the Ingress in `apps/tailscale-operator/manifests/ingresses.yaml` and the Homepage entry in
-   `apps/homepage/values.yaml`.
-4. OpenSearch is then a third destination alongside the two VictoriaLogs copies; remove the VictoriaLogs sinks too if
-   you want it back as the only store.

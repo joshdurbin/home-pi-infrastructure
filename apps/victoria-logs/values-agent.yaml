@@ -12,7 +12,8 @@
 # what it missed: the agent holds it (up to maxDiskUsagePerURL) and replays it
 # when the pod is back. Two agents (the Service balances Vector across them) so
 # the ingest path has no single point either.
-replicaCount: 2
+# Scaled to zero: OpenSearch is the log store now (apps/opensearch/). Set back to 2 to return.
+replicaCount: 0
 
 # Logs are replicated to every URL listed. The path defaults to /insert/native.
 # Pod-addressed (the StatefulSet's stable per-pod DNS names, apps/victoria-logs/
