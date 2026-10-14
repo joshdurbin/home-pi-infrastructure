@@ -775,7 +775,7 @@ group_vars/all/main.yaml`) before this deploys successfully - see [Secrets & Var
   (`dashboards.tls.enable: false` in `cluster.yaml`) - Tailscale remains the access boundary for that leg.
 - **Prometheus metrics**: the official `opensearch-project/opensearch-prometheus-exporter` plugin,
   installed declaratively via `cluster.yaml`'s `general.pluginsList` (version-matched exactly to this
-  cluster's OpenSearch, 3.8.0.0 - updating that list triggers a rolling restart to install it). Exposes
+  cluster's OpenSearch, 3.9.0.0 - updating that list triggers a rolling restart to install it). Exposes
   `/_prometheus/metrics` on the same port 9200 - the security plugin wraps that endpoint too, so
   `apps/opensearch/manifests/vmservicescrape.yaml` authenticates with the same
   `opensearch-admin-credentials` Secret, over HTTPS with `insecureSkipVerify` (self-signed cert, same as
@@ -1029,7 +1029,7 @@ directly.
   *different* node in either storage mode, satisfying "one Postgres instance per node" by construction. Where
   they run and what they store on is the one-line **storage mode** switch described next. CNPG elects one instance primary and streams WAL to the other as a replica, and
   automatically promotes the replica on primary failure - the operator's own job, nothing hand-rolled for
-  it. Image: `ghcr.io/cloudnative-pg/postgresql:18.6@sha256:899d3ed5...` (pinned by digest because CNPG re-pushes the floating `18.6` tag and the Zot cache never rechecks a cached tag; current latest major, confirmed against the real
+  it. Image: `ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie@sha256:c7747d8d...` (pinned by digest because CNPG re-pushes the floating `18.6` tag and the Zot cache never rechecks a cached tag; current latest major, confirmed against the real
   registry, not assumed).
 - **Storage mode** (`apps/postgres/cluster/kustomization.yaml`): pick exactly one component, one line:
   - `components/longhorn` (default) - volumes use a dedicated `longhorn-postgres` StorageClass (2 Longhorn

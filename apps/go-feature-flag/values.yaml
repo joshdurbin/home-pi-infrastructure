@@ -44,7 +44,7 @@ controllers:
       main:
         image:
           repository: gofeatureflag/go-feature-flag
-          tag: v1.56.0
+          tag: v1.56.1
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true

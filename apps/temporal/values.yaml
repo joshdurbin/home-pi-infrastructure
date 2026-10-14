@@ -4,7 +4,7 @@
 server:
   image:
     repository: temporalio/server
-    tag: 1.32.0
+    tag: 1.32.1
   # No phone-home. The frontend's version checker (service/frontend/version_checker.go)
   # periodically calls Temporal's version service with the product, server version, CPU
   # arch, OS, database type, the cluster ID and which client SDKs are connecting; any
@@ -113,7 +113,7 @@ web:
   enabled: true
   image:
     repository: temporalio/ui
-    tag: 2.54.1
+    tag: 2.56.0
   resources:
     requests:
       cpu: 50m
@@ -127,3 +127,8 @@ schema:
   # CD's own equivalent hook/wave handling - no reason to disable this for
   # Flux/Rancher/Terraform-style workarounds, which don't apply here.
   useHelmHooks: true
+
+# Admin tools (also the schema Job's image): same version as the server.
+admintools:
+  image:
+    tag: "1.32.1"

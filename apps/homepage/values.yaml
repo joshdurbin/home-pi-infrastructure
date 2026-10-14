@@ -19,7 +19,7 @@ controllers:
       main:
         image:
           repository: ghcr.io/gethomepage/homepage
-          tag: v2.4.0
+          tag: v2.5.0
         envFrom:
           # HOMEPAGE_VAR_TAILNET_DOMAIN (substituted into services.yaml
           # below via Homepage's own {{HOMEPAGE_VAR_*}} syntax, confirmed
