@@ -5,6 +5,10 @@
 # Agents are uninstalled before the servers so they don't churn against a
 # control plane that is going away. After this, `make deploy` bootstraps a
 # fresh cluster.
+#
+# Also clears the per-node leftovers that k3s's uninstall scripts and Longhorn leave
+# behind (stale iSCSI initiator records for old volumes, Vector's checkpoint state).
+# Tailscale state is deliberately kept: it is the node's tailnet identity.
 - name: Confirm cluster destruction
   hosts: localhost
   gather_facts: false
@@ -56,4 +60,44 @@
     - name: Remove the Longhorn data directory
       ansible.builtin.file:
         path: /var/lib/longhorn
+        state: absent
+
+# Neither the k3s uninstall scripts nor deleting /var/lib/longhorn touch these.
+# - /var/lib/iscsi: the initiator's records of every Longhorn volume this node ever
+#   attached (iqn.2019-10.io.longhorn:pvc-...). The rebuilt cluster has new volume IDs,
+#   so they are dead weight. Logout of any session still open first, then drop the records.
+# - /var/lib/vector: Vector's DaemonSet hostPath data dir (file and journal checkpoints
+#   for pods that no longer exist); Vector recreates it.
+- name: Remove per-node leftovers (stale iSCSI records, Vector checkpoints)
+  hosts: k3s_cluster
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Log out of any remaining iSCSI sessions
+      ansible.builtin.command: iscsiadm -m node --logout
+      register: destroy_iscsi_logout
+      # 21 = no active sessions, 255 = no records: both mean there is nothing to log out of
+      failed_when: destroy_iscsi_logout.rc not in [0, 21, 255]
+      changed_when: destroy_iscsi_logout.rc == 0
+
+    - name: Find the stale iSCSI records
+      ansible.builtin.find:
+        paths:
+          - /var/lib/iscsi/nodes
+          - /var/lib/iscsi/send_targets
+        file_type: any
+        patterns: ['*']
+      register: destroy_iscsi_records
+
+    - name: Remove the stale iSCSI records
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ destroy_iscsi_records.files }}"
+      loop_control:
+        label: "{{ item.path | basename }}"
+
+    - name: Remove Vector's checkpoint data
+      ansible.builtin.file:
+        path: /var/lib/vector
         state: absent
