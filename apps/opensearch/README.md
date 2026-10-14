@@ -101,15 +101,27 @@ and this cluster already runs it). Sourced from Vector's own chart (`https://hel
 and host logs) at `https://opensearch:9200` (TLS + basic auth, see above), `bulk.index` for index naming. Memory
 and I/O are bounded on the Pi 4Bs (see the comments in `values-vector.yaml`).
 
+## Consumers and their users
+
+Nothing but the operator and Dashboards uses the admin credentials. Each consumer has its own user, role and
+binding in `manifests/users.yaml`, with a password Secret seeded by Ansible (derived from `temporal_db_password`,
+see `group_vars/all/cluster_secrets.yaml`; run `make deploy-secrets` after changing it):
+
+| User | Role | Can do |
+|---|---|---|
+| `vector` | `vector-logs-writer` | create/write `logs-*` only |
+| `temporal` | `temporal-visibility` | everything on `temporal_visibility*`, plus index-template calls |
+
+To add a consumer: a Secret (here, plus a copy in its namespace), a user/role/binding triple, and an egress rule to
+`opensearch:9200` if its namespace has a NetworkPolicy.
+
 ## Temporal integration
 
-Not wired up yet (it is the reason the cluster is shared) - Temporal's visibility store (`apps/temporal/values.yaml`) uses Postgres SQL today, not
-Elasticsearch/OpenSearch, and nothing here changes that. Compatibility exists if ever wanted later:
-Temporal officially supports OpenSearch 2+ as of Server v1.32.0 (this cluster's version) via the same
-`datastores.visibility.elasticsearch` config block used for Elasticsearch - see the commented-out
-example in the `temporal` chart's own `values.yaml`. Would trade Postgres-only simplicity for Advanced
-Visibility (custom search attributes on workflow queries), at the cost of Temporal depending on this
-OpenSearch cluster's uptime and credentials too. A separate decision, not part of this change.
+Temporal's visibility store is OpenSearch (`apps/temporal/values.yaml`, `datastores.visibility.elasticsearch`,
+`version: v7`, index `temporal_visibility_v1`, TLS without host verification because the cert is self-signed).
+Its schema Job creates the index template and index. The old SQL visibility database (`temporal_visibility` in
+Postgres) is no longer read; **workflow history is unaffected, but visibility records (workflow lists) from before the
+switch are not copied**. Temporal now depends on this cluster's uptime for list/search calls.
 
 ## Resource footprint
 
