@@ -14,6 +14,7 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
 | `rpi-5-2` | 192.168.1.41 | Pi 5 | control plane | `pi5=true` |
 | `rpi-5-3` | 192.168.1.28 | Pi 5 | control plane | `pi5=true` |
 | `rpi-5-4` | 192.168.1.83 | Pi 5 | worker | `pi5=true` |
+| `rpi-5-5` | 192.168.1.95 | Pi 5 | worker | `pi5=true`, `storage=true` (Longhorn replicas, 256GiB) |
 | `rpi-4b-1` | 192.168.1.13 | Pi 4B | worker | |
 | `rpi-4b-2` | 192.168.1.14 | Pi 4B | worker | |
 | `rpi-4b-3` | 192.168.1.18 | Pi 4B | worker | |
