@@ -1,0 +1,66 @@
+---
+# Rolling k3s upgrade to k3s_version (group_vars/k3s_cluster/k3s.yaml). Run via
+# `make upgrade-k3s`.
+#
+# Servers first, then agents, each ONE node at a time (serial: 1), stopping the whole run if
+# a node does not come back Ready on the new version or Longhorn does not become whole
+# again (any_errors_fatal). Nodes already on the target are skipped, so it is safe to re-run
+# after a failure. A pre-upgrade etcd snapshot is taken first.
+#
+# Bump k3s_version, then:  make upgrade-k3s
+# (skip the prompt with:   ansible-playbook upgrade-k3s.yml -e k3s_upgrade_confirm=yes ...)
+
+- name: Confirm
+  hosts: localhost
+  gather_facts: false
+  vars_prompt:
+    - name: k3s_upgrade_confirm
+      prompt: "Rolling-upgrade every k3s node one at a time to the version in group_vars/k3s_cluster/k3s.yaml. Type 'yes' to continue"
+      private: false
+  tasks:
+    - name: Abort unless confirmed
+      ansible.builtin.assert:
+        that: k3s_upgrade_confirm == 'yes'
+        fail_msg: Not confirmed, nothing was changed.
+
+- name: Pre-flight checks and etcd snapshot
+  hosts: server[0]
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check the cluster and take a snapshot
+      ansible.builtin.include_role:
+        name: k3s_rolling_upgrade
+        tasks_from: preflight.yml
+
+- name: Upgrade the servers, one at a time
+  hosts: server
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - name: Upgrade one node
+      ansible.builtin.include_role:
+        name: k3s_rolling_upgrade
+        tasks_from: node.yml
+
+- name: Upgrade the agents, one at a time
+  hosts: agent
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - name: Upgrade one node
+      ansible.builtin.include_role:
+        name: k3s_rolling_upgrade
+        tasks_from: node.yml
+
+- name: Summary
+  hosts: server[0]
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Report the result
+      ansible.builtin.include_role:
+        name: k3s_rolling_upgrade
+        tasks_from: postflight.yml

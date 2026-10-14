@@ -1,0 +1,64 @@
+---
+# Runs once, on the first server, before any node is touched. Refuses to start a rolling
+# upgrade on a cluster that is not healthy: an upgrade restarts k3s on one node at a time,
+# so it needs every OTHER node (and every volume replica) to be there.
+
+- name: Read the nodes
+  ansible.builtin.command: k3s kubectl get nodes -o json
+  register: k3s_rolling_upgrade_nodes_raw
+  changed_when: false
+  check_mode: false
+
+- name: Work out which nodes are not Ready or are cordoned
+  ansible.builtin.set_fact:
+    k3s_rolling_upgrade_nodes: "{{ (k3s_rolling_upgrade_nodes_raw.stdout | from_json)['items'] }}"
+
+- name: Every node must be Ready and schedulable
+  ansible.builtin.assert:
+    that:
+      - >-
+        (k3s_rolling_upgrade_nodes
+         | rejectattr('spec.unschedulable', 'defined')
+         | selectattr('status.conditions', 'defined')
+         | list | length) == (k3s_rolling_upgrade_nodes | length)
+      - >-
+        (k3s_rolling_upgrade_nodes
+         | map(attribute='status.conditions')
+         | map('selectattr', 'type', 'equalto', 'Ready')
+         | map('first') | map(attribute='status')
+         | select('equalto', 'True') | list | length) == (k3s_rolling_upgrade_nodes | length)
+    fail_msg: >-
+      A node is NotReady or cordoned. Fix that first (kubectl get nodes): this upgrade needs
+      every other node up while one restarts.
+
+- name: Report current versions
+  ansible.builtin.debug:
+    msg: >-
+      {{ k3s_rolling_upgrade_nodes
+         | map(attribute='metadata.name')
+         | zip(k3s_rolling_upgrade_nodes | map(attribute='status.nodeInfo.kubeletVersion'))
+         | map('join', ' ') | list }}
+      -> target {{ k3s_version }}
+
+- name: Work out which nodes still need the upgrade
+  ansible.builtin.set_fact:
+    k3s_rolling_upgrade_pending: >-
+      {{ k3s_rolling_upgrade_nodes
+         | rejectattr('status.nodeInfo.kubeletVersion', 'equalto', k3s_version)
+         | map(attribute='metadata.name') | list }}
+
+- name: Nothing to do
+  ansible.builtin.debug:
+    msg: Every node already runs {{ k3s_version }}.
+  when: k3s_rolling_upgrade_pending | length == 0
+
+- name: Longhorn must be healthy before a node goes down
+  ansible.builtin.include_tasks: longhorn_healthy.yml
+  when: k3s_rolling_upgrade_pending | length > 0
+
+# A restore point, taken on the first server. k3s also snapshots every 12 hours on its
+# own; this one is labelled with the version it precedes.
+- name: Take an etcd snapshot
+  ansible.builtin.command: "k3s etcd-snapshot save --name {{ k3s_rolling_upgrade_snapshot_name }}"
+  when: k3s_rolling_upgrade_pending | length > 0
+  changed_when: true

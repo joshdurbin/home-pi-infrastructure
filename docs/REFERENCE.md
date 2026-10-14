@@ -2120,8 +2120,13 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass --limit pi4
 ### K3S Management Playbooks
 
 ```bash
-# Upgrade k3s to newer version
-ansible-playbook k3s-ansible/playbooks/upgrade.yml -i inventory.dist --ask-vault-pass
+# Upgrade k3s: bump k3s_version in group_vars/k3s_cluster/k3s.yaml, then
+make upgrade-k3s    # = ansible-playbook upgrade-k3s.yml (roles/k3s_rolling_upgrade)
+# Checks the cluster is healthy, takes an etcd snapshot, then upgrades the servers and the
+# agents ONE node at a time, waiting for each to be Ready on the new version and for Longhorn
+# to be healthy again; stops if a node doesn't come back; skips nodes already on the target
+# (safe to re-run). Don't use k3s-ansible/playbooks/upgrade.yml directly: it restarts every
+# agent at once with no health checks.
 
 # Reset k3s cluster (removes all k3s installations)
 ansible-playbook k3s-ansible/playbooks/reset.yml -i inventory.dist --ask-vault-pass

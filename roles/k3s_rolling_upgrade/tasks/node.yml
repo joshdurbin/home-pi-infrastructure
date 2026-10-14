@@ -1,0 +1,46 @@
+---
+# One node. The play that includes this runs `serial: 1` with any_errors_fatal, so a node
+# that does not come back stops the whole upgrade with the rest untouched.
+#
+# The upgrade itself is the k3s-ansible role k3s_upgrade (stops k3s, runs the install
+# script for the new version with the same arguments the install used, restarts it).
+# Pods keep running through it: containerd's shims outlive the k3s service. This role adds
+# what that one lacks: skipping nodes that are already current, waiting for Ready on the
+# new version, and waiting for Longhorn to be whole again before the next node.
+
+- name: Read the installed k3s version
+  ansible.builtin.command: k3s --version
+  register: k3s_rolling_upgrade_installed
+  changed_when: false
+  check_mode: false
+
+- name: Skip a node that is already on the target
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }} already runs {{ k3s_version }}"
+  when: k3s_version in k3s_rolling_upgrade_installed.stdout_lines[0]
+
+- name: Upgrade this node
+  when: k3s_version not in k3s_rolling_upgrade_installed.stdout_lines[0]
+  block:
+    - name: Run the k3s upgrade
+      ansible.builtin.include_role:
+        name: k3s_upgrade
+
+    # Asked of a DIFFERENT server: this node's own API may still be restarting.
+    - name: Wait for the node to be Ready on the new version
+      ansible.builtin.command: >-
+        k3s kubectl get node {{ inventory_hostname }}
+        -o jsonpath='{.status.conditions[?(@.type=="Ready")].status} {.status.nodeInfo.kubeletVersion}'
+      delegate_to: "{{ groups['server'] | difference([inventory_hostname]) | first }}"
+      register: k3s_rolling_upgrade_ready
+      changed_when: false
+      check_mode: false
+      retries: "{{ k3s_rolling_upgrade_ready_retries }}"
+      delay: "{{ k3s_rolling_upgrade_ready_delay }}"
+      until: k3s_rolling_upgrade_ready.stdout == ('True ' ~ k3s_version)
+
+    - name: Wait for Longhorn to be whole again
+      ansible.builtin.include_tasks: longhorn_healthy.yml
+      args:
+        apply:
+          delegate_to: "{{ groups['server'] | difference([inventory_hostname]) | first }}"

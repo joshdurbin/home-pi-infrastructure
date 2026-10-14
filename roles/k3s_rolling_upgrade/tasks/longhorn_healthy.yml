@@ -1,0 +1,15 @@
+---
+# Waits until every ATTACHED Longhorn volume reports robustness "healthy" (all replicas
+# present). Detached volumes report "unknown" whatever their state, so they are ignored.
+# Run on a server; asks the API through `k3s kubectl`.
+- name: Wait for the attached Longhorn volumes to be healthy
+  ansible.builtin.command: k3s kubectl -n longhorn get volumes.longhorn.io -o json
+  register: k3s_rolling_upgrade_volumes
+  changed_when: false
+  check_mode: false
+  retries: "{{ k3s_rolling_upgrade_longhorn_retries }}"
+  delay: "{{ k3s_rolling_upgrade_longhorn_delay }}"
+  until: >-
+    ((k3s_rolling_upgrade_volumes.stdout | from_json)['items']
+     | selectattr('status.state', 'equalto', 'attached')
+     | rejectattr('status.robustness', 'equalto', 'healthy') | list | length) == 0

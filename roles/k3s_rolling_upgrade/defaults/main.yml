@@ -1,0 +1,19 @@
+---
+# Rolling k3s upgrade (upgrade-k3s.yml, `make upgrade-k3s`). The target version is the
+# same k3s_version the rest of the repo uses (group_vars/k3s_cluster/k3s.yaml): bump it
+# there, then run the target.
+
+# After a node's k3s restarts: how long to wait for it to report Ready on the new version.
+# retries x delay seconds.
+k3s_rolling_upgrade_ready_retries: 60
+k3s_rolling_upgrade_ready_delay: 10
+
+# Then how long to wait for every attached Longhorn volume to be healthy again (a storage
+# node coming back rebuilds the replicas it missed). Only attached volumes count: detached
+# ones always report robustness "unknown".
+k3s_rolling_upgrade_longhorn_retries: 120
+k3s_rolling_upgrade_longhorn_delay: 10
+
+# The etcd snapshot taken before anything is touched, kept on the first server in
+# /var/lib/rancher/k3s/server/db/snapshots/.
+k3s_rolling_upgrade_snapshot_name: "pre-{{ k3s_version | regex_replace('[^A-Za-z0-9.]', '-') }}"

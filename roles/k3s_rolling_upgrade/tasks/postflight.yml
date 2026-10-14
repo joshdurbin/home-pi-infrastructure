@@ -1,0 +1,24 @@
+---
+# Once, on a server: what the cluster ended up on.
+- name: Read the node versions
+  ansible.builtin.command: k3s kubectl get nodes -o wide --no-headers
+  register: k3s_rolling_upgrade_final
+  changed_when: false
+  check_mode: false
+
+- name: Read the images k3s bundles
+  ansible.builtin.command: >-
+    k3s kubectl -n kube-system get deploy traefik coredns metrics-server
+    -o jsonpath='{range .items[*]}{.metadata.name}={.spec.template.spec.containers[0].image}{"\n"}{end}'
+  register: k3s_rolling_upgrade_images
+  changed_when: false
+  check_mode: false
+  failed_when: false
+
+- name: Summary
+  ansible.builtin.debug:
+    msg: |-
+      {{ k3s_rolling_upgrade_final.stdout_lines }}
+      {{ k3s_rolling_upgrade_images.stdout_lines }}
+      Check that the CoreDNS sinkhole still answers (apps/k3s-addons): from any pod,
+      `nslookup check.trivy.dev` should return NXDOMAIN.
