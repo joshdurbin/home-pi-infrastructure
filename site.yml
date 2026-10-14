@@ -32,6 +32,14 @@
       tags: [k3s]
   become: yes
 
+# The same secrets-encryption key on every server, in place BEFORE k3s first starts (see the role).
+- name: Seed the secrets-encryption key
+  hosts: server
+  roles:
+    - role: k3s_secrets_seed
+      tags: [k3s]
+  become: yes
+
 - name: K3S server setup
   hosts: server
   roles:

@@ -1,0 +1,66 @@
+---
+# Gives every k3s server the SAME secrets-encryption key before k3s ever starts on it.
+#
+# Why: with `secrets-encryption: true` (group_vars/server/main.yaml) each server otherwise generates
+# its own key the first time it starts without one, and Secrets written by one server cannot be
+# read by the others ("invalid padding on input"). That is how enabling the flag on a running
+# cluster broke it. Seeding the files removes the question of how k3s shares its bootstrap data.
+#
+# The key is derived from the cluster join token (already a vault secret), so no new secret is
+# needed and a rebuild produces the same key. k3s uses these files as they are when they exist:
+# encryption-config.json is the EncryptionConfiguration it hands to the apiserver, and
+# encryption-state.json holds "start-<sha256 of that file>", its rotation state. `force: false`: a
+# server that already has them (any running cluster) is left alone, so this never changes a live
+# cluster's key; rotate those with `k3s secrets-encrypt rotate-keys`.
+- name: Is secrets encryption turned on?
+  ansible.builtin.set_fact:
+    k3s_secrets_seed_enabled: "{{ 'secrets-encryption: true' in (server_config_yaml | default('')) }}"
+
+- name: Seed the encryption config
+  when: k3s_secrets_seed_enabled | bool
+  block:
+    # Both 0700, as k3s itself makes them (k3s does not tighten a directory that already exists).
+    - name: Make the server and credentials directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      loop:
+        - /var/lib/rancher/k3s/server
+        - /var/lib/rancher/k3s/server/cred
+
+    # 32 ASCII characters of the derived hash = a 32-byte AES-256 key; the config wants it base64.
+    - name: Write the encryption config
+      ansible.builtin.copy:
+        dest: /var/lib/rancher/k3s/server/cred/encryption-config.json
+        owner: root
+        group: root
+        mode: "0600"
+        force: false
+        content: >-
+          {{ {'kind': 'EncryptionConfiguration',
+              'apiVersion': 'apiserver.config.k8s.io/v1',
+              'resources': [{'resources': ['secrets'],
+                             'providers': [{'aescbc': {'keys': [{'name': 'aescbckey',
+                                                                 'secret': ((token ~ ':k3s-secrets-encryption') | hash('sha256'))[:32] | b64encode}]}},
+                                           {'identity': {}}]}]}
+             | to_json(separators=(',', ':')) }}
+      no_log: true
+      register: k3s_secrets_seed_config
+
+    - name: Hash the file k3s will read
+      ansible.builtin.stat:
+        path: /var/lib/rancher/k3s/server/cred/encryption-config.json
+        checksum_algorithm: sha256
+      register: k3s_secrets_seed_stat
+
+    - name: Write the rotation state
+      ansible.builtin.copy:
+        dest: /var/lib/rancher/k3s/server/cred/encryption-state.json
+        owner: root
+        group: root
+        mode: "0600"
+        force: false
+        content: "start-{{ k3s_secrets_seed_stat.stat.checksum }}"
