@@ -65,14 +65,14 @@ extraVolumeMounts:
     mountPath: /run/log/journal
     readOnly: true
 
-# Exposes the opensearch-admin-credentials Secret's username/password keys as
+# Exposes the opensearch-vector-credentials Secret's username/password keys as
 # same-named env vars (group_vars/all/cluster_secrets.yaml seeds this Secret;
-# manifests/cluster.yaml's security.config.adminCredentialsSecret references
-# the same one) - customConfig below reads them via Vector's native ${VAR}
+# manifests/users.yaml makes the matching write-only OpenSearch user, so Vector
+# does not hold the admin password) - customConfig below reads them via Vector's native ${VAR}
 # environment variable interpolation, not committed inline.
 envFrom:
   - secretRef:
-      name: opensearch-admin-credentials
+      name: opensearch-vector-credentials
 # ${VAR} interpolation is disabled by default in this Vector version - a
 # security hardening change, confirmed via vector.dev's own environment
 # variables reference doc. Without this, Vector silently sends the literal
@@ -136,7 +136,7 @@ customConfig:
     # (https://github.com/vectordotdev/vector/issues/23342). tls.verify_certificate:
     # false trusts the operator's self-signed cert (security.tls.http.generate:
     # true in cluster.yaml) - nothing here talks to a real CA-issued cert.
-    # auth reads the same admin credentials Dashboards uses (envFrom above).
+    # auth reads the vector user (write-only on logs-*) from the envFrom above.
     opensearch:
       type: elasticsearch
       inputs: [parser]
