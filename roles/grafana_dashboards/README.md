@@ -95,7 +95,7 @@ error as a skip rather than a failure, so this is a safety net, not a reason to 
 ## Usage
 
 ```bash
-make deploy-dashboards   # same as: ansible-playbook site.yml -i inventory.dist --tags dashboards
+make deploy-dashboards   # same as: ansible-playbook site.yml -i inventory.dist --ask-vault-pass --tags dashboards
 ```
 
 Runs from the Ansible control host (`hosts: localhost` — no Pi/kubectl access needed, this is pure HTTP),

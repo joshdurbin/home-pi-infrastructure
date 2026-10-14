@@ -87,7 +87,7 @@ until the kernel is booted with it; with it, node-exporter's `pressure` collecto
 `_io_*` and `_memory_*`. It only edits the line when `psi=` is absent, keeps the original at
 `/var/backups/cmdline.txt.pre-ansible`, and fails the run if the file is not left as one line containing `psi=1` once (a
 broken `cmdline.txt` stops a node booting). Takes effect after a reboot; nothing here reboots.
-Run it on its own with `ansible-playbook site.yml -i inventory.dist --tags psi [--limit <node>]`.
+Run it on its own with `ansible-playbook site.yml -i inventory.dist --ask-vault-pass --tags psi [--limit <node>]`.
 
 ## Overclocking
 

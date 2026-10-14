@@ -11,7 +11,7 @@
 # After changing group_vars/server/main.yaml (k3s server settings) instead:  make reconfigure-k3s
 # which also restarts the servers one at a time on the same version and, if secrets-encryption is
 # on, re-encrypts the stored Secrets.
-# (skip the prompt with:   ansible-playbook upgrade-k3s.yml -e k3s_upgrade_confirm=yes ...)
+# (skip the prompt with:   ansible-playbook upgrade-k3s.yml -i inventory.dist --ask-vault-pass -e k3s_upgrade_confirm=yes ...)
 
 - name: Confirm
   hosts: localhost

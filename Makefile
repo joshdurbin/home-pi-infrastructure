@@ -91,23 +91,23 @@ build-proxysql-operator:
 	./scripts/build-proxysql-operator.sh
 
 destroy-cluster:
-	ansible-playbook destroy.yml -i $(INVENTORY)
+	ansible-playbook destroy.yml -i $(INVENTORY) $(VAULT_PASS)
 
 verify:
 	@echo "Verifying cluster health..."
-	ansible $(FIRST_SERVER) -i $(INVENTORY) -m command -a "sudo kubectl get nodes && echo '---' && sudo kubectl get pods -A | grep -E 'coredns|metrics-server|local-path' && echo '---' && sudo kubectl get applications -n argocd"
+	ansible $(FIRST_SERVER) -i $(INVENTORY) $(VAULT_PASS) -m command -a "sudo kubectl get nodes && echo '---' && sudo kubectl get pods -A | grep -E 'coredns|metrics-server|local-path' && echo '---' && sudo kubectl get applications -n argocd"
 
 status:
 	@echo "Cluster Status:"
-	ansible $(FIRST_SERVER) -i $(INVENTORY) -m command -a "sudo kubectl get nodes && echo '---' && sudo kubectl get applications -n argocd"
+	ansible $(FIRST_SERVER) -i $(INVENTORY) $(VAULT_PASS) -m command -a "sudo kubectl get nodes && echo '---' && sudo kubectl get applications -n argocd"
 
 logs:
 	@echo "Tailing k3s logs from first server..."
-	ansible $(FIRST_SERVER) -i $(INVENTORY) -m command -a "sudo journalctl -u k3s -f"
+	ansible $(FIRST_SERVER) -i $(INVENTORY) $(VAULT_PASS) -m command -a "sudo journalctl -u k3s -f"
 
 syntax-check:
 	@echo "Checking playbook syntax..."
-	ansible-playbook site.yml -i $(INVENTORY) --syntax-check
+	ansible-playbook site.yml -i $(INVENTORY) $(VAULT_PASS) --syntax-check
 	@echo "✓ Syntax valid"
 
 lint:

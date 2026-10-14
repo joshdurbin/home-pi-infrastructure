@@ -505,7 +505,7 @@ also removes it from flow logs is not documented clearly, so if flow logging is 
 kubectl -n longhorn patch settings.longhorn.io upgrade-checker --type merge -p '{"value":"false"}'
 # tailscaled on each node: run the Ansible role, one node at a time, against the LAN addresses
 # (restarting tailscaled drops the tailnet connection, which would cut a tailnet-addressed SSH session)
-make deploy-tailscale   # one node at a time; --limit <node> via: ansible-playbook site.yml -i inventory.dist --tags tailscale --limit <node>
+make deploy-tailscale   # one node at a time; --limit <node> via: ansible-playbook site.yml -i inventory.dist --ask-vault-pass --tags tailscale --limit <node>
 ```
 
 **Verifying.** Grafana's effective settings: `kubectl -n monitoring exec <grafana-pod> -c grafana -- cat /etc/grafana/grafana.ini | grep -E 'reporting_enabled|check_for|news_feed'`
@@ -2119,7 +2119,7 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass --limit pi4
 
 ```bash
 # Upgrade k3s: bump k3s_version in group_vars/k3s_cluster/k3s.yaml, then
-make upgrade-k3s    # = ansible-playbook upgrade-k3s.yml (roles/k3s_rolling_upgrade)
+make upgrade-k3s    # = ansible-playbook upgrade-k3s.yml -i inventory.dist --ask-vault-pass (roles/k3s_rolling_upgrade)
 # Server settings (group_vars/server/main.yaml: disable traefik, secrets encryption, control-plane
 # metrics): after changing them, `make reconfigure-k3s` restarts the servers one at a time and, with
 # secrets-encryption on, re-encrypts the Secrets already stored in etcd.
