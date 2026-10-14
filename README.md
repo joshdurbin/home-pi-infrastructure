@@ -10,9 +10,9 @@ For the deeper "why" behind any of this — architecture notes, per-app config, 
 
 | Node | IP | Board | Role | Notes |
 |---|---|---|---|---|
-| `rpi-5-1` | 192.168.1.30 | Pi 5 | control plane (etcd + API) | `pi5=true` |
-| `rpi-5-2` | 192.168.1.41 | Pi 5 | control plane | `pi5=true`, `storage=true` (Longhorn replicas) |
-| `rpi-5-3` | 192.168.1.28 | Pi 5 | control plane | `pi5=true`, `storage=true` (Longhorn replicas) |
+| `rpi-5-1` | 192.168.1.30 | Pi 5 | control plane (etcd + API) | `pi5=true`, `storage=true` (Longhorn replicas, 256GiB) |
+| `rpi-5-2` | 192.168.1.41 | Pi 5 | control plane | `pi5=true` |
+| `rpi-5-3` | 192.168.1.28 | Pi 5 | control plane | `pi5=true` |
 | `rpi-5-4` | 192.168.1.83 | Pi 5 | worker | `pi5=true` |
 | `rpi-4b-1` | 192.168.1.13 | Pi 4B | worker | |
 | `rpi-4b-2` | 192.168.1.14 | Pi 4B | worker | |
@@ -25,9 +25,9 @@ Pi 5s. The IPs and groups are defined in `inventory.dist`.
 ```mermaid
 flowchart TB
   subgraph cp["Control plane - k3s server (etcd quorum of 3)"]
-    n1["rpi-5-1<br/>Pi 5"]
-    n2["rpi-5-2<br/>Pi 5 - Longhorn"]
-    n3["rpi-5-3<br/>Pi 5 - Longhorn"]
+    n1["rpi-5-1<br/>Pi 5 - Longhorn"]
+    n2["rpi-5-2<br/>Pi 5"]
+    n3["rpi-5-3<br/>Pi 5"]
   end
   subgraph wk["Workers - k3s agent"]
     n4["rpi-5-4<br/>Pi 5"]

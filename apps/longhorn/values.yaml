@@ -19,7 +19,7 @@ defaultSettings:
   logLevel: Warn
   nodeDownPodDeletionPolicy: delete-both-statefulset-and-deployment-pod
   # Longhorn's own default. A drain is blocked only if the node holds the
-  # LAST healthy replica of some volume - i.e. you can take rpi-5-2 or rpi-5-3
+  # LAST healthy replica of some volume - i.e. you can take rpi-5-1 or rpi-5-5
   # out one at a time (every volume keeps a second healthy copy), but not both,
   # which is exactly the protection wanted. The previous value,
   # block-for-eviction, made every instance-manager's PodDisruptionBudget

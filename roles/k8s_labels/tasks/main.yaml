@@ -39,3 +39,26 @@
     state: patched
   loop: "{{ groups['all'] }}"
   run_once: true
+
+# Longhorn disk size. With `createDefaultDiskLabeledNodes: true` and the node label
+# node.longhorn.io/create-default-disk=config, Longhorn creates the node's disk from this
+# annotation instead of using the whole filesystem. storageReserved is the part of the
+# filesystem Longhorn must leave alone, so (filesystem - reserved) is what it may schedule.
+# Only read when the node first registers: a cluster rebuild applies it, a later edit here
+# does not move an existing disk.
+- name: Apply the Longhorn disk config annotation
+  when: hostvars[item].longhorn_disk_reserved_gib is defined
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: v1
+      kind: Node
+      metadata:
+        name: "{{ item }}"
+        annotations:
+          node.longhorn.io/default-disks-config: >-
+            {{ [{'path': '/var/lib/longhorn', 'allowScheduling': true,
+                 'storageReserved': hostvars[item].longhorn_disk_reserved_gib * 1073741824}] | to_json }}
+    kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
+    state: patched
+  loop: "{{ groups['all'] }}"
+  run_once: true

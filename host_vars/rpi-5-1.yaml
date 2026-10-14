@@ -1,5 +1,10 @@
 ---
 k8s_labels:
+  storage: "true"
+  # "config" (not "true"): Longhorn builds this node's disk from the
+  # node.longhorn.io/default-disks-config annotation (roles/k8s_labels) instead of
+  # taking the whole filesystem - see longhorn_disk_reserved_gib below.
+  "node.longhorn.io/create-default-disk": "config"
   # Pi 5's Cortex-A76 is ARMv8.2-A with crypto extensions; Pi 4B's Cortex-A72
   # is not - confirmed live: apps/opensearch's OpenSearch/Dashboards pods
   # (Amazon Linux base image) crash-looped with "Fatal glibc error: This
@@ -9,3 +14,8 @@ k8s_labels:
   # Not opensearch-specific - any future workload with the same base image
   # requirement should use this label too.
   pi5: "true"
+# The root filesystem is ~470GiB; Longhorn gets 256GiB of it. This much is held back
+# (storageReserved), so schedulable = filesystem - reserved = 256GiB. Read when the node
+# first registers with Longhorn; changing it later means editing the Longhorn node
+# (`kubectl -n longhorn edit nodes.longhorn.io <node>`), not just this file.
+longhorn_disk_reserved_gib: 214

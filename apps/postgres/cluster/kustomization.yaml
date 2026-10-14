@@ -7,7 +7,7 @@
 #       volumes attach over the network from any node, so the two instances
 #       can run on ANY node (the required podAntiAffinity still keeps them on
 #       different nodes) and reschedule freely. Replica data stays on the
-#       storage=true nodes (rpi-5-2/rpi-5-3) like every other Longhorn volume.
+#       storage=true nodes (rpi-5-1/rpi-5-5) like every other Longhorn volume.
 #       Costs: network-attached I/O instead of local NVMe/SSD, and a Longhorn
 #       volume replica count on top of Postgres's own replication (see the
 #       StorageClass's numberOfReplicas knob).
