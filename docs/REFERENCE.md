@@ -1375,9 +1375,9 @@ Provider keys live in Bifrost, not here; there is no Ollama and nothing credenti
 
 - **Chart**: the official `open-webui/open-webui` chart (`helm.openwebui.com`) - unlike Homepage/SearXNG/
   WhoDB, this project does publish and maintain its own chart, so no `bjw-s-labs/app-template`
-  fallback was needed. Its `image.tag` is pinned explicitly (`v0.11.4`, the actual latest tagged GitHub
-  release) rather than trusting the chart's own default, which resolves to its `appVersion` - literally
-  `dev`, since this chart has no separate stable release line.
+  fallback was needed. Chart 17.0.0 is the first stable release (it used to publish only per-commit `-dev`
+  versions); its `image.tag` is still pinned explicitly (`v0.12.0`) rather than trusting the chart's `appVersion`.
+  Moving from 0.11.4 to 0.12.0 was done on a wiped database (the old one was dropped, not migrated).
 - **Bundled subcharts off**: `ollama.enabled`/`pipelines.enabled` both default `true` in this chart (they
   auto-install a local Ollama and a plugin middleware) - turned off here to match the no-backend scope
   above. `websocket.manager` left as the in-memory default (`redis.enabled: false`) - only needed for

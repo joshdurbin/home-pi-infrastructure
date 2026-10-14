@@ -25,16 +25,11 @@ spec:
         factor: 2
         maxDuration: 3m
   sources:
-    # Official chart (helm.openwebui.com) - unlike Homepage/SearXNG/
-    # RedisInsight, open-webui does publish and maintain its own chart
-    # (github.com/open-webui/helm-charts), so no app-template fallback
-    # needed here. Its own versioning is continuous/dev-tagged per commit
-    # (no separate "stable" release line) - targetRevision pinned to the
-    # latest published chart version as of this writing, re-pin deliberately
-    # on future bumps rather than tracking a floating tag.
+    # Official chart (helm.openwebui.com), now on stable releases (17.x; it used to publish only
+    # per-commit -dev versions). Pinned deliberately: re-pin on bumps, don't track a floating tag.
     - repoURL: https://helm.openwebui.com/
       chart: open-webui
-      targetRevision: 16.6.1-dev.380.1
+      targetRevision: 17.0.0
       helm:
         releaseName: open-webui
         valueFiles:
