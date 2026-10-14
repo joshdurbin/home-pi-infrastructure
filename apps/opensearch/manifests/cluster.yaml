@@ -91,15 +91,10 @@ spec:
       enable: false
     opensearchCredentialsSecret:
       name: opensearch-admin-credentials
-    # opensearch_dashboards.yml. No phone-home: Dashboards ships a telemetry plugin (usage
-    # statistics, opt-in prompt) and a newsfeed that fetches from opensearch.org. Both off, and the
-    # opt-in switch hidden so nobody turns it on from the UI (docs/REFERENCE.md "Telemetry and
-    # phone-home").
-    additionalConfig:
-      telemetry.enabled: 'false'
-      telemetry.optIn: 'false'
-      telemetry.allowChangingOptInStatus: 'false'
-      newsfeed.enabled: 'false'
+    # No telemetry settings here on purpose: OpenSearch Dashboards 3.8 rejects
+    # telemetry.* and newsfeed.* as unknown configuration keys (confirmed live: all pods
+    # crash-looped with "Unknown configuration key(s)"), i.e. this build has neither the
+    # telemetry plugin nor the newsfeed, so there is nothing to switch off.
     # Same Amazon-Linux-based image/CPU requirement as the OpenSearch nodes
     # themselves - confirmed live: crashed with the same "Fatal glibc error"
     # on an rpi-4b before this was added (one of two Dashboards replicas

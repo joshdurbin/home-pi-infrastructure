@@ -484,8 +484,8 @@ Checked and found to have nothing to opt out of: Argo CD (Google Analytics is of
 Bifrost (its "telemetry" plugin is the local Prometheus endpoint), Zot, CloudNativePG and PgBouncer, the Redis operator and caches,
 the descheduler, Vector, VictoriaMetrics/VictoriaLogs/vlagent/vmalert, kube-state-metrics and node-exporter, Blocky and SearXNG
 (which only make the requests they exist for), shairport-sync, and k3s's CoreDNS, metrics-server and local-path provisioner.
-The disabled ProxySQL config has not been audited; check it before bringing it back. OpenSearch Dashboards has its own
-telemetry and newsfeed settings, switched off in `apps/opensearch/manifests/cluster.yaml` (`dashboards.additionalConfig`).
+The disabled ProxySQL config has not been audited; check it before bringing it back. OpenSearch Dashboards 3.8 has no
+telemetry or newsfeed settings at all (it rejects `telemetry.*` / `newsfeed.*` as unknown keys), so there is nothing to opt out of.
 
 **DNS backstop.** `apps/k3s-addons/manifests/coredns-telemetry-sinkhole.yaml` makes four names that exist only for telemetry or update
 checks answer NXDOMAIN to every pod: `check.trivy.dev`, `update.traefik.io`, `stats.grafana.org` and
