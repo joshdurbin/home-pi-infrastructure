@@ -36,18 +36,29 @@ server:
             user: temporal
             existingSecret: temporal-db-credentials
             secretKey: password
+        # Advanced visibility, on the shared OpenSearch cluster (apps/opensearch/): custom
+        # search attributes and full list/filter queries. Used to be SQL
+        # (temporal_visibility database, still in Postgres, now unused). `version: v7` is the
+        # Elasticsearch-7 wire protocol, which OpenSearch speaks. The `temporal` user is
+        # confined to temporal_visibility* by apps/opensearch/manifests/users.yaml. The
+        # cluster's certificate is self-signed (operator-generated), hence no host
+        # verification - same as Vector's sink.
         visibility:
-          sql:
-            createDatabase: false
-            manageSchema: true
-            pluginName: postgres12_pgx
-            driverName: postgres12_pgx
-            databaseName: temporal_visibility
-            connectAddr: "postgres-pooler-rw.postgres.svc.cluster.local:5432"
-            connectProtocol: tcp
-            user: temporal
-            existingSecret: temporal-db-credentials
+          elasticsearch:
+            version: v7
+            url:
+              scheme: https
+              host: "opensearch.opensearch.svc.cluster.local:9200"
+            username: temporal
+            existingSecret: temporal-opensearch-credentials
             secretKey: password
+            logLevel: error
+            indices:
+              visibility: temporal_visibility_v1
+            tls:
+              enabled: true
+              enableHostVerification: false
+            manageSchema: true
     # Native Prometheus metrics already on by default (port 9090, no toggle
     # needed) - only disabling the chart's own annotation-based scrape
     # hints here, since this repo scrapes via a hand-written VMPodScrape

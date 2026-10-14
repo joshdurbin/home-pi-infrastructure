@@ -7,6 +7,8 @@
 # - The postgres namespace on 5432 - the pooler this connects through
 #   (apps/postgres/manifests/pooler-rw.yaml), never a database pod
 #   directly.
+# - The opensearch namespace on 9200: advanced visibility (the schema job and the
+#   history/frontend services talk to the opensearch Service).
 # - Other temporal pods, unrestricted by port - confirmed live (broke every
 #   server component in a cascading crash loop): frontend/history/matching/
 #   worker gossip with each other over ringpop membership ports (6933-6939)
@@ -44,6 +46,13 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: opensearch
+      ports:
+        - protocol: TCP
+          port: 9200
     - to:
         - podSelector:
             matchLabels:
