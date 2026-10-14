@@ -1,15 +1,23 @@
-# Bifrost's cache backend: two pods (master + one replica), each with its own
-# PVC, failover via the shared Sentinel (redis-sentinel.yaml). Bifrost reaches
-# the current master through the operator-maintained "bifrost-cache-master"
-# Service. NOTE: not wired into Bifrost yet - its Redis vector store (semantic
-# cache) needs RediSearch (FT.*), and this image (quay.io/opstree/redis) ships
-# only the `vectorset` module. See docs/REFERENCE.md#bifrost.
-# Lives in the shared redis-cache namespace.
+# Blocky's own cache backend (its native `redis:` config block - see
+# configmap.yaml - lets it synchronize cache/blocking state through redis,
+# with sentinel-based master discovery). Two pods (master + one replica),
+# each with its own PVC; automatic failover comes from redis-sentinel.yaml
+# in this same directory monitoring this RedisReplication.
+#
+# Sizing: this is a cache, not a source of truth, so 128MB of actual
+# keyspace (maxmemory) is deliberately tiny. The container's memory
+# limit/request (192Mi) is maxmemory plus headroom for redis's own process
+# overhead, client buffers and replication backlog - not maxmemory itself -
+# per the real constraint here: these run on a mix of 4GB and 8GB
+# Raspberry Pis, several of which already run Longhorn, VictoriaMetrics and
+# other apps.
+# Lives in the shared redis namespace; failover comes from the ONE shared
+# Sentinel cluster (redis-sentinel.yaml in this directory).
 apiVersion: redis.redis.opstreelabs.in/v1beta2
 kind: RedisReplication
 metadata:
-  name: bifrost-cache
-  namespace: redis-cache
+  name: blocky-cache
+  namespace: redis
 spec:
   clusterSize: 2
   # Master and replica on different nodes, and never both down for a drain - a node
@@ -19,7 +27,7 @@ spec:
       requiredDuringSchedulingIgnoredDuringExecution:
         - labelSelector:
             matchLabels:
-              app: bifrost-cache
+              app: blocky-cache
           topologyKey: kubernetes.io/hostname
   pdb:
     enabled: true

@@ -4,7 +4,7 @@ metadata:
   name: blocky
   namespace: argocd
   annotations:
-    # Blocky itself is stateless; its Redis cache lives in apps/redis-cache. Its
+    # Blocky itself is stateless; its Redis cache lives in apps/redis. Its
     # VMServiceScrape/VMPodScrape need victoria-metrics' operator CRDs
     # (operator.victoriametrics.com/v1beta1) to already exist, confirmed by
     # a real failure: "failed to discover server resources for group

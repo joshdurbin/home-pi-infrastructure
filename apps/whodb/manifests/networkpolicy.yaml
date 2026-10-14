@@ -4,7 +4,7 @@
 #   ingress is open by design, see apps/postgres/manifests/networkpolicy.yaml)
 # - OpenSearch (port 9200, opensearch namespace)
 # - the blocky-cache / searxng-cache / bifrost-cache Redis clusters in the
-#   redis-cache namespace (port 6379; no Sentinel, WhoDB only talks to each
+#   redis namespace (port 6379; no Sentinel, WhoDB only talks to each
 #   cluster's "-master" Service)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -43,7 +43,7 @@ spec:
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: redis-cache
+              kubernetes.io/metadata.name: redis
       ports:
         - protocol: TCP
           port: 6379

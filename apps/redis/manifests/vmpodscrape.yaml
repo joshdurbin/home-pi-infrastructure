@@ -9,8 +9,8 @@
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMPodScrape
 metadata:
-  name: redis-cache-redis-exporter
-  namespace: redis-cache
+  name: redis-exporter
+  namespace: redis
 spec:
   selector:
     matchLabels:

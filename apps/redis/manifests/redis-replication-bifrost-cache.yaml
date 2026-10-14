@@ -1,23 +1,15 @@
-# SearXNG's redis/valkey cache backend (its rate-limiter/bot-detection
-# state - see roles/k8s_secrets/templates/searxng-config.yaml.j2's valkey.url).
-# Two pods (master + one replica), each with its own PVC. redis-sentinel.yaml
-# in this directory monitors this and fails over automatically at the
-# storage layer; SearXNG's own config follows it via this CR's own
-# operator-maintained "-master" Service rather than Sentinel directly (its
-# valkey client has no Sentinel-discovery support) - see that config's
-# comment for how that Service still tracks the real master.
-#
-# Sizing: same reasoning as apps/blocky/manifests/redis-replication.yaml -
-# this is a cache, 128MB of maxmemory is intentionally tiny, and 192Mi of
-# container memory is that plus headroom for redis's own overhead, not
-# maxmemory itself. Pi fleet, several nodes already running other apps.
-# Lives in the shared redis-cache namespace; failover comes from the ONE shared
-# Sentinel cluster (redis-sentinel.yaml in this directory).
+# Bifrost's cache backend: two pods (master + one replica), each with its own
+# PVC, failover via the shared Sentinel (redis-sentinel.yaml). Bifrost reaches
+# the current master through the operator-maintained "bifrost-cache-master"
+# Service. NOTE: not wired into Bifrost yet - its Redis vector store (semantic
+# cache) needs RediSearch (FT.*), and this image (quay.io/opstree/redis) ships
+# only the `vectorset` module. See docs/REFERENCE.md#bifrost.
+# Lives in the shared redis namespace.
 apiVersion: redis.redis.opstreelabs.in/v1beta2
 kind: RedisReplication
 metadata:
-  name: searxng-cache
-  namespace: redis-cache
+  name: bifrost-cache
+  namespace: redis
 spec:
   clusterSize: 2
   # Master and replica on different nodes, and never both down for a drain - a node
@@ -27,7 +19,7 @@ spec:
       requiredDuringSchedulingIgnoredDuringExecution:
         - labelSelector:
             matchLabels:
-              app: searxng-cache
+              app: bifrost-cache
           topologyKey: kubernetes.io/hostname
   pdb:
     enabled: true

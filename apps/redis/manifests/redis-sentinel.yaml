@@ -1,4 +1,4 @@
-# The ONE Sentinel cluster for every cache in redis-cache: 3 sentinels for a
+# The ONE Sentinel cluster for every cache in redis: 3 sentinels for a
 # real majority quorum (2 of 3), monitoring blocky-cache, searxng-cache and
 # bifrost-cache (a master group each, named after its RedisReplication).
 #
@@ -12,18 +12,18 @@
 # re-points the "-master" Service.
 #
 # Clients: Blocky talks to Sentinel directly
-# (redis-cache-sentinel-sentinel.redis-cache:26379, master group blocky-cache);
+# (redis-sentinels-sentinel.redis:26379, master group blocky-cache);
 # SearXNG and Bifrost use their cache's "-master" Service.
 #
 # KNOWN OPERATOR QUIRK: if a sentinel *container* restarts in place, the image
 # appends its `sentinel monitor` line to the persisted config again and crashes
 # with "Duplicate master name". Delete that pod (fresh volume) to recover:
-#   kubectl -n redis-cache delete pod redis-cache-sentinel-sentinel-<n>
+#   kubectl -n redis delete pod redis-sentinels-sentinel-<n>
 apiVersion: redis.redis.opstreelabs.in/v1beta2
 kind: RedisSentinel
 metadata:
-  name: redis-cache-sentinel
-  namespace: redis-cache
+  name: redis-sentinels
+  namespace: redis
 spec:
   clusterSize: 3
   # One sentinel per node and at most 1 down at a time, so a drain never costs
@@ -33,7 +33,7 @@ spec:
       requiredDuringSchedulingIgnoredDuringExecution:
         - labelSelector:
             matchLabels:
-              app: redis-cache-sentinel-sentinel
+              app: redis-sentinels-sentinel
           topologyKey: kubernetes.io/hostname
   pdb:
     enabled: true
@@ -45,7 +45,7 @@ spec:
     redisReplicationName: blocky-cache
     masterGroupName: blocky-cache
     resolveHostnames: "yes"
-    additionalSentinelConfig: redis-cache-sentinel-config
+    additionalSentinelConfig: redis-sentinels-config
   kubernetesConfig:
     image: quay.io/opstree/redis-sentinel:v8.10.1
     imagePullPolicy: IfNotPresent

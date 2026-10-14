@@ -11,17 +11,17 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: redis-cache-sentinel-config
-  namespace: redis-cache
+  name: redis-sentinels-config
+  namespace: redis
   annotations:
     argocd.argoproj.io/sync-wave: "-1"
 data:
   redis-sentinel-additional.conf: |
-    sentinel monitor searxng-cache searxng-cache-master.redis-cache.svc.cluster.local 6379 2
+    sentinel monitor searxng-cache searxng-cache-master.redis.svc.cluster.local 6379 2
     sentinel down-after-milliseconds searxng-cache 5000
     sentinel failover-timeout searxng-cache 10000
     sentinel parallel-syncs searxng-cache 1
-    sentinel monitor bifrost-cache bifrost-cache-master.redis-cache.svc.cluster.local 6379 2
+    sentinel monitor bifrost-cache bifrost-cache-master.redis.svc.cluster.local 6379 2
     sentinel down-after-milliseconds bifrost-cache 5000
     sentinel failover-timeout bifrost-cache 10000
     sentinel parallel-syncs bifrost-cache 1
