@@ -45,10 +45,11 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 
 | Node | IP | Board | Role | Labels / notes |
 |---|---|---|---|---|
-| `rpi-5-1` | 192.168.1.30 | Pi 5 (8GB) | control plane | `pi5=true` |
-| `rpi-5-2` | 192.168.1.41 | Pi 5 (8GB) | control plane | `pi5=true`, `storage=true` |
-| `rpi-5-3` | 192.168.1.28 | Pi 5 (8GB) | control plane | `pi5=true`, `storage=true` |
+| `rpi-5-1` | 192.168.1.30 | Pi 5 (8GB) | control plane | `pi5=true`, `storage=true` (256GiB for Longhorn) |
+| `rpi-5-2` | 192.168.1.41 | Pi 5 (8GB) | control plane | `pi5=true` |
+| `rpi-5-3` | 192.168.1.28 | Pi 5 (8GB) | control plane | `pi5=true` |
 | `rpi-5-4` | 192.168.1.83 | Pi 5 (8GB) | worker | `pi5=true` |
+| `rpi-5-5` | 192.168.1.95 | Pi 5 | worker | `pi5=true`, `storage=true` (256GiB for Longhorn) |
 | `rpi-4b-1` | 192.168.1.13 | Pi 4B (4GB, 128GB SSD) | worker | |
 | `rpi-4b-2` | 192.168.1.14 | Pi 4B (4GB, 128GB SSD) | worker | |
 | `rpi-4b-3` | 192.168.1.18 | Pi 4B (4GB, 128GB SSD) | worker | |
@@ -60,7 +61,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
   `rpi-5-4` is a Pi 5 that is a worker only (`[pi5]`/`[agent]`, never `[server]`).
 - **Pi 5 nodes** also carry the disk-heavy workloads (Longhorn replicas, VictoriaMetrics, OpenSearch, Postgres
   by default), alongside etcd. Revisit if their disks don't keep up with both.
-- **Longhorn**: `rpi-5-2` and `rpi-5-3` carry `storage=true` and hold every volume's replica *data*; the volumes
+- **Longhorn**: `rpi-5-1` and `rpi-5-5` carry `storage=true` and hold every volume's replica *data* (256GiB each: `longhorn_disk_reserved_gib` in their host vars); the volumes
   attach over the network to pods on any node.
 - **`pi5=true`** marks the Pi 5s; OpenSearch requires it (its Amazon Linux images won't run on a Pi 4B).
 - **Audio node** (`[audio]`): see [Audio node and shairport-sync](#audio-node-and-shairport-sync). It runs only the
@@ -142,6 +143,7 @@ rpi-5-1      ansible_host=192.168.1.30
 rpi-5-2      ansible_host=192.168.1.41
 rpi-5-3      ansible_host=192.168.1.28
 rpi-5-4      ansible_host=192.168.1.83
+rpi-5-5      ansible_host=192.168.1.95
 rpi-4b-1     ansible_host=192.168.1.13
 rpi-4b-2     ansible_host=192.168.1.14
 rpi-4b-3     ansible_host=192.168.1.18
@@ -434,9 +436,9 @@ sudo kubectl -n postgres get cluster postgres         # 2 instances, healthy
 **Notes**
 - **Control-plane nodes** (`rpi-5-1/2/3`) are the three etcd members. Never have two out at once or etcd loses
   quorum and the API goes away.
-- **Storage nodes** (`rpi-5-2`, `rpi-5-3`) hold the Longhorn replica data. While one is out, every volume runs
+- **Storage nodes** (`rpi-5-1`, `rpi-5-5`) hold the Longhorn replica data. While one is out, every volume runs
   on a single replica; Longhorn itself refuses to drain a node that holds the *last* healthy copy of a volume.
-- OpenSearch must run on a Pi 5 (`pi5=true`); with four Pi 5s there is always somewhere for it to go.
+- OpenSearch must run on a Pi 5 (`pi5=true`); with five Pi 5s there is always somewhere for it to go.
 - **The audio node** (`rpi-3bplus-1`) is the only place shairport-sync can run, so draining it stops AirPlay until it
   is uncordoned. Nothing else is affected.
 
@@ -645,9 +647,9 @@ reconciles it continuously; this repo only handles the host-level package prereq
 every node.
 
 **Capacity model** (see `apps/longhorn/values.yaml` in this repo's `apps/` directory for the actual settings):
-- Data replicas live **only** on `rpi-5-2` and `rpi-5-3` (the `storage=true` labeled nodes) — 80GB usable
+- Data replicas live **only** on `rpi-5-1` and `rpi-5-5` (the `storage=true` labeled nodes) — 256GiB usable
   per node, and since Longhorn keeps 2 replicas, plan for ~half of requested storage as the real usable ceiling.
-- `longhorn-manager`, the UI, the driver, and the CSI components run on **all 6 nodes** — any pod anywhere
+- `longhorn-manager`, the UI, the driver, and the CSI components run on every node except the tainted audio Pi — any pod anywhere
   in the cluster can attach and use a Longhorn volume, even though the data itself only ever lives on the
   two storage nodes. This is deliberate: it's the difference between "where Longhorn's software runs" and
   "where replica data is placed."
@@ -805,7 +807,7 @@ curl -k -u admin:<opensearch_admin_password> "https://localhost:9200/logs-*/_sea
 
 | Label | Nodes | Used by |
 |---|---|---|
-| `storage=true` | rpi-5-2, rpi-5-3 | Longhorn replica placement (physical data) |
+| `storage=true` | rpi-5-1, rpi-5-5 | Longhorn replica placement (physical data) |
 | `pi5=true` | rpi-5-1..4 | OpenSearch (Amazon Linux images need a Pi 5 CPU) |
 
 The former `telemetry=true` (VictoriaMetrics) and `database=true` (Postgres) labels are gone -
@@ -1033,7 +1035,7 @@ directly.
   registry, not assumed).
 - **Storage mode** (`apps/postgres/cluster/kustomization.yaml`): pick exactly one component, one line:
   - `components/longhorn` (default) - volumes use a dedicated `longhorn-postgres` StorageClass (2 Longhorn
-    replicas on `rpi-5-2`/`rpi-5-3`, `best-effort` data locality). The instances can run on **any** node and
+    replicas on `rpi-5-1`/`rpi-5-5`, `best-effort` data locality). The instances can run on **any** node and
     reschedule freely (still one per node). Costs: network-attached I/O instead of local disk, and 4 copies
     of the data on disk (2 Postgres instances x 2 Longhorn replicas) plus the replication traffic that
     implies. The StorageClass's `numberOfReplicas: "1"` halves that, but then both instances' volumes could
@@ -1598,7 +1600,7 @@ does **not** have the spare capacity for more than one node out at a time, so th
 - Stateful single-instance apps on an RWO volume can't run 2 replicas; they take a short blip while the pod and
   its Longhorn volume move.
 - No `nodeSelector` unless the workload can't run elsewhere (OpenSearch: `pi5=true`). Volumes are Longhorn, so
-  pods are free to move; only Longhorn's *replica data* is pinned (`storage=true`: `rpi-5-2`, `rpi-5-3`).
+  pods are free to move; only Longhorn's *replica data* is pinned (`storage=true`: `rpi-5-1`, `rpi-5-5`).
 - No special-casing in maintenance tooling: whether a drain is safe is decided by the resources' own budgets.
 
 **What happens when one node is drained** (config in parentheses):
@@ -1633,7 +1635,7 @@ operators. None are on a path that other workloads need to keep running.
   A stable endpoint (kube-vip / a DNS name over all three servers) would fix this.
 - **LAN DNS clients** should be given at least two node IPs: Blocky is reachable on every node IP, and a rebooting
   node's IP stops answering.
-- While a storage node (`rpi-5-2`/`rpi-5-3`) is out, every Longhorn volume has one replica until it returns.
+- While a storage node (`rpi-5-1`/`rpi-5-5`) is out, every Longhorn volume has one replica until it returns.
 - Control plane: `rpi-5-1/2/3` are the etcd members; one at a time keeps quorum (2 of 3).
 - **Not yet verified on the live cluster**: the real write-outage time when the primary's node is drained. Test:
   run a write loop through `postgres-pooler-rw`, drain the primary's node, and measure the gap.
