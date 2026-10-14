@@ -121,7 +121,17 @@ customConfig:
       type: remap
       inputs: [k8s]
       source: |
-        .log = parse_json(.message) ?? .message
+        # `log` is ALWAYS the raw line (a string). The parsed form of JSON lines goes in
+        # `log_json`, mapped as flat_object by manifests/index-template.yaml: one mapped
+        # field however many keys it holds. Parsing straight into `log` made every distinct
+        # JSON key from every app a mapped field and hit the 1000-field limit within hours
+        # ("Limit of total fields [1000] has been exceeded", bulk requests rejected), and
+        # `log` would have been a string for some lines and an object for others.
+        .log = .message
+        parsed, err = parse_json(.message)
+        if err == null && is_object(parsed) {
+          .log_json = parsed
+        }
         del(.message)
   sinks:
     exporter:

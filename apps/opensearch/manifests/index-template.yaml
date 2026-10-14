@@ -33,3 +33,12 @@ spec:
     settings:
       number_of_shards: 1
       number_of_replicas: 1
+      # Headroom over the default 1000: kubernetes.* adds a field per pod label/annotation key.
+      mapping.total_fields.limit: 2000
+    mappings:
+      properties:
+        # Parsed JSON log lines (values-vector.yaml): flat_object keeps the whole object as
+        # one field, queryable as log_json.some.key, so arbitrary app JSON can never blow up
+        # the mapping.
+        log_json:
+          type: flat_object
