@@ -6,8 +6,12 @@
 # read by the others ("invalid padding on input"). That is how enabling the flag on a running
 # cluster broke it. Seeding the files removes the question of how k3s shares its bootstrap data.
 #
-# The key is derived from the cluster join token (already a vault secret), so no new secret is
-# needed and a rebuild produces the same key. k3s uses these files as they are when they exist:
+# The key is k3s_secrets_encryption_key from the vault if you define it (base64 of 32 random bytes:
+# `openssl rand -base64 32`), otherwise derived from the cluster join token (already a vault secret),
+# so it works with no new secret either way and a rebuild produces the same key. A dedicated secret
+# is cleaner: it can change without touching the join token, and the token does not double as key
+# material. It is only read when a server has no key yet (a rebuild); a running cluster keeps the
+# key it has. k3s uses these files as they are when they exist:
 # encryption-config.json is the EncryptionConfiguration it hands to the apiserver, and
 # encryption-state.json holds "start-<sha256 of that file>", its rotation state. `force: false`: a
 # server that already has them (any running cluster) is left alone, so this never changes a live
@@ -44,7 +48,7 @@
               'apiVersion': 'apiserver.config.k8s.io/v1',
               'resources': [{'resources': ['secrets'],
                              'providers': [{'aescbc': {'keys': [{'name': 'aescbckey',
-                                                                 'secret': ((token ~ ':k3s-secrets-encryption') | hash('sha256'))[:32] | b64encode}]}},
+                                                                 'secret': k3s_secrets_encryption_key | default(((token ~ ':k3s-secrets-encryption') | hash('sha256'))[:32] | b64encode)}]}},
                                            {'identity': {}}]}]}
              | to_json(separators=(',', ':')) }}
       no_log: true
