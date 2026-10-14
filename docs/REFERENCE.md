@@ -1099,9 +1099,9 @@ directly.
     (`useSSL` + `tls.backend.caSecretName: postgres-ca`); `pgsql-multiplexing: "false"` to match the old session mode.
   - **Runs on the Pi 4Bs only**: the ProxySQL image aborts on the Pi 5 nodes with `jemalloc: Unsupported system page size`
     (16K-page kernel, allocator built for 4K), hence the `pi5` DoesNotExist node affinity in `proxysql.yaml`.
-  - **Where the pieces are**: the operator (`apps/proxysql-operator/`) is left installed and running (it must be up to
-    clear the `ProxySQLConfig` finalizer when the config is pruned; once that has synced you can set
-    `replicaCount: 0` in its `values.yaml`). Its image is built into Zot ([Local registry](#local-registry-zot)) because
+  - **Where the pieces are**: the operator (`apps/proxysql-operator/`) is scaled to zero too (`replicaCount: 0`; it only
+    has to run to clear the `ProxySQLConfig` finalizer when that config is pruned - set it back to 1 first if one
+    exists). Its image is built into Zot ([Local registry](#local-registry-zot)) because
     upstream's is private (ProxySQL/proxysql-on-k8s#83). The `proxysql-auth` / `proxysql-monitor-credentials` Secrets
     stay in `cluster_secrets.yaml`.
   - **Measured cost, for reference**: PgBouncer is ~180Mi / ~50m across its four pods (31-53Mi each, idle); ProxySQL was

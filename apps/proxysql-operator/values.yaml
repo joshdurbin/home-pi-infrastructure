@@ -1,7 +1,9 @@
-# ProxySQL itself is SCALED TO ZERO (see docs/REFERENCE.md, "ProxySQL (scaled to
-# zero)"): the operator is left installed and running so it can clear the finalizer
-# on the ProxySQLConfig when apps/postgres prunes it. Once that has synced,
-# `replicaCount: 0` here stops the operator too (it is idle either way).
+# Scaled to zero, operator included (docs/REFERENCE.md, "ProxySQL (scaled to zero)").
+# The operator only needs to run to clear the ProxySQLConfig finalizer when
+# apps/postgres prunes that CR; on a fresh cluster none is ever created, so it stays off.
+# Set back to 1 (and run `make build-proxysql-operator`, its image lives in Zot) to use it.
+replicaCount: 0
+
 # Reconciles the ProxySQLCluster/ProxySQLConfig CRs in apps/postgres/manifests/
 # (the connection proxy in front of CloudNativePG). It is cluster-scoped and
 # idle between reconciles, so it keeps the chart's own default request
