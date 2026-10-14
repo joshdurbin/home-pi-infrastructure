@@ -362,39 +362,16 @@ vmcluster:
         maxUnavailable: 1
 
 # Control-plane metrics. k3s runs etcd, the scheduler and the controller manager inside its own
-# server process, so there are no pods for the chart's Services to select: point them at the three
-# servers' LAN IPs instead (rpi-5-1, rpi-5-2, rpi-5-3). Needs the k3s server settings in
-# group_vars/server/main.yaml (etcd-expose-metrics, the *-arg bind addresses); until the servers
-# are restarted with them these targets just show as down.
+# server process, so the chart's Service-based scrapes (which select pods that don't exist) are off:
+# apps/victoria-metrics/manifests/control-plane-scrapes.yaml scrapes the three servers directly and
+# keeps the job names the chart's dashboards and alert rules expect (kube-etcd, kube-scheduler,
+# kube-controller-manager). Not done through the chart's own `endpoints:` option because Argo CD
+# excludes Endpoints objects, so they would never be applied. The listeners come from the k3s server
+# settings in group_vars/server/main.yaml; until the servers are restarted with them the targets
+# show as down.
 kubeEtcd:
-  endpoints: [192.168.1.30, 192.168.1.41, 192.168.1.28]
-  service:
-    port: 2381
-    targetPort: 2381
-  vmScrape:
-    spec:
-      endpoints:
-        # k3s's etcd metrics listener (etcd-expose-metrics) is plain HTTP.
-        - port: http-metrics
-          scheme: http
+  enabled: false
 kubeControllerManager:
-  endpoints: [192.168.1.30, 192.168.1.41, 192.168.1.28]
-  vmScrape:
-    spec:
-      endpoints:
-        # The serving certificate is k3s's own, not valid for the name `kubernetes`.
-        - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
-          port: http-metrics
-          scheme: https
-          tlsConfig:
-            insecureSkipVerify: true
+  enabled: false
 kubeScheduler:
-  endpoints: [192.168.1.30, 192.168.1.41, 192.168.1.28]
-  vmScrape:
-    spec:
-      endpoints:
-        - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
-          port: http-metrics
-          scheme: https
-          tlsConfig:
-            insecureSkipVerify: true
+  enabled: false

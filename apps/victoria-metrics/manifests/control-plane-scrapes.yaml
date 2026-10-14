@@ -1,0 +1,48 @@
+# Scrapes the k3s servers' embedded control plane directly (rpi-5-1, rpi-5-2, rpi-5-3; see the
+# comment on kubeEtcd in ../values.yaml for why this isn't the chart's own scrape). Job names match
+# what the kubernetes-mixin dashboards and rules select on.
+#
+# Listeners (group_vars/server/main.yaml): etcd-expose-metrics serves etcd on :2381 over plain HTTP;
+# the scheduler (10259) and controller manager (10257) serve HTTPS with token authentication once
+# bound to 0.0.0.0, with a certificate k3s generated itself, hence insecureSkipVerify.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMStaticScrape
+metadata:
+  name: kube-etcd
+  namespace: monitoring
+spec:
+  jobName: kube-etcd
+  targetEndpoints:
+    - targets: ["192.168.1.30:2381", "192.168.1.41:2381", "192.168.1.28:2381"]
+      scheme: http
+      path: /metrics
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMStaticScrape
+metadata:
+  name: kube-scheduler
+  namespace: monitoring
+spec:
+  jobName: kube-scheduler
+  targetEndpoints:
+    - targets: ["192.168.1.30:10259", "192.168.1.41:10259", "192.168.1.28:10259"]
+      scheme: https
+      path: /metrics
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      tlsConfig:
+        insecureSkipVerify: true
+---
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMStaticScrape
+metadata:
+  name: kube-controller-manager
+  namespace: monitoring
+spec:
+  jobName: kube-controller-manager
+  targetEndpoints:
+    - targets: ["192.168.1.30:10257", "192.168.1.41:10257", "192.168.1.28:10257"]
+      scheme: https
+      path: /metrics
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      tlsConfig:
+        insecureSkipVerify: true

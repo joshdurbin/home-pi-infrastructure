@@ -15,7 +15,7 @@ server_config_yaml: |
   # every server.
   secrets-encryption: true
 
-  # Control-plane metrics, scraped via apps/victoria-metrics/values.yaml (kubeEtcd,
+  # Control-plane metrics, scraped via apps/victoria-metrics/manifests/control-plane-scrapes.yaml (replacing the chart's kubeEtcd,
   # kubeControllerManager, kubeScheduler): etcd on :2381 over plain HTTP, the controller manager
   # and scheduler on their secure ports (token-authenticated) instead of loopback only.
   etcd-expose-metrics: true
