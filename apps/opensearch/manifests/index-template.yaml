@@ -42,3 +42,16 @@ spec:
         # the mapping.
         log_json:
           type: flat_object
+        # Pod labels and annotations have arbitrary keys with dots and slashes
+        # (app.kubernetes.io/name), which the bulk API expands into nested objects: a pod with
+        # label `app: x` then conflicts with another whose `app.kubernetes.io/...` labels make
+        # `app` an object ("tried to parse field [app] as object, but found a concrete value").
+        # flat_object keeps each whole map as one field, so the keys never clash.
+        kubernetes:
+          properties:
+            pod_labels:
+              type: flat_object
+            pod_annotations:
+              type: flat_object
+            node_labels:
+              type: flat_object
