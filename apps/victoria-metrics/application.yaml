@@ -32,7 +32,7 @@ spec:
       targetRevision: 32.0.1
     - repoURL: https://victoriametrics.github.io/helm-charts
       chart: victoria-metrics-k8s-stack
-      targetRevision: 0.93.0
+      targetRevision: 0.96.0
       helm:
         releaseName: vmks
         valueFiles:
