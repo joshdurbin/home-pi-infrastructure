@@ -17,7 +17,14 @@ spec:
     # vm.max_map_count itself, no equivalent of the plain chart's
     # sysctlInit/host-level ansible task needed.
     setVMMaxMapCount: true
-    drainDataNodes: true
+    # false: with drain on, the operator excludes a data node from shard allocation before
+    # restarting it and waits for green. With 2 data nodes and a replica of every index there
+    # is nowhere for that node's shards to go, so the cluster sits yellow, the restart is
+    # refused ("cluster is not green and drain nodes is enabled") and it never completes
+    # (confirmed live after the rebuild: opensearch-data-0 stuck excluded, 3 replicas
+    # unassigned). Without it the operator still restarts one node at a time and waits for
+    # green between them; the replica on the other node keeps every index available.
+    drainDataNodes: false
     # Official opensearch-project/opensearch-prometheus-exporter plugin
     # (migrated into the OpenSearch org from Aiven - its own README credits
     # "the contributors from the Aiven organization for their work on this
