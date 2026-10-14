@@ -1,0 +1,15 @@
+# Vector's internal metrics (the prometheus_exporter sink "exporter" in values-vector.yaml,
+# port 9090 named "exporter"): events in/out, errors, dropped events, buffer depth and
+# per-component utilization. Without this, a Vector that is dropping logs is invisible.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: vector
+  namespace: opensearch
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vector
+  podMetricsEndpoints:
+    - port: exporter
+      path: /metrics

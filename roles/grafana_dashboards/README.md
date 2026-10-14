@@ -61,15 +61,28 @@ If anonymous Admin access is ever turned off, this role will need a service acco
 Limited to tech this cluster actually scrapes today (see each app's `manifests/vm*scrape.yaml` — `vmagent`
 picks up every `VMServiceScrape`/`VMPodScrape` in the cluster automatically):
 
-| Dashboard | grafana.com ID |
-|---|---|
-| Longhorn | 22705 |
-| CloudNativePG | 20417 |
-| Temporal Server Metrics | 20528 |
-| Redis (Kubernetes mode) | 19157 |
-| Blocky | 13768 |
-| VictoriaMetrics vmagent | 12683 |
-| VictoriaMetrics Single Node | 10229 |
+| Dashboard | grafana.com ID | Covers |
+|---|---|---|
+| Longhorn; Longhorn Monitoring & Backups | 22705; 16888 | volumes, replicas, nodes, backups |
+| CloudNativePG | 20417 | Postgres instances (not the poolers - see below) |
+| Temporal Server Metrics | 20528 | Temporal services |
+| Redis (Kubernetes mode); Redis Dashboard for Prometheus Redis Exporter 1.x | 19157; 763 | the three caches |
+| Redis Sentinel | 9570 | the shared Sentinel (needs its exporter sidecar) |
+| Blocky | 13768 | DNS |
+| ArgoCD Operational; ArgoCD Application | 19993; 19974 | Argo CD |
+| OpenSearch Prometheus Exporter | 20827 | OpenSearch cluster |
+| Trivy Operator (Image CVE Data; Vulnerabilities) | 22010; 16337 | vulnerability reports |
+| Zot | 20501 | the registry cache |
+| Traefik Official Kubernetes Dashboard | 17347 | ingress (scrape: `apps/k3s-addons/manifests/traefik-vmpodscrape.yaml`) |
+
+Written for this repo and provisioned as ConfigMaps (`apps/victoria-metrics/manifests/`), because no community
+dashboard matches the metric names: **PgBouncer (CloudNativePG poolers)** (`cnpg_pgbouncer_*`) and **Vector**
+(`vector_*`).
+
+**No dashboard**, because nothing useful exists or the app exposes no metrics worth one: Bifrost, SearXNG,
+go-feature-flag, the redis-operator controller, descheduler, Headlamp, WhoDB, Open WebUI, Homepage,
+shairport-sync, Tailscale (the community dashboard polls the admin API, not the proxies' `/metrics`).
+Kube-controller-manager, scheduler and etcd bind to localhost under k3s, so the chart's dashboards for them are empty.
 
 Kubernetes cluster/node views, CoreDNS, etcd, Node Exporter Full, and all four VictoriaMetrics dashboards
 (operator, vmalert, vmagent, single-node) are **not** in this list — confirmed live via `GET /api/search`
@@ -79,10 +92,6 @@ not just the two (`victoriametrics-operator`, `victoriametrics-vmalert`) explici
 one of their grafana.com IDs here would `400` (`"Cannot save provisioned dashboard"`, Grafana refuses to
 let the API touch a ConfigMap-provisioned dashboard) — `tasks/import_dashboard.yml` treats that specific
 error as a skip rather than a failure, so this is a safety net, not a reason to rely on it.
-
-Deliberately excludes Argo CD and the Tailscale operator — dashboards exist for both on grafana.com, but
-neither has a `VM*Scrape` wired up in this repo yet, so importing them would just show empty panels. Add
-their IDs here once that scrape config exists.
 
 ## Usage
 

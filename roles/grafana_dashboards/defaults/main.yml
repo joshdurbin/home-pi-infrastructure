@@ -38,6 +38,9 @@ grafana_dashboards_force: false
 # treats that specific error as a skip, not a failure, so this is a safety
 # net for future entries, not a reason to rely on it for these four.
 #
+# Dashboards written for this repo (PgBouncer via CNPG, Vector) are ConfigMaps in apps/victoria-metrics/manifests,
+# not in this list: no community dashboard matches their metric names.
+#
 # Argo CD and OpenSearch added once their own VM*Scrapes existed
 # (apps/argocd-metrics/, apps/opensearch/manifests/vmservicescrape.yaml).
 # Tailscale deliberately still excluded - the only dashboard found
@@ -53,17 +56,37 @@ grafana_dashboards_force: false
 grafana_community_dashboards:
   - id: 22705
     name: 'Longhorn'
+  # Longhorn's own metrics, actively maintained (rev 14, 2026) and far more downloaded.
+  - id: 16888
+    name: 'Longhorn Monitoring & Backups'
   - id: 20417
     name: 'CloudNativePG'
   - id: 20528
     name: 'Temporal Server Metrics'
   - id: 19157
     name: 'Redis (Kubernetes mode)'
+  # The standard redis_exporter dashboard (replication, memory, commands, keyspace).
+  - id: 763
+    name: 'Redis Dashboard for Prometheus Redis Exporter 1.x'
+  # Sentinel: masters, master status, connected clients. Needs the sentinel's exporter sidecar
+  # (apps/redis/manifests/redis-sentinel.yaml) - the redis_sentinel_* metrics come from it.
+  - id: 9570
+    name: 'Redis Sentinel'
   - id: 13768
     name: 'Blocky'
-  - id: 14584
-    name: 'ArgoCD'
+  # Argo CD's two maintained dashboards (operational + per-application); replaces the 2021 one (14584).
+  - id: 19993
+    name: 'ArgoCD / Operational / Overview'
+  - id: 19974
+    name: 'ArgoCD / Application / Overview'
   - id: 20827
     name: 'OpenSearch Prometheus Exporter'
   - id: 22010
     name: 'Trivy Operator - Image CVE Data'
+  - id: 16337
+    name: 'Trivy Operator - Vulnerabilities'
+  - id: 20501
+    name: 'Zot'
+  # Traefik's own Kubernetes dashboard; needs apps/k3s-addons/manifests/traefik-vmpodscrape.yaml.
+  - id: 17347
+    name: 'Traefik Official Kubernetes Dashboard'

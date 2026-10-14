@@ -1,5 +1,5 @@
-# Scrapes the redis_exporter sidecar every RedisReplication in this namespace
-# runs (blocky-cache, searxng-cache, bifrost-cache; master and replica pods),
+# Scrapes the redis_exporter sidecar every RedisReplication AND the RedisSentinel in this
+# namespace run (blocky-cache, searxng-cache, bifrost-cache; master and replica pods),
 # converting Redis's native INFO stats into PromQL-queryable metrics. A
 # VMPodScrape (not a VMServiceScrape) targets pods directly by label and
 # container port, since the operator doesn't document a stable Service port
@@ -13,8 +13,10 @@ metadata:
   namespace: redis
 spec:
   selector:
-    matchLabels:
-      redis_setup_type: replication
+    matchExpressions:
+      - key: redis_setup_type
+        operator: In
+        values: [replication, sentinel]
   podMetricsEndpoints:
     - targetPort: 9121
       path: /metrics

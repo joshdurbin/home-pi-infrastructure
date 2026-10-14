@@ -603,8 +603,8 @@ and a port named `http-metrics` - confirmed via a real `helm template` render, n
 `apps/argocd-metrics/` (its own tiny Application, not another Ansible-templated resource) - it needs
 victoria-metrics' `VMServiceScrape` CRD (wave 1), which doesn't exist yet at the point Ansible bootstraps
 Argo CD on a fresh install, so it has to be GitOps-managed (Argo CD's own retry/backoff handles that race
-gracefully; a one-shot Ansible task wouldn't). Dashboard: grafana.com ID 14584, the official upstream
-"ArgoCD" dashboard.
+gracefully; a one-shot Ansible task wouldn't). Dashboards: grafana.com IDs 19993 and 19974 (the maintained
+"ArgoCD / Operational" and "/ Application" overviews).
 
 **Secrets bridge**: `apps/` must never contain real credentials, but a few of these apps need some (Grafana
 admin password, Tailscale OAuth client, SearXNG's `secret_key` and metrics password, OpenSearch's admin

@@ -40,3 +40,7 @@ spec:
     - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
       targetRevision: master
       ref: values
+    # Dashboards written for this repo (ConfigMaps picked up by Grafana's sidecar).
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      path: apps/victoria-metrics/manifests

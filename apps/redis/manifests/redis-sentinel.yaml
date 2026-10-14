@@ -41,6 +41,19 @@ spec:
   podSecurityContext:
     runAsUser: 1000
     fsGroup: 1000
+  # Sentinel's own metrics (redis_sentinel_masters, ..._master_status, ..._master_ok_sentinels,
+  # ...): the exporter sidecar, same image as the caches'. Scraped by vmpodscrape.yaml.
+  redisExporter:
+    enabled: true
+    image: quay.io/opstree/redis-exporter:v1.89.0
+    imagePullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 25m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
   redisSentinelConfig:
     redisReplicationName: blocky-cache
     masterGroupName: blocky-cache
