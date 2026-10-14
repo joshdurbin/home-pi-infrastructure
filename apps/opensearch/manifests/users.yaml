@@ -1,0 +1,85 @@
+# One OpenSearch user + role per consumer, so nothing but the operator and Dashboards
+# (and WhoDB's read-only-by-convention profile) holds the admin credentials. Each user's
+# password is a Secret in this namespace (seeded by Ansible, group_vars/all/cluster_secrets.yaml)
+# with a `password` key; consumers outside this namespace get a copy of the same value.
+# To add a consumer: a Secret, then a user/role/binding triple like the two below.
+---
+# Vector: write-only into the log indices.
+apiVersion: opensearch.org/v1
+kind: OpensearchRole
+metadata:
+  name: vector-logs-writer
+  namespace: opensearch
+spec:
+  opensearchCluster:
+    name: opensearch
+  clusterPermissions:
+    - cluster_composite_ops
+  indexPermissions:
+    - indexPatterns: ['logs-*']
+      allowedActions: [create_index, write]
+---
+apiVersion: opensearch.org/v1
+kind: OpensearchUser
+metadata:
+  name: vector
+  namespace: opensearch
+spec:
+  opensearchCluster:
+    name: opensearch
+  passwordFrom:
+    name: opensearch-vector-credentials
+    key: password
+---
+apiVersion: opensearch.org/v1
+kind: OpensearchUserRoleBinding
+metadata:
+  name: vector-logs-writer
+  namespace: opensearch
+spec:
+  opensearchCluster:
+    name: opensearch
+  roles: [vector-logs-writer]
+  users: [vector]
+---
+# Temporal advanced visibility (apps/temporal/values.yaml): full control of its own index
+# (temporal_visibility_v1*) plus the index-template calls its schema job makes.
+apiVersion: opensearch.org/v1
+kind: OpensearchRole
+metadata:
+  name: temporal-visibility
+  namespace: opensearch
+spec:
+  opensearchCluster:
+    name: opensearch
+  clusterPermissions:
+    - cluster_monitor
+    - cluster_composite_ops
+    - 'indices:admin/template/*'
+    - 'indices:admin/index_template/*'
+  indexPermissions:
+    - indexPatterns: ['temporal_visibility*']
+      allowedActions: [indices_all]
+---
+apiVersion: opensearch.org/v1
+kind: OpensearchUser
+metadata:
+  name: temporal
+  namespace: opensearch
+spec:
+  opensearchCluster:
+    name: opensearch
+  passwordFrom:
+    name: opensearch-temporal-credentials
+    key: password
+---
+apiVersion: opensearch.org/v1
+kind: OpensearchUserRoleBinding
+metadata:
+  name: temporal-visibility
+  namespace: opensearch
+spec:
+  opensearchCluster:
+    name: opensearch
+  roles: [temporal-visibility]
+  users: [temporal]
