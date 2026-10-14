@@ -76,8 +76,9 @@
     - name: Log out of any remaining iSCSI sessions
       ansible.builtin.command: iscsiadm -m node --logout
       register: destroy_iscsi_logout
-      # 21 = no active sessions, 255 = no records: both mean there is nothing to log out of
-      failed_when: destroy_iscsi_logout.rc not in [0, 21, 255]
+      # 2 = session not found, 21 = no matching records, 255 = no records at all: each means
+      # there is nothing to log out of (rpi-5-5 and the audio Pi never attached a Longhorn volume)
+      failed_when: destroy_iscsi_logout.rc not in [0, 2, 21, 255]
       changed_when: destroy_iscsi_logout.rc == 0
 
     - name: Find the stale iSCSI records
