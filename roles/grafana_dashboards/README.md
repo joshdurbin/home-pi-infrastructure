@@ -73,11 +73,13 @@ picks up every `VMServiceScrape`/`VMPodScrape` in the cluster automatically):
 | OpenSearch Prometheus Exporter | 20827 | OpenSearch cluster |
 | Trivy Operator (Image CVE Data; Vulnerabilities) | 22010; 16337 | vulnerability reports |
 | Zot | 20501 | the registry cache |
-| Traefik Official Kubernetes Dashboard | 17347 | ingress (scrape: `apps/k3s-addons/manifests/traefik-vmpodscrape.yaml`) |
 
 Written for this repo and provisioned as ConfigMaps (`apps/victoria-metrics/manifests/`), because no community
 dashboard matches the metric names: **PgBouncer (CloudNativePG poolers)** (`cnpg_pgbouncer_*`) and **Vector**
 (`vector_*`).
+
+**Scraped, no dashboard**: Traefik (`apps/k3s-addons/manifests/traefik-vmpodscrape.yaml`) - every Ingress here is Tailscale-class, so
+it serves no requests and the official dashboard (17347) would be empty; import it if that changes.
 
 **No dashboard**, because nothing useful exists or the app exposes no metrics worth one: Bifrost, SearXNG,
 go-feature-flag, the redis-operator controller, descheduler, Headlamp, WhoDB, Open WebUI, Homepage,

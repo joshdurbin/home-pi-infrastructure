@@ -87,6 +87,6 @@ grafana_community_dashboards:
     name: 'Trivy Operator - Vulnerabilities'
   - id: 20501
     name: 'Zot'
-  # Traefik's own Kubernetes dashboard; needs apps/k3s-addons/manifests/traefik-vmpodscrape.yaml.
-  - id: 17347
-    name: 'Traefik Official Kubernetes Dashboard'
+# Traefik is scraped (apps/k3s-addons/manifests/traefik-vmpodscrape.yaml) but deliberately has no
+# dashboard: every Ingress here is Tailscale-class, so Traefik serves no requests and the
+# official dashboard (17347) would be empty. Import it if an Ingress ever uses Traefik.
