@@ -12,7 +12,7 @@ metadata:
 spec:
   general:
     serviceName: opensearch
-    version: '3.8.0'
+    version: '3.9.0'
     # Default (confirmed via schema: default: true) - the operator sets
     # vm.max_map_count itself, no equivalent of the plain chart's
     # sysctlInit/host-level ansible task needed.
@@ -28,7 +28,7 @@ spec:
     # Official opensearch-project/opensearch-prometheus-exporter plugin
     # (migrated into the OpenSearch org from Aiven - its own README credits
     # "the contributors from the Aiven organization for their work on this
-    # project prior to its migration"), pinned to release 3.8.0.0 to exactly
+    # project prior to its migration"), pinned to release 3.9.0.0 to exactly
     # match general.version above - OpenSearch plugin releases are
     # version-locked to a specific OpenSearch release. Confirmed against the
     # operator's own user guide: this is the correct field
@@ -40,7 +40,7 @@ spec:
     # Exposes /_prometheus/metrics on the existing 9200 port (no separate
     # port) - see manifests/vmservicescrape.yaml for how that's scraped.
     pluginsList:
-      - https://github.com/opensearch-project/opensearch-prometheus-exporter/releases/download/3.8.0.0/prometheus-exporter-3.8.0.0.zip
+      - https://github.com/opensearch-project/opensearch-prometheus-exporter/releases/download/3.9.0.0/prometheus-exporter-3.9.0.0.zip
 
   # The operator creates this bootstrap pod automatically regardless of
   # whether this section is specified - only added here for nodeSelector
@@ -77,7 +77,7 @@ spec:
 
   dashboards:
     enable: true
-    version: '3.8.0'
+    version: '3.9.0'
     # Two Dashboards pods on different nodes (both pinned to Pi 5s below).
     replicas: 2
     affinity:
