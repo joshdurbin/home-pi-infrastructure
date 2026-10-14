@@ -1,0 +1,26 @@
+---
+# Runs once, on the first server, right after k3s is up (site.yml). With secrets-encryption on
+# (group_vars/server/main.yaml), every server must hold the SAME key: a server that generated its
+# own would write Secrets the others cannot read ("invalid padding on input"), which is exactly
+# how an in-place enabling of the flag broke this cluster. On a fresh bootstrap the first server
+# publishes its config and the others fetch it; this verifies that actually happened, before any
+# app or data is on the cluster.
+- name: Is secrets encryption turned on?
+  ansible.builtin.set_fact:
+    k3s_secrets_check_enabled: "{{ 'secrets-encryption: true' in (server_config_yaml | default('')) }}"
+
+- name: Read the secrets-encryption status
+  ansible.builtin.command: k3s secrets-encrypt status
+  register: k3s_secrets_check_status
+  changed_when: false
+  check_mode: false
+  when: k3s_secrets_check_enabled | bool
+  retries: 12
+  delay: 10
+  until: >-
+    'Encryption Status: Enabled' in k3s_secrets_check_status.stdout
+    and 'All hashes match' in k3s_secrets_check_status.stdout
+
+- name: Report
+  ansible.builtin.debug:
+    msg: "{{ k3s_secrets_check_status.stdout_lines | default(['secrets-encryption is off']) }}"

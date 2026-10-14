@@ -46,6 +46,15 @@
       tags: [k3s]
   become: yes
 
+# Fail fast if the servers do not share one secrets-encryption key (see the role's comment).
+- name: Verify secrets encryption is consistent across the servers
+  hosts: server[0]
+  gather_facts: false
+  roles:
+    - role: k3s_secrets_check
+      tags: [k3s]
+  become: yes
+
 # Point each node's containerd at Zot's pull-through cache (apps/zot/). One node at a
 # time: k3s has to restart on a node for it to load /etc/rancher/k3s/registries.yaml, so
 # this waits for the node to be Ready again before touching the next one, and stops the
