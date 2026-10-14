@@ -4,10 +4,9 @@ metadata:
   name: k3s-addons
   namespace: argocd
   annotations:
-    # Config for the components k3s itself installs (Traefik). k3s's helm controller
-    # creates the HelmChart for them; the HelmChartConfig CRD it ships is what lets a
-    # chart's values be overridden from git. Nothing depends on this and it depends on
-    # nothing but k3s, so any late wave will do.
+    # Config for the components k3s itself installs (today: CoreDNS's telemetry sinkhole).
+    # Traefik is disabled in group_vars/server/main.yaml, so its HelmChartConfig is gone. Nothing
+    # depends on this and it depends on nothing but k3s, so any late wave will do.
     argocd.argoproj.io/sync-wave: "2"
 spec:
   project: home-pi

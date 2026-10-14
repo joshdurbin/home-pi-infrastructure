@@ -14,13 +14,21 @@
   changed_when: false
   check_mode: false
 
-- name: Skip a node that is already on the target
+# A node is touched when its version is not the target, or (k3s_reconfigure) when it is a server:
+# the upstream role then rewrites config.yaml and restarts k3s without reinstalling anything.
+- name: Decide whether this node needs the run
+  ansible.builtin.set_fact:
+    k3s_rolling_upgrade_needed: >-
+      {{ k3s_version not in k3s_rolling_upgrade_installed.stdout_lines[0]
+         or ((k3s_reconfigure | bool) and 'server' in group_names) }}
+
+- name: Skip a node that is already current
   ansible.builtin.debug:
     msg: "{{ inventory_hostname }} already runs {{ k3s_version }}"
-  when: k3s_version in k3s_rolling_upgrade_installed.stdout_lines[0]
+  when: not (k3s_rolling_upgrade_needed | bool)
 
 - name: Upgrade this node
-  when: k3s_version not in k3s_rolling_upgrade_installed.stdout_lines[0]
+  when: k3s_rolling_upgrade_needed | bool
   block:
     - name: Run the k3s upgrade
       ansible.builtin.include_role:

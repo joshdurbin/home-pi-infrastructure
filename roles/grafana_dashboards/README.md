@@ -78,13 +78,10 @@ Written for this repo and provisioned as ConfigMaps (`apps/victoria-metrics/mani
 dashboard matches the metric names: **PgBouncer (CloudNativePG poolers)** (`cnpg_pgbouncer_*`) and **Vector**
 (`vector_*`).
 
-**Scraped, no dashboard**: Traefik (`apps/k3s-addons/manifests/traefik-vmpodscrape.yaml`) - every Ingress here is Tailscale-class, so
-it serves no requests and the official dashboard (17347) would be empty; import it if that changes.
-
 **No dashboard**, because nothing useful exists or the app exposes no metrics worth one: Bifrost, SearXNG,
 go-feature-flag, the redis-operator controller, descheduler, Headlamp, WhoDB, Open WebUI, Homepage,
 shairport-sync, Tailscale (the community dashboard polls the admin API, not the proxies' `/metrics`).
-Kube-controller-manager, scheduler and etcd bind to localhost under k3s, so the chart's dashboards for them are empty.
+etcd, the scheduler and the controller manager are scraped (k3s exposes them via `group_vars/server/main.yaml`; the targets are the three servers' LAN IPs in `apps/victoria-metrics/values.yaml`), so the chart's etcd, scheduler and controller-manager dashboards fill in once the servers have been restarted with those settings.
 
 Kubernetes cluster/node views, CoreDNS, etcd, Node Exporter Full, and all four VictoriaMetrics dashboards
 (operator, vmalert, vmagent, single-node) are **not** in this list — confirmed live via `GET /api/search`

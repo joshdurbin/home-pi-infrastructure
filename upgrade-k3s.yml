@@ -8,6 +8,9 @@
 # after a failure. A pre-upgrade etcd snapshot is taken first.
 #
 # Bump k3s_version, then:  make upgrade-k3s
+# After changing group_vars/server/main.yaml (k3s server settings) instead:  make reconfigure-k3s
+# which also restarts the servers one at a time on the same version and, if secrets-encryption is
+# on, re-encrypts the stored Secrets.
 # (skip the prompt with:   ansible-playbook upgrade-k3s.yml -e k3s_upgrade_confirm=yes ...)
 
 - name: Confirm
@@ -64,3 +67,29 @@
       ansible.builtin.include_role:
         name: k3s_rolling_upgrade
         tasks_from: postflight.yml
+
+# Secrets encryption: with the flag on every server (make reconfigure-k3s), re-encrypt what is stored
+# and have each server reload the keys. Skipped unless server_config_yaml turns it on.
+- name: Re-encrypt stored Secrets
+  hosts: server[0]
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Rotate the keys
+      ansible.builtin.include_role:
+        name: k3s_rolling_upgrade
+        tasks_from: secrets_rotate.yml
+      when: "'secrets-encryption: true' in (server_config_yaml | default(''))"
+
+- name: Reload the keys, one server at a time
+  hosts: server
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  gather_facts: false
+  tasks:
+    - name: Restart and wait
+      ansible.builtin.include_role:
+        name: k3s_rolling_upgrade
+        tasks_from: secrets_restart.yml
+      when: hostvars[groups['server'][0]].k3s_rolling_upgrade_rotated is defined and hostvars[groups['server'][0]].k3s_rolling_upgrade_rotated is changed

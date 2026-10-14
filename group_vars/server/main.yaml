@@ -1,0 +1,25 @@
+---
+# Extra k3s SERVER settings, merged into /etc/rancher/k3s/config.yaml by the k3s_server role
+# (site.yml) and by the rolling upgrade (`make reconfigure-k3s`, which restarts the servers
+# one at a time to pick a change up). A string, because that is what the role's
+# server_config_yaml is. Agents are unaffected.
+server_config_yaml: |
+  # Traefik is not used: every Ingress is Tailscale-class. (servicelb stays on: Blocky's DNS and
+  # HTTP Services are type LoadBalancer and rely on it to listen on every node's LAN IP.)
+  disable:
+    - traefik
+
+  # Kubernetes Secrets encrypted at rest in etcd (AES-CBC). Setting this only encrypts what is
+  # written from then on; `make reconfigure-k3s` follows the restart with
+  # `k3s secrets-encrypt rotate-keys`, which re-encrypts everything already stored. Needs to be on
+  # every server.
+  secrets-encryption: true
+
+  # Control-plane metrics, scraped via apps/victoria-metrics/values.yaml (kubeEtcd,
+  # kubeControllerManager, kubeScheduler): etcd on :2381 over plain HTTP, the controller manager
+  # and scheduler on their secure ports (token-authenticated) instead of loopback only.
+  etcd-expose-metrics: true
+  kube-controller-manager-arg:
+    - bind-address=0.0.0.0
+  kube-scheduler-arg:
+    - bind-address=0.0.0.0

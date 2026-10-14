@@ -14,6 +14,11 @@ k3s_rolling_upgrade_ready_delay: 10
 k3s_rolling_upgrade_longhorn_retries: 120
 k3s_rolling_upgrade_longhorn_delay: 10
 
+# true (make reconfigure-k3s): also restart the SERVERS one at a time even when they already run the
+# target version, so they pick up a change to group_vars/server/main.yaml (server_config_yaml). The
+# k3s_upgrade role rewrites /etc/rancher/k3s/config.yaml and restarts k3s whatever the version.
+k3s_reconfigure: false
+
 # The etcd snapshot taken before anything is touched, kept on the first server in
 # /var/lib/rancher/k3s/server/db/snapshots/.
 k3s_rolling_upgrade_snapshot_name: "pre-{{ k3s_version | regex_replace('[^A-Za-z0-9.]', '-') }}"

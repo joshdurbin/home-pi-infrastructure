@@ -474,7 +474,7 @@ rely on the switches alone, so those are the ones to re-check after an upgrade.
 |---|---|---|
 | Tailscale: node `tailscaled`, operator, ingress proxies | client logs to Tailscale's log service; network flow logs ride the same pipeline if the tailnet has them on | `TS_NO_LOGS_NO_SUPPORT=true` in `/etc/default/tailscaled` (`roles/tailscale`), `operatorConfig.extraEnv` (`apps/tailscale-operator/values.yaml`), ProxyClass `tailscaleContainer.env` (`manifests/proxyclass.yaml`) |
 | Grafana | usage statistics (stats.grafana.org), update checks, plugin update checks, news feed | `analytics.reporting_enabled`, `check_for_updates`, `check_for_plugin_updates`, `feedback_links_enabled`, `news.news_feed_enabled` all `false` (`apps/victoria-metrics/values.yaml`) |
-| Traefik (k3s) | update check to update.traefik.io, sharing version and public IP (anonymous usage is opt-in, off) | `HelmChartConfig` setting `global.checkNewVersion: false` (chart v40 value; the older `globalArguments` key is silently ignored by it) (`apps/k3s-addons/`); it is unused and could be removed with k3s `disable: [traefik]` |
+| Traefik (k3s) | update check to update.traefik.io (anonymous usage is opt-in, off) | removed: `disable: [traefik]` in `group_vars/server/main.yaml` (it was unused) |
 | Longhorn | upgrade checker to Longhorn's upgrade-responder (usage metrics only if enabled, they are not) | `defaultSettings.upgradeChecker: false` and `allowCollectingLonghornUsageMetrics: false` (`apps/longhorn/values.yaml`) |
 | Trivy | after every run the client calls check.trivy.dev, sending a machine identifier (hash of hostname + MAC), the command and its flags; skipped only if both `SKIP_VERSION_CHECK` and `DISABLE_TELEMETRY` are set | server: `TRIVY_SKIP_VERSION_CHECK`, `TRIVY_DISABLE_TELEMETRY` via `trivy.valuesFromConfigMap` (`apps/trivy-operator/manifests/trivy-env-configmap.yaml`); scan Jobs (the operator cannot pass them env): `check.trivy.dev` is NXDOMAIN in CoreDNS (`apps/k3s-addons/manifests/coredns-telemetry-sinkhole.yaml`) |
 | Temporal server | version service gets product, version, CPU arch, OS, DB type, cluster ID and connected SDKs | `TEMPORAL_VERSION_CHECK_DISABLED=true` (`apps/temporal/values.yaml`, `server.additionalEnv`) |
@@ -848,8 +848,8 @@ admin login, so its entire config is non-secret and lives as a plain git-managed
   (`vmagent`'s `serviceScrapeSelector` is `selectAllByDefault: true` in this chart, confirmed against the
   real `victoria-metrics-k8s-stack` chart templates). Worth calling out: the old adguard-exporter never
   has no exporter at all - it is scraped directly through that `VMServiceScrape`.
-- **Services**: two dedicated `LoadBalancer` Services (via k3s's built-in ServiceLB, same mechanism as
-  Traefik) — `blocky-dns` (53/tcp+udp, for LAN clients) and `blocky-http` (4000/tcp, metrics + the
+- **Services**: two dedicated `LoadBalancer` Services (via k3s's built-in ServiceLB, which stays enabled
+  for these) — `blocky-dns` (53/tcp+udp, for LAN clients) and `blocky-http` (4000/tcp, metrics + the
   DNS-over-HTTPS endpoint — Blocky has no admin dashboard to expose, unlike AdGuard, but this is still
   reachable via the Tailscale Operator, see below, for checking `/metrics` remotely).
 - **Egress NetworkPolicy** (`apps/blocky/manifests/networkpolicy.yaml`) — same shape as the AdGuard policy
@@ -1628,8 +1628,6 @@ operators. None are on a path that other workloads need to keep running.
 - **CoreDNS** is a single replica managed by k3s - draining its node blips cluster-internal DNS. Scaling it with
   `kubectl scale` works but k3s can reset it on an upgrade; the durable fixes are disabling the k3s addon and
   running your own, or an Ansible step that re-asserts the replica count.
-- **Traefik** (k3s default) is a single replica and unused (every Ingress is Tailscale). Disabling it
-  (`--disable traefik`) removes it and its per-node load balancers.
 - **API endpoint**: agents, the Ansible-installed agent kubeconfig, and your laptop's kubeconfig point at the first
   server (`rpi-5-1`). While it is down, `kubectl` from those places fails - run it from another control-plane node.
   A stable endpoint (kube-vip / a DNS name over all three servers) would fix this.
@@ -2122,6 +2120,9 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass --limit pi4
 ```bash
 # Upgrade k3s: bump k3s_version in group_vars/k3s_cluster/k3s.yaml, then
 make upgrade-k3s    # = ansible-playbook upgrade-k3s.yml (roles/k3s_rolling_upgrade)
+# Server settings (group_vars/server/main.yaml: disable traefik, secrets encryption, control-plane
+# metrics): after changing them, `make reconfigure-k3s` restarts the servers one at a time and, with
+# secrets-encryption on, re-encrypts the Secrets already stored in etcd.
 # Checks the cluster is healthy, takes an etcd snapshot, then upgrades the servers and the
 # agents ONE node at a time, waiting for each to be Ready on the new version and for Longhorn
 # to be healthy again; stops if a node doesn't come back; skips nodes already on the target

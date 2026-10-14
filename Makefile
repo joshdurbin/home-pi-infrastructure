@@ -1,4 +1,4 @@
-.PHONY: help install upgrade-k3s deploy deploy-system deploy-k3s deploy-users deploy-secrets deploy-argocd deploy-dashboards deploy-registries deploy-tailscale build-proxysql-operator destroy-cluster verify logs clean status syntax-check lint
+.PHONY: help install upgrade-k3s reconfigure-k3s deploy deploy-system deploy-k3s deploy-users deploy-secrets deploy-argocd deploy-dashboards deploy-registries deploy-tailscale build-proxysql-operator destroy-cluster verify logs clean status syntax-check lint
 
 INVENTORY := inventory.dist
 VAULT_PASS := --ask-vault-pass
@@ -20,6 +20,7 @@ help:
 	@echo "  make deploy-dashboards    Import Grafana dashboards (not part of make deploy)"
 	@echo "  make deploy-tailscale     Apply the Tailscale node config (restarts tailscaled, one node at a time)"
 	@echo "  make upgrade-k3s          Rolling k3s upgrade to k3s_version, one node at a time (etcd snapshot first)"
+	@echo "  make reconfigure-k3s      Apply group_vars/server/main.yaml to the servers (rolling restart, then re-encrypt Secrets)"
 	@echo "  make deploy-registries    Point each node at the Zot pull-through cache (restarts k3s, one node at a time)"
 	@echo "  make build-proxysql-operator  Build the ProxySQL operator image and push it to the in-cluster Zot"
 	@echo ""
@@ -72,6 +73,10 @@ deploy-registries:
 upgrade-k3s:
 	@echo "Rolling k3s upgrade (servers, then agents, one node at a time)..."
 	ansible-playbook upgrade-k3s.yml -i $(INVENTORY) $(VAULT_PASS)
+
+reconfigure-k3s:
+	@echo "Rolling k3s server reconfigure (restarts the servers one at a time)..."
+	ansible-playbook upgrade-k3s.yml -i $(INVENTORY) $(VAULT_PASS) -e k3s_reconfigure=true
 
 deploy-tailscale:
 	@echo "Configuring tailscaled on each node (restarts it if its config changed, one node at a time)..."

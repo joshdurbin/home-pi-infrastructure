@@ -43,9 +43,10 @@
 - name: Work out which nodes still need the upgrade
   ansible.builtin.set_fact:
     k3s_rolling_upgrade_pending: >-
-      {{ k3s_rolling_upgrade_nodes
-         | rejectattr('status.nodeInfo.kubeletVersion', 'equalto', k3s_version)
-         | map(attribute='metadata.name') | list }}
+      {{ (k3s_rolling_upgrade_nodes
+          | rejectattr('status.nodeInfo.kubeletVersion', 'equalto', k3s_version)
+          | map(attribute='metadata.name') | list
+          + (groups['server'] if (k3s_reconfigure | bool) else [])) | unique | list }}
 
 - name: Nothing to do
   ansible.builtin.debug:
