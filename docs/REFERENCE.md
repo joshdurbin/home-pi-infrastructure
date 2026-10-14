@@ -1952,7 +1952,7 @@ sudo tailscale logout
 Edit `group_vars/k3s_cluster/k3s.yaml` (shared by every server + agent node):
 
 ```yaml
-k3s_version: v1.36.4+k3s1
+k3s_version: v1.36.5+k3s1
 k3s_release_channel: stable
 ```
 
