@@ -4,6 +4,13 @@
 # scope, since every k3s node needs identical values here.
 k3s_version: v1.36.5+k3s1
 k3s_release_channel: stable
-api_endpoint: "{{ hostvars[groups['server'][0]]['ansible_host'] }}"
+# The first server's LAN address, whatever name the inventory reaches it by (bare hostnames, tailnet
+# names or IPs). Prefer the address from its gathered facts (the default-route interface, i.e. the
+# LAN IP the nodes use to reach each other); fall back to its ansible_host, then its inventory name,
+# when facts are not available (e.g. a run limited to other hosts). This is what the agents'
+# --server URL, the servers' join URL, the TLS SAN and the kubeconfig server address are built from.
+api_endpoint: >-
+  {{ (hostvars[groups['server'][0]].get('ansible_default_ipv4', {})).get('address')
+     | default(hostvars[groups['server'][0]].get('ansible_host', groups['server'][0]), true) }}
 api_port: 6443
 k3s_server: "https://{{ api_endpoint }}:{{ api_port }}"
