@@ -32,7 +32,9 @@ spec:
     - name: delete
       actions:
         - delete: {}
-      transitions: []
+      # No `transitions: []` here on purpose: the operator rewrites the resource without an empty list,
+      # so declaring one made Argo CD see a permanent difference (OutOfSync, and the operator and Argo
+      # churned the object's generation every few seconds).
   ismTemplate:
     indexPatterns:
       - logs-*

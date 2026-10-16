@@ -638,7 +638,7 @@ kubectl -n <namespace> get secret <name> -o json | jq -r '.data | map_values(@ba
 kubectl -n <namespace> get secret <name> -o json | jq -r '.data | keys[]'                  # key names only
 ```
 The commonly wanted ones are tabled in the main [README](../README.md#get-secrets-out-of-the-cluster). The values
-you chose yourself live in the Vault (`ansible-vault view group_vars/all/main.yaml`), which is the source of
+you chose yourself live in the Vault (`ansible localhost -e @group_vars/all/main.yaml --ask-vault-pass -m debug -a var=<name>`), which is the source of
 truth: editing a Secret with `kubectl` is overwritten by the next `make deploy-secrets`.
 
 ## Storage (Longhorn)
@@ -753,8 +753,8 @@ full rationale (why an operator over the plain chart an earlier version of this 
 over Elasticsearch/Kibana naming, why TLS + auth are mandatory here unlike everywhere else in this
 cluster, why Vector rather than a new log shipper); this section covers day-to-day access.
 
-**Prerequisite**: `opensearch_admin_password` must be set in Vault (`ansible-vault edit
-group_vars/all/main.yaml`) before this deploys successfully - see [Secrets & Variables](#secrets--variables).
+**Prerequisite**: `opensearch_admin_password` must be set in Vault (`ansible-vault encrypt_string --stdin-name opensearch_admin_password`,
+pasted into `group_vars/all/main.yaml`) before this deploys successfully - see [Secrets & Variables](#secrets--variables).
 
 - **Topology**: an `OpenSearchCluster` custom resource (`apps/opensearch/manifests/cluster.yaml`) with two
   node pools - `client` (cluster-manager + ingest, 2Gi PVC) and `data` (data + cluster-manager, 10Gi PVC,
@@ -912,7 +912,7 @@ is a web UI, not a port every LAN client needs to hit directly (same pattern as 
 values are fine, there's nothing to remember about either:
 ```bash
 openssl rand -hex 32
-ansible-vault edit group_vars/all/main.yaml
+ansible-vault encrypt_string --stdin-name <name>
 ```
 Add:
 ```yaml
@@ -1242,7 +1242,7 @@ database directly" pattern as everything else in this repo.
   (databases not fully reconciled yet) self-heals via Argo CD's automated retry, not a wait-for step in this
   repo.
 
-**Prerequisite**: `temporal_db_password` must be set in Vault (`ansible-vault edit group_vars/all/main.yaml`)
+**Prerequisite**: `temporal_db_password` must be set in Vault (`ansible-vault encrypt_string --stdin-name <name>`)
 before this deploys successfully - see [Secrets & Variables](#secrets--variables).
 
 **Troubleshooting:**
@@ -1409,7 +1409,7 @@ Provider keys live in Bifrost, not here; there is no Ollama and nothing credenti
 **One-time**: create the session-signing key and database password in Vault before first deploy:
 ```bash
 openssl rand -hex 32
-ansible-vault edit group_vars/all/main.yaml
+ansible-vault encrypt_string --stdin-name <name>
 ```
 Add:
 ```yaml
@@ -1735,7 +1735,7 @@ creates tailnet-only HTTPS ingress for specific services — distinct from `role
 5. **Store the OAuth credentials in Vault** — never paste the client secret into a chat session or
    commit it in plaintext:
    ```bash
-   ansible-vault edit group_vars/all/main.yaml
+   ansible-vault encrypt_string --stdin-name <name>
    ```
    Add:
    ```yaml
@@ -1851,7 +1851,7 @@ Kubernetes operator:
 1. Tailscale admin console → Settings → OAuth clients → Generate. `write` scope for **Auth Keys** only.
    Tag: `tag:pi-node`.
 2. Settings → Access Controls, merge in: `"tagOwners": { "tag:pi-node": [] }`
-3. `ansible-vault edit group_vars/all/main.yaml`, add `tailscale_node_oauth_client_id` and
+3. `ansible-vault encrypt_string --stdin-name <name>`, add `tailscale_node_oauth_client_id` and
    `tailscale_node_oauth_client_secret`.
 
 ### Installation
@@ -1974,7 +1974,7 @@ k3s_join_token: !vault |
 To update:
 
 ```bash
-ansible-vault edit group_vars/all/main.yaml
+ansible-vault encrypt_string --stdin-name <name>
 ```
 
 ### Network Ports
@@ -2008,10 +2008,14 @@ Update `inventory.dist` if your network differs.
 
 To rotate secrets:
 
+`group_vars/all/main.yaml` is not an encrypted file but plain YAML with a separately encrypted value per secret, so there is no
+whole-file `encrypt`/`decrypt`/`rekey`. Change one secret by encrypting the new value and pasting it over the old block:
+
 ```bash
-ansible-vault encrypt group_vars/all/main.yaml
-ansible-vault decrypt group_vars/all/main.yaml
+printf '%s' '<new value>' | ansible-vault encrypt_string --stdin-name <name>
 ```
+
+To change the vault PASSWORD itself, decrypt every value with the old one and re-encrypt it with the new one (each is its own block).
 
 ## Troubleshooting
 
@@ -2099,10 +2103,9 @@ helm upgrade <release> <chart-ref> -n <namespace> -f /tmp/<release>-values.yaml
 
 ```bash
 # Decrypt to view
-ansible-vault view group_vars/all/main.yaml --vault-password-file=<your-password-file>
+ansible localhost -e @group_vars/all/main.yaml --ask-vault-pass -m debug -a var=<name> --vault-password-file=<your-password-file>
 
-# Or use prompt
-ansible-vault view group_vars/all/main.yaml
+ansible localhost -e @group_vars/all/main.yaml --ask-vault-pass -m debug -a var=<name>
 ```
 
 ## Advanced Commands
@@ -2124,6 +2127,9 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass --limit 'rpi-4b-*'
 
 ```bash
 # Upgrade k3s: bump k3s_version in group_vars/k3s_cluster/k3s.yaml, then
+# `make deploy` / `make deploy-k3s` leave a node alone when its k3s is already the target version and running
+# (the vendored k3s-ansible roles reinstall and restart on every run, all servers at once); add `-e k3s_force=true`
+# to the ansible-playbook call to run them on every node anyway.
 make upgrade-k3s    # = ansible-playbook upgrade-k3s.yml -i inventory.dist --ask-vault-pass (roles/k3s_rolling_upgrade)
 # Server settings (group_vars/server/main.yaml: disable traefik, secrets encryption, control-plane
 # metrics): after changing them, `make reconfigure-k3s` restarts the servers one at a time and, with

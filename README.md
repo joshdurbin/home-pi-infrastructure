@@ -100,10 +100,13 @@ Ansible owns the machines and the secrets; Argo CD owns everything that runs in 
      ```
    - Settings → enable "HTTPS Certificates".
 
-5. Add secrets to Vault:
+5. Add secrets to Vault. `group_vars/all/main.yaml` is a plain YAML file in which each secret is its own encrypted
+   value (`name: !vault |`), so `ansible-vault edit/view` do not work on it. Encrypt each value and paste the output
+   into the file:
    ```bash
-   ansible-vault edit group_vars/all/main.yaml
+   printf '%s' '<the secret>' | ansible-vault encrypt_string --stdin-name k3s_join_token   # prompts for the vault password
    ```
+   The variables to define (each one encrypted this way):
    ```yaml
    k3s_join_token: "<any random string>"
    tailscale_node_oauth_client_id: "<node-join client from step 4>"
@@ -235,8 +238,8 @@ Common ones:
 
 The source of truth for the values *you* chose is the Vault, not the cluster:
 ```bash
-ansible-vault view group_vars/all/main.yaml       # read
-ansible-vault edit group_vars/all/main.yaml       # change, then: make deploy-secrets
+ansible localhost -e @group_vars/all/main.yaml --ask-vault-pass -m debug -a var=<name>   # read one value
+printf '%s' '<new value>' | ansible-vault encrypt_string --stdin-name <name>              # change: paste over the old block, then: make deploy-secrets
 ```
 Changing a secret in the Vault and running `make deploy-secrets` overwrites the in-cluster copy; editing the Secret
 with `kubectl` directly gets overwritten the next time that runs.

@@ -34,7 +34,7 @@ and vice versa.
 
 3. **Store the credentials in Vault:**
    ```bash
-   ansible-vault edit group_vars/all/main.yaml
+   ansible-vault encrypt_string --stdin-name <name>   # paste the output into group_vars/all/main.yaml
    ```
    ```yaml
    tailscale_node_oauth_client_id: "<client ID from step 1>"
