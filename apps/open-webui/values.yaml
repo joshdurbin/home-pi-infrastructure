@@ -66,6 +66,27 @@ extraEnvVars:
     value: "true"
   - name: DO_NOT_TRACK
     value: "true"
+  # A small local model (apps/llm/, 4-8k token window) cannot afford Open WebUI's defaults. Version 0.12 sends
+  # ~39 built-in tool definitions (memory, notes, automations, calendar, knowledge, skills, ...) with EVERY
+  # message when function calling is native: about 7,000 tokens, which overflowed the 4096-token window
+  # ("request (7046 tokens) exceeds the available context size") for every question. So:
+  #   - built-in tools off for all models (a model can still opt back in from the admin UI),
+  #   - a short system prompt carrying today's date (the date used to come from a tool; the {{...}} variables
+  #     are filled in by Open WebUI per request),
+  #   - tags and follow-up generation off: each is another request to the same single-slot model after every
+  #     reply, delaying the user's next message (the chat title is kept).
+  # These are PersistentConfig settings: the environment only seeds them on first start, and after that the
+  # values in the database win. They were also applied to the live database (admin settings, models.default_*
+  # and task.* rows); this keeps a rebuilt database the same.
+  - name: DEFAULT_MODEL_METADATA
+    value: '{"capabilities":{"builtin_tools":false}}'
+  - name: DEFAULT_MODEL_PARAMS
+    # The chart runs `tpl` over this list, so Open WebUI's own {{...}} variables are escaped as Helm string literals.
+    value: '{"system":"You are a helpful assistant. Today is {{ `{{CURRENT_WEEKDAY}}` }}, {{ `{{CURRENT_DATE}}` }}."}'
+  - name: ENABLE_TAGS_GENERATION
+    value: "false"
+  - name: ENABLE_FOLLOW_UP_GENERATION
+    value: "false"
   - name: WEBUI_SECRET_KEY
     valueFrom:
       secretKeyRef:

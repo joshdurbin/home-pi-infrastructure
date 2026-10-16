@@ -35,10 +35,12 @@ controllers:
           - 0.0.0.0
           - --port
           - "8080"
-          # Context: 4096 tokens in ONE slot. The KV cache is allocated up front for the whole context, so this
-          # is the knob that scales memory; one slot because a second concurrent request would need its own.
+          # Context: 8192 tokens in ONE slot. The KV cache is allocated up front for the whole context, so this
+          # is the knob that scales memory (~120 MB at 8-bit for 8192; 4096 overflowed on Open WebUI's default
+          # tool definitions - see apps/open-webui/values.yaml); one slot because a second concurrent request
+          # would need its own. Prompt processing on a Pi 5 is ~40 tokens/s, so a long prompt costs seconds.
           - --ctx-size
-          - "4096"
+          - "8192"
           - --parallel
           - "1"
           # KV cache at 8 bits instead of 16 (half the size, negligible quality loss). A quantized V cache
