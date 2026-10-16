@@ -12,6 +12,7 @@
     url: https://pkgs.tailscale.com/stable/raspbian/trixie.noarmor.gpg
     dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
     mode: '0644'
+  register: tailscale_apt_key
   tags:
     - tailscale
 
@@ -20,12 +21,17 @@
     url: https://pkgs.tailscale.com/stable/raspbian/trixie.tailscale-keyring.list
     dest: /etc/apt/sources.list.d/tailscale.list
     mode: '0644'
+  register: tailscale_apt_list
   tags:
     - tailscale
 
+# Only when the key or the repo file actually changed. cache_valid_time: 0 forces the refresh even
+# though site.yml's module_defaults otherwise skip an index younger than an hour.
 - name: update apt cache
   ansible.builtin.apt:
     update_cache: true
+    cache_valid_time: 0
+  when: tailscale_apt_key is changed or tailscale_apt_list is changed
   tags:
     - tailscale
 

@@ -2,9 +2,14 @@
 # Points every node's containerd at Zot's pull-through cache (see defaults/main.yaml).
 #
 # k3s only reads /etc/rancher/k3s/registries.yaml at startup, so a change needs a k3s
-# restart on that node. This role is meant to run `serial: 1` (site.yml): restart one node
-# at a time and wait for it to be Ready before moving on, so the control plane never
-# loses etcd quorum and workloads are not all disturbed together. Restarting the k3s
+# restart on that node. The files in this role, as site.yml uses them:
+#   seed.yaml   before k3s is installed: write the file, so the first start already has it and
+#               a bootstrap needs no restarts at all.
+#   check.yaml  after k3s is up, in parallel and read-only: which nodes would change (grouped
+#               as k3s_registries_restart) and verification on the rest.
+#   this file   in a `serial: 1` play over ONLY the nodes that need a restart: restart one node
+#               at a time and wait for it to be Ready before moving on, so the control plane never
+#               loses etcd quorum and workloads are not all disturbed together. Restarting the k3s
 # service does not restart the pods: the container shims keep running while the
 # embedded containerd comes back.
 #
@@ -46,10 +51,7 @@
   changed_when: false
   when: k3s_registries_file.changed
 
-# Proof containerd actually took the mirrors: k3s renders one hosts.toml per registry.
+# Proof containerd actually took the mirrors.
 - name: Confirm containerd generated the mirror config
-  ansible.builtin.slurp:
-    src: /var/lib/rancher/k3s/agent/etc/containerd/certs.d/docker.io/hosts.toml
-  register: k3s_registries_hosts
-  failed_when: >-
-    (k3s_registries_zot_endpoint not in (k3s_registries_hosts.content | b64decode))
+  ansible.builtin.include_tasks: verify.yaml
+  when: k3s_registries_file.changed

@@ -9,27 +9,21 @@
 #
 # To add another one: add an entry to k8s_secrets, not a new role - that's
 # the whole point of this being data-driven instead of one role per app.
+# Two API sessions instead of one per object: every kubernetes.core.k8s call starts Python on the
+# server, loads the kubeconfig and opens a connection, which on a Pi is a few seconds each, and there are
+# a couple of dozen objects. The module takes a LIST of definitions, so the namespaces go in one call
+# and the Secrets/ConfigMaps in a second (after the namespaces exist). `wait` is only useful for
+# namespaces; a Secret or ConfigMap is ready when the API accepts it.
 - name: Ensure namespaces exist for cluster secrets
   kubernetes.core.k8s:
-    definition:
-      apiVersion: v1
-      kind: Namespace
-      metadata:
-        name: '{{ item }}'
+    definition: "{{ lookup('ansible.builtin.template', 'namespaces.yaml.j2') | from_yaml }}"
     kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
     wait: true
-  loop: "{{ k8s_secrets | map(attribute='namespace') | unique | list }}"
-  loop_control:
-    label: '{{ item }}'
   run_once: true
 
 - name: Apply cluster secrets/configmaps
   kubernetes.core.k8s:
-    definition: '{{ item.manifest }}'
+    definition: "{{ k8s_secrets | map(attribute='manifest') | list }}"
     kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
-    wait: true
-  loop: '{{ k8s_secrets }}'
-  loop_control:
-    label: '{{ item.manifest.kind }}/{{ item.manifest.metadata.name }}'
   run_once: true
   no_log: true

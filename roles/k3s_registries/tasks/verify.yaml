@@ -1,0 +1,8 @@
+---
+# Proof containerd actually took the mirrors: k3s renders one hosts.toml per registry.
+- name: Confirm containerd generated the mirror config
+  ansible.builtin.slurp:
+    src: /var/lib/rancher/k3s/agent/etc/containerd/certs.d/docker.io/hosts.toml
+  register: k3s_registries_hosts
+  failed_when: >-
+    (k3s_registries_zot_endpoint not in (k3s_registries_hosts.content | b64decode))

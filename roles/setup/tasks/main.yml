@@ -51,10 +51,14 @@
   when: keyboard_layout_result.changed
   changed_when: false
 
+# A full dist-upgrade on all nodes takes minutes and can pull in a new kernel, so it is not part of
+# every converge: unattended-upgrades (below) keeps the nodes patched. Run it on demand with
+# `make upgrade-os` (sets setup_upgrade_packages).
 - name: Update all packages to the latest version
   ansible.builtin.apt:
     update_cache: true
     upgrade: dist
+  when: setup_upgrade_packages | default(false) | bool
 
 - name: include unattended-upgrades (automatic package updates) tasks
   ansible.builtin.include_tasks: unattended_upgrades.yml
@@ -84,3 +88,6 @@
       - wireguard-tools
       - termshark
     state: present
+    # The dist-upgrade task above no longer refreshes the index on every run (and a fresh image
+    # needs it); cache_valid_time (play-level module_defaults in site.yml) skips it when recent.
+    update_cache: true

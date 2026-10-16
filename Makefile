@@ -1,4 +1,4 @@
-.PHONY: help install upgrade-k3s reconfigure-k3s deploy deploy-system deploy-k3s deploy-users deploy-secrets deploy-argocd deploy-dashboards deploy-registries deploy-tailscale build-proxysql-operator destroy-cluster verify logs clean status syntax-check lint
+.PHONY: help install upgrade-os upgrade-k3s reconfigure-k3s deploy deploy-system deploy-k3s deploy-users deploy-secrets deploy-argocd deploy-dashboards deploy-registries deploy-tailscale build-proxysql-operator destroy-cluster verify logs clean status syntax-check lint
 
 INVENTORY := inventory.dist
 VAULT_PASS := --ask-vault-pass
@@ -19,6 +19,7 @@ help:
 	@echo "  make deploy-argocd        Bootstrap Argo CD only"
 	@echo "  make deploy-dashboards    Import Grafana dashboards (not part of make deploy)"
 	@echo "  make deploy-tailscale     Apply the Tailscale node config (restarts tailscaled, one node at a time)"
+	@echo "  make upgrade-os           Full apt dist-upgrade on every node (not part of make deploy; may need reboots)"
 	@echo "  make upgrade-k3s          Rolling k3s upgrade to k3s_version, one node at a time (etcd snapshot first)"
 	@echo "  make reconfigure-k3s      Apply group_vars/server/main.yaml to the servers (rolling restart, then re-encrypt Secrets)"
 	@echo "  make deploy-registries    Point each node at the Zot pull-through cache (restarts k3s, one node at a time)"
@@ -69,6 +70,10 @@ deploy-argocd:
 deploy-registries:
 	@echo "Configuring registry mirrors (restarts k3s on each node, one at a time)..."
 	ansible-playbook site.yml -i $(INVENTORY) $(VAULT_PASS) --tags registries
+
+upgrade-os:
+	@echo "Running a full apt dist-upgrade on every node (reboots are not done for you)..."
+	ansible-playbook site.yml -i $(INVENTORY) $(VAULT_PASS) --tags setup -e setup_upgrade_packages=true
 
 upgrade-k3s:
 	@echo "Rolling k3s upgrade (servers, then agents, one node at a time)..."

@@ -1,0 +1,7 @@
+{# One Namespace per distinct namespace in k8s_secrets, as a YAML list for a single kubernetes.core.k8s call. #}
+{% for ns in k8s_secrets | map(attribute='namespace') | unique %}
+- apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: {{ ns }}
+{% endfor %}

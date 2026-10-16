@@ -19,46 +19,24 @@
     name: python3-kubernetes
     state: present
 
-# Applies Kubernetes node labels declared in each host's k8s_labels hostvar
-# (see host_vars/rpi-5-*.yaml). Runs once and loops over every inventory
-# host rather than just the current play's hosts - this play is `hosts:
-# server`, which today happens to be the same set of nodes carrying these
-# labels (rpi-5-1/2/3), but looping over groups['all'] keeps this correct
-# regardless of which nodes are servers vs. which nodes carry labels, rather
-# than relying on that coincidence.
-- name: Apply node labels from host vars
-  when: hostvars[item].k8s_labels is defined
+# Applies, in ONE API call, everything node-level that hostvars declare: Kubernetes labels (each
+# host's k8s_labels, see host_vars/rpi-5-*.yaml) and the Longhorn disk-config annotation. Runs once
+# and covers every inventory host rather than just the current play's hosts (this play is `hosts:
+# server`), so it stays correct regardless of which nodes are servers.
+#
+# The Longhorn annotation: with `createDefaultDiskLabeledNodes: true` and the node label
+# node.longhorn.io/create-default-disk=config, Longhorn creates the node's disk from the
+# node.longhorn.io/default-disks-config annotation instead of using the whole filesystem.
+# storageReserved (longhorn_disk_reserved_gib, in GiB) is the part of the filesystem Longhorn must
+# leave alone, so (filesystem - reserved) is what it may schedule. It is only read when the node first
+# registers: a cluster rebuild applies it, a later edit here does not move an existing disk.
+#
+# One call, not one per node and per kind of change: each kubernetes.core.k8s call starts Python on the
+# server and opens an API session, a few seconds each on a Pi. The list is built in
+# templates/node-patches.yaml.j2.
+- name: Apply node labels and annotations from host vars
   kubernetes.core.k8s:
-    definition:
-      apiVersion: v1
-      kind: Node
-      metadata:
-        name: "{{ item }}"
-        labels: "{{ hostvars[item].k8s_labels }}"
+    definition: "{{ lookup('ansible.builtin.template', 'node-patches.yaml.j2') | from_yaml }}"
     kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
     state: patched
-  loop: "{{ groups['all'] }}"
-  run_once: true
-
-# Longhorn disk size. With `createDefaultDiskLabeledNodes: true` and the node label
-# node.longhorn.io/create-default-disk=config, Longhorn creates the node's disk from this
-# annotation instead of using the whole filesystem. storageReserved is the part of the
-# filesystem Longhorn must leave alone, so (filesystem - reserved) is what it may schedule.
-# Only read when the node first registers: a cluster rebuild applies it, a later edit here
-# does not move an existing disk.
-- name: Apply the Longhorn disk config annotation
-  when: hostvars[item].longhorn_disk_reserved_gib is defined
-  kubernetes.core.k8s:
-    definition:
-      apiVersion: v1
-      kind: Node
-      metadata:
-        name: "{{ item }}"
-        annotations:
-          node.longhorn.io/default-disks-config: >-
-            {{ [{'path': '/var/lib/longhorn', 'allowScheduling': true,
-                 'storageReserved': hostvars[item].longhorn_disk_reserved_gib * 1073741824}] | to_json }}
-    kubeconfig: '{{ k3s_project.cluster.kubeconfig }}'
-    state: patched
-  loop: "{{ groups['all'] }}"
   run_once: true

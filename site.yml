@@ -14,6 +14,11 @@
 
 - name: System preparation and user management
   hosts: all
+  # apt index refreshes (the many update_cache: true tasks across these roles and k3s-ansible) are
+  # skipped when the index is under an hour old; tasks that must force one pass cache_valid_time: 0.
+  module_defaults:
+    ansible.builtin.apt:
+      cache_valid_time: 3600
   roles:
     - role: user_management
       tags: [user_management]
@@ -23,6 +28,11 @@
 
 - name: K3S cluster deployment
   hosts: k3s_cluster
+  # apt index refreshes (the many update_cache: true tasks across these roles and k3s-ansible) are
+  # skipped when the index is under an hour old; tasks that must force one pass cache_valid_time: 0.
+  module_defaults:
+    ansible.builtin.apt:
+      cache_valid_time: 3600
   roles:
     - role: prereq
       tags: [k3s]
@@ -32,17 +42,25 @@
       tags: [k3s]
   become: yes
 
-# The same secrets-encryption key on every server, in place BEFORE k3s first starts (see the role).
-- name: Seed the secrets-encryption key
-  hosts: server
-  roles:
-    - role: k3s_secrets_seed
+# Written BEFORE k3s is installed, so its very first start already has the registry mirrors and the
+# same secrets-encryption key on every server (see the roles). That is what lets the later registry
+# play find nothing to restart.
+- name: Seed the registry mirror config
+  hosts: k3s_cluster
+  gather_facts: false
+  tasks:
+    - name: Write registries.yaml (no k3s restart)
+      ansible.builtin.include_role:
+        name: k3s_registries
+        tasks_from: seed
       tags: [k3s]
   become: yes
 
 - name: K3S server setup
   hosts: server
   roles:
+    - role: k3s_secrets_seed
+      tags: [k3s]
     - role: k3s_server
       tags: [k3s]
   become: yes
@@ -63,13 +81,25 @@
       tags: [k3s]
   become: yes
 
-# Point each node's containerd at Zot's pull-through cache (apps/zot/). One node at a
-# time: k3s has to restart on a node for it to load /etc/rancher/k3s/registries.yaml, so
-# this waits for the node to be Ready again before touching the next one, and stops the
-# whole play if any node fails to come back. A no-op (no restart) once the file is in place.
-# Run on its own with `make deploy-registries`.
-- name: Configure the registry mirrors
+# Point each node's containerd at Zot's pull-through cache (apps/zot/). The mirror config is already in
+# place from the seed play above, so on a bootstrap nothing changes and nothing restarts. Two steps:
+# a parallel read-only check that finds the nodes whose config WOULD change (and verifies containerd
+# on the rest), then a restart play over only those nodes, one at a time - k3s has to restart on a node
+# to load /etc/rancher/k3s/registries.yaml - waiting for each to be Ready and stopping the whole play
+# if one fails to come back. Run on its own with `make deploy-registries`.
+- name: Check which nodes need a registry mirror restart
   hosts: k3s_cluster
+  gather_facts: false
+  tasks:
+    - name: Check the mirror config
+      ansible.builtin.include_role:
+        name: k3s_registries
+        tasks_from: check
+      tags: [registries]
+  become: yes
+
+- name: Configure the registry mirrors (restarts only the nodes that changed)
+  hosts: k3s_registries_restart
   serial: 1
   any_errors_fatal: true
   gather_facts: false
@@ -81,6 +111,11 @@
 - name: Helm deployment
   hosts: server
   gather_facts: false
+  # apt index refreshes (the many update_cache: true tasks across these roles and k3s-ansible) are
+  # skipped when the index is under an hour old; tasks that must force one pass cache_valid_time: 0.
+  module_defaults:
+    ansible.builtin.apt:
+      cache_valid_time: 3600
   roles:
     - helm
   become: yes
@@ -99,6 +134,11 @@
 - name: Longhorn host prerequisites
   hosts: k3s_cluster:!audio
   gather_facts: false
+  # apt index refreshes (the many update_cache: true tasks across these roles and k3s-ansible) are
+  # skipped when the index is under an hour old; tasks that must force one pass cache_valid_time: 0.
+  module_defaults:
+    ansible.builtin.apt:
+      cache_valid_time: 3600
   roles:
     - longhorn_prereqs
   become: yes
@@ -137,9 +177,14 @@
 # in-cluster UIs - see "Exposing UIs via Tailscale Operator" in README.md.
 - name: Deploy Tailscale
   hosts: pi4,pi5,pi3
-  # One node at a time: the role restarts tailscaled when its logging opt-out changes, which
-  # drops that node's tailnet connection for a few seconds.
-  serial: 1
+  # In parallel; only the tailscaled restart (a handler, when the logging opt-out changes) is limited to
+  # one node at a time (throttle: 1 in the role), since it drops that node's tailnet connection for a
+  # few seconds.
+  # apt index refreshes (the many update_cache: true tasks across these roles and k3s-ansible) are
+  # skipped when the index is under an hour old; tasks that must force one pass cache_valid_time: 0.
+  module_defaults:
+    ansible.builtin.apt:
+      cache_valid_time: 3600
   roles:
     - tailscale
   become: yes

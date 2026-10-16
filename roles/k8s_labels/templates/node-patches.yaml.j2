@@ -1,0 +1,18 @@
+{# One Node patch per host that declares labels and/or a Longhorn disk reservation. #}
+{% for host in groups['all'] %}
+{%   set labels = hostvars[host].k8s_labels | default({}) %}
+{%   set reserved = hostvars[host].longhorn_disk_reserved_gib | default(none) %}
+{%   if labels or reserved is not none %}
+- apiVersion: v1
+  kind: Node
+  metadata:
+    name: {{ host }}
+{%     if labels %}
+    labels: {{ labels | to_json }}
+{%     endif %}
+{%     if reserved is not none %}
+    annotations:
+      node.longhorn.io/default-disks-config: {{ ([{'path': '/var/lib/longhorn', 'allowScheduling': true, 'storageReserved': reserved * 1073741824}] | to_json) | to_json }}
+{%     endif %}
+{%   endif %}
+{% endfor %}

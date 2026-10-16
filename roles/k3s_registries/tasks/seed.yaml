@@ -1,0 +1,20 @@
+---
+# Writes the registry mirror config WITHOUT touching k3s: used before k3s is installed
+# (site.yml, "Seed the registry mirror config"), so that k3s reads /etc/rancher/k3s/registries.yaml on
+# its very first start and the mirrors need no restart afterwards. On a bootstrap that removes nine
+# serial k3s restarts; on a running cluster this is a no-op once the file is in place.
+- name: Make the k3s config directory
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the k3s registry mirrors config
+  ansible.builtin.template:
+    src: registries.yaml.j2
+    dest: /etc/rancher/k3s/registries.yaml
+    owner: root
+    group: root
+    mode: "0644"

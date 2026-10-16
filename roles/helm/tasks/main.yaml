@@ -34,20 +34,18 @@
           - helm_key_fingerprint.stdout == 'DDF78C3E6EBB2D2CC223C95C62BA89D07698DBC6'
         fail_msg: "Helm GPG key fingerprint does not match expected value"
 
+    # update_cache: true here refreshes the index only when this task changes the repository, which
+    # replaces the unconditional `apt update` that used to follow it.
     - name: Add Helm repository
       ansible.builtin.apt_repository:
         repo: "deb [signed-by=/usr/share/keyrings/helm.asc] https://packages.buildkite.com/helm-linux/helm-debian/any/ any main"
         filename: helm-stable-debian
-        update_cache: false
+        update_cache: true
 
     - name: Remove legacy dearmored Helm key
       ansible.builtin.file:
         path: /usr/share/keyrings/helm.gpg
         state: absent
-
-    - name: Update apt cache
-      ansible.builtin.apt:
-        update_cache: true
 
     - name: Install Helm
       ansible.builtin.apt:

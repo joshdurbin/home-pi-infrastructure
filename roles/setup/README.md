@@ -69,8 +69,9 @@ with the other stock-image extras). What it does, and doesn't:
 Check on a node: `systemctl list-timers apt-daily-upgrade.timer`, `sudo unattended-upgrade --dry-run -d`,
 `journalctl -t unattended-upgrade`, `ls /var/run/reboot-required`, `/var/log/unattended-upgrades/`.
 
-Note: the `setup` role also runs a full `apt dist-upgrade` whenever it is applied (`make deploy-system`),
-which is separate from, and not limited by, the blacklist above.
+Note: the `setup` role no longer runs a full `apt dist-upgrade` on every deploy (it took minutes on every node and
+could pull in a new kernel). Do that on demand with `make upgrade-os` (`setup_upgrade_packages=true`); it is
+separate from, and not limited by, the blacklist above. Routine updates are the unattended-upgrades job.
 
 ## Boot config (`/boot/firmware/config.txt`)
 

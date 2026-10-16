@@ -1,0 +1,23 @@
+---
+# Parallel and read-only: works out which nodes would need a k3s restart to load a changed mirror
+# config (none, once seed.yaml has run before k3s first started), and confirms containerd generated the
+# mirror config on the rest. The restart itself stays one node at a time (main.yaml, in its own
+# serial play over only the nodes grouped here as k3s_registries_restart).
+- name: Would this node's registry mirror config change?
+  ansible.builtin.template:
+    src: registries.yaml.j2
+    dest: /etc/rancher/k3s/registries.yaml
+    owner: root
+    group: root
+    mode: "0644"
+  check_mode: true
+  diff: false
+  register: k3s_registries_pending
+
+- name: Group the nodes by whether they need a restart
+  ansible.builtin.group_by:
+    key: "k3s_registries_{{ 'restart' if k3s_registries_pending is changed else 'current' }}"
+
+- name: Confirm containerd generated the mirror config on the nodes that did not change
+  ansible.builtin.include_tasks: verify.yaml
+  when: k3s_registries_pending is not changed

@@ -1170,7 +1170,9 @@ runs into 429s, give Zot Docker Hub credentials (a `credentialsFile` in the sync
 registry, endpoint `http://localhost:30500`, with a `rewrite` that maps the image name under that registry's prefix in Zot
 (`docker.io/library/redis` becomes `docker-hub/library/redis`). k3s only reads the file at startup, so a change restarts k3s on each node
 (the pods keep running; the container shims survive), **one node at a time**, waiting for it to be Ready before the next. It is a
-no-op once the file is in place. Not done through the k3s-ansible `registries_config_yaml` variable because that role never restarts k3s.
+no-op once the file is in place. On a bootstrap the file is written *before* k3s is installed (the "Seed the registry mirror config"
+play), so the first start already has it and nothing restarts; afterwards a parallel read-only check finds the nodes whose file would
+change, and only those are restarted one at a time. Not done through the k3s-ansible `registries_config_yaml` variable because that role never restarts k3s.
 
 **Rollout order** (a node only starts using Zot once it has the file, so do these in order):
 1. Push; Argo syncs Zot (wave 0). If the volume is still the old 30Gi one, resize it first (below).
