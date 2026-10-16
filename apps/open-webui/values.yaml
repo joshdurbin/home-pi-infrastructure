@@ -103,3 +103,17 @@ resources:
   limits:
     cpu: 500m
     memory: 1024Mi
+
+# Serves the self-destructing service worker at /service-worker.js (manifests/service-worker-killer.yaml)
+# so a browser holding an old worker from before the upgrade unregisters it and clears its stale caches.
+volumes:
+  - name: service-worker-killer
+    configMap:
+      name: service-worker-killer
+volumeMounts:
+  container:
+    - name: service-worker-killer
+      mountPath: /app/build/service-worker.js
+      subPath: service-worker.js
+      readOnly: true
+
