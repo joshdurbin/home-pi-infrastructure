@@ -13,14 +13,11 @@
 # the pre-Ansible file on the root filesystem instead; force: false means it is
 # written once and never overwritten, so it is always the original stock file.
 - name: keep a copy of the original config.txt
-  ansible.builtin.copy:
-    src: /boot/firmware/config.txt
-    dest: /var/backups/config.txt.pre-ansible
-    remote_src: true
-    force: false
-    owner: root
-    group: root
-    mode: '0644'
+  # `creates` skips the task outright once the copy exists (the copy module re-checksums both files on
+  # every run, about 6 s on a Pi with /boot on FAT); install -m also fixes owner and mode in one step.
+  ansible.builtin.command:
+    cmd: install -m 0644 -o root -g root /boot/firmware/config.txt /var/backups/config.txt.pre-ansible
+    creates: /var/backups/config.txt.pre-ansible
   tags:
     - kill_radios
     - kill_audio

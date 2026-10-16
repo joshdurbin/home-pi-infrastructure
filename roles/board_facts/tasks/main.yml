@@ -50,3 +50,4 @@
 - name: Put the host in its board group
   ansible.builtin.group_by:
     key: "{{ board_model }}"
+  changed_when: false

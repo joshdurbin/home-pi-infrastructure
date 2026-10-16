@@ -2,6 +2,15 @@
 - name: repair stale apt source configuration
   ansible.builtin.include_tasks: repair_apt_sources.yml
 
+# The one apt index refresh of the run (site.yml's module_defaults skip it when the index is under an
+# hour old, and later apt tasks in this and other roles then find it fresh). Its own task, with
+# changed_when: false, because apt reports an index refresh as a change and that made every host show
+# "changed" on a deploy that changed nothing.
+- name: refresh the apt index
+  ansible.builtin.apt:
+    update_cache: true
+  changed_when: false
+
 - name: include config.txt (per-board boot config) tasks
   ansible.builtin.include_tasks: config_txt.yml
 
@@ -14,6 +23,48 @@
 
 - name: include USB disk read-ahead tasks
   ansible.builtin.include_tasks: usb_read_ahead.yml
+
+# ONE cheap systemctl call for every unit the kill_radios / kill_audio / remove_services tasks manage,
+# parsed into setup_units. It replaces two ansible.builtin.service_facts calls (about 12 s each on a Pi:
+# they list every unit) and lets each task skip a unit that is already disabled and stopped, instead of
+# making a systemd call per unit on every run.
+- name: read the state of the services this role manages
+  ansible.builtin.command: >-
+    systemctl show --property=Id,LoadState,UnitFileState,ActiveState
+    alsa-state.service alsa-restore.service alsa-utils.service avahi-daemon.service
+    wpa_supplicant.service bluetooth.service hciuart.service
+  register: setup_unit_state
+  changed_when: false
+  check_mode: false
+  tags:
+    - kill_radios
+    - kill_audio
+    - remove_services
+
+- name: parse the service states
+  ansible.builtin.set_fact:
+    setup_units_json: >-
+      {%- set out = {} -%}
+      {%- for block in setup_unit_state.stdout.split('\n\n') if block.strip() -%}
+      {%- set d = {} -%}
+      {%- for line in block.split('\n') if '=' in line -%}
+      {%- set _ = d.update({line.split('=', 1)[0]: line.split('=', 1)[1]}) -%}
+      {%- endfor -%}
+      {%- set _ = out.update({d['Id']: d}) -%}
+      {%- endfor -%}
+      {{ out | to_json }}
+  tags:
+    - kill_radios
+    - kill_audio
+    - remove_services
+
+- name: make the service states a dictionary
+  ansible.builtin.set_fact:
+    setup_units: "{{ setup_units_json | from_json }}"
+  tags:
+    - kill_radios
+    - kill_audio
+    - remove_services
 
 - name: include kill radios tasks
   ansible.builtin.include_tasks: kill_radios.yml
@@ -70,7 +121,7 @@
       - iotop
       - iftop
       - vim
-      - dnsutils
+      - bind9-dnsutils   # "dnsutils" is a transitional package on Debian 13, which apt reports as changed on every run
       - jq
       - nmap
       - lsof
@@ -88,6 +139,3 @@
       - wireguard-tools
       - termshark
     state: present
-    # The dist-upgrade task above no longer refreshes the index on every run (and a fresh image
-    # needs it); cache_valid_time (play-level module_defaults in site.yml) skips it when recent.
-    update_cache: true

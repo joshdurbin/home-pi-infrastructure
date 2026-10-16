@@ -11,6 +11,7 @@
 
 # Turns the daily update + upgrade timers on.
 - name: enable automatic package list updates and unattended upgrades
+  register: unattended_auto_cfg
   ansible.builtin.copy:
     dest: /etc/apt/apt.conf.d/20auto-upgrades
     owner: root
@@ -25,6 +26,7 @@
     - unattended_upgrades
 
 - name: configure which packages are upgraded and that it never reboots
+  register: unattended_local_cfg
   ansible.builtin.template:
     src: 52unattended-upgrades-local.j2
     dest: /etc/apt/apt.conf.d/52unattended-upgrades-local
@@ -51,6 +53,7 @@
     owner: root
     group: root
     mode: '0644'
+  register: unattended_stagger_cfg
   notify: reload systemd and restart apt-daily-upgrade timer
   tags:
     - unattended_upgrades
@@ -68,10 +71,13 @@
 
 # Fails the play now, rather than silently at 02:00, if the config is invalid.
 # --dry-run makes no changes.
+# A dry run of unattended-upgrade takes about a minute on a Pi (it reads the whole package list), so it
+# runs only when one of the files above actually changed, not on every deploy.
 - name: validate the unattended-upgrades configuration
   ansible.builtin.command: unattended-upgrade --dry-run
   register: unattended_upgrades_check
   changed_when: false
   failed_when: unattended_upgrades_check.rc != 0
+  when: unattended_auto_cfg is changed or unattended_local_cfg is changed or unattended_stagger_cfg is changed
   tags:
     - unattended_upgrades

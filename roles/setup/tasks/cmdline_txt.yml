@@ -15,14 +15,10 @@
 # (so it is idempotent and never overrides someone's explicit psi=0). The original is kept once on the
 # root filesystem (/boot/firmware is FAT, so the module's own backup: true cannot be used there).
 - name: keep a copy of the original cmdline.txt
-  ansible.builtin.copy:
-    src: /boot/firmware/cmdline.txt
-    dest: /var/backups/cmdline.txt.pre-ansible
-    remote_src: true
-    force: false
-    owner: root
-    group: root
-    mode: '0644'
+  # See the config.txt task: `creates` makes this a no-op once the copy exists.
+  ansible.builtin.command:
+    cmd: install -m 0644 -o root -g root /boot/firmware/cmdline.txt /var/backups/cmdline.txt.pre-ansible
+    creates: /var/backups/cmdline.txt.pre-ansible
   tags:
     - psi
     - boot_cmdline

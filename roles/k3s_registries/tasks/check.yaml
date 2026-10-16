@@ -17,6 +17,7 @@
 - name: Group the nodes by whether they need a restart
   ansible.builtin.group_by:
     key: "k3s_registries_{{ 'restart' if k3s_registries_pending is changed else 'current' }}"
+  changed_when: false
 
 - name: Confirm containerd generated the mirror config on the nodes that did not change
   ansible.builtin.include_tasks: verify.yaml

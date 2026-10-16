@@ -1,11 +1,6 @@
 ---
 # Only touch units that exist and are running or enabled, so absent units
 # (hciuart is not present on Debian trixie) neither fail nor report "changed".
-- name: gather service facts
-  ansible.builtin.service_facts:
-  tags:
-    - kill_radios
-
 - name: disable radio services
   ansible.builtin.systemd:
     name: "{{ item }}.service"
@@ -16,9 +11,9 @@
     - bluetooth
     - hciuart
   when:
-    - (item ~ '.service') in ansible_facts.services
+    - setup_units[item ~ '.service'].LoadState != 'not-found'
     - >-
-      ansible_facts.services[item ~ '.service'].state == 'running'
-      or ansible_facts.services[item ~ '.service'].status == 'enabled'
+      setup_units[item ~ '.service'].ActiveState == 'active'
+      or setup_units[item ~ '.service'].UnitFileState == 'enabled'
   tags:
     - kill_radios

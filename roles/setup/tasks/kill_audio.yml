@@ -8,7 +8,10 @@
     name: alsa-state
     state: stopped
     enabled: false
-  when: "'audio' not in group_names"
+  when:
+    - "'audio' not in group_names"
+    - setup_units['alsa-state.service'].LoadState != 'not-found'
+    - setup_units['alsa-state.service'].UnitFileState == 'enabled' or setup_units['alsa-state.service'].ActiveState == 'active'
   tags:
     - kill_audio
 
@@ -17,7 +20,10 @@
     name: alsa-restore
     state: stopped
     enabled: false
-  when: "'audio' not in group_names"
+  when:
+    - "'audio' not in group_names"
+    - setup_units['alsa-restore.service'].LoadState != 'not-found'
+    - setup_units['alsa-restore.service'].UnitFileState == 'enabled' or setup_units['alsa-restore.service'].ActiveState == 'active'
   tags:
     - kill_audio
 
@@ -26,6 +32,9 @@
     name: alsa-utils
     state: stopped
     enabled: false
-  when: "'audio' not in group_names"
+  when:
+    - "'audio' not in group_names"
+    - setup_units['alsa-utils.service'].LoadState != 'not-found'
+    - setup_units['alsa-utils.service'].UnitFileState == 'enabled' or setup_units['alsa-utils.service'].ActiveState == 'active'
   tags:
     - kill_audio

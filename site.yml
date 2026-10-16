@@ -36,8 +36,43 @@
       tags: [setup]
   become: yes
 
-- name: K3S cluster deployment
+# Which nodes need any k3s work at all. A node whose k3s is already the target version and running is left
+# alone by the k3s plays below: the vendored k3s-ansible roles are not idempotent (they re-run the install
+# script and RESTART k3s on every run, and on all three servers at once), which cost about 100 s of a
+# no-change deploy and briefly took the API down. Config changes to an existing cluster go through
+# `make reconfigure-k3s` (rolling, one server at a time). To run the k3s roles on every node anyway:
+# `-e k3s_force=true`.
+- name: Find the nodes that need k3s work
   hosts: k3s_cluster
+  gather_facts: false
+  tasks:
+    - name: Read the installed k3s version
+      ansible.builtin.command: k3s --version
+      register: k3s_gate_version
+      failed_when: false
+      changed_when: false
+      check_mode: false
+      tags: [k3s]
+
+    - name: Is the k3s service running?
+      ansible.builtin.command: "systemctl is-active {{ 'k3s' if 'server' in group_names else 'k3s-agent' }}"
+      register: k3s_gate_active
+      failed_when: false
+      changed_when: false
+      check_mode: false
+      tags: [k3s]
+
+    - name: Group the nodes by whether they need work
+      ansible.builtin.group_by:
+        key: >-
+          k3s_work_{{ 'no' if (k3s_version in k3s_gate_version.stdout
+                               and k3s_gate_active.stdout == 'active'
+                               and not (k3s_force | default(false) | bool)) else 'yes' }}
+      changed_when: false
+      tags: [k3s]
+
+- name: K3S cluster deployment
+  hosts: k3s_work_yes
   # apt index refreshes (the many update_cache: true tasks across these roles and k3s-ansible) are
   # skipped when the index is under an hour old; tasks that must force one pass cache_valid_time: 0.
   module_defaults:
@@ -56,7 +91,7 @@
 # same secrets-encryption key on every server (see the roles). That is what lets the later registry
 # play find nothing to restart.
 - name: Seed the registry mirror config
-  hosts: k3s_cluster
+  hosts: k3s_work_yes
   gather_facts: false
   tasks:
     - name: Write registries.yaml (no k3s restart)
@@ -67,7 +102,7 @@
   become: yes
 
 - name: K3S server setup
-  hosts: server
+  hosts: k3s_work_yes:&server
   roles:
     - role: k3s_secrets_seed
       tags: [k3s]
@@ -76,7 +111,7 @@
   become: yes
 
 - name: K3S agent setup
-  hosts: agent
+  hosts: k3s_work_yes:&agent
   roles:
     - role: k3s_agent
       tags: [k3s]
