@@ -3,7 +3,7 @@
 # - Postgres poolers (port 5432, postgres namespace; the poolers' own
 #   ingress is open by design, see apps/postgres/manifests/networkpolicy.yaml)
 # - OpenSearch (port 9200, opensearch namespace)
-# - the blocky-cache / searxng-cache / bifrost-cache Redis clusters in the
+# - the blocky-cache / searxng-cache Redis clusters in the
 #   redis namespace (port 6379; no Sentinel, WhoDB only talks to each
 #   cluster's "-master" Service)
 apiVersion: networking.k8s.io/v1

@@ -21,7 +21,3 @@ data:
     sentinel down-after-milliseconds searxng-cache 5000
     sentinel failover-timeout searxng-cache 10000
     sentinel parallel-syncs searxng-cache 1
-    sentinel monitor bifrost-cache bifrost-cache-master.redis.svc.cluster.local 6379 2
-    sentinel down-after-milliseconds bifrost-cache 5000
-    sentinel failover-timeout bifrost-cache 10000
-    sentinel parallel-syncs bifrost-cache 1

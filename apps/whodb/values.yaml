@@ -27,8 +27,7 @@ controllers:
           WHODB_REDIS: >-
             [
             {"alias":"blocky-cache","host":"blocky-cache-master.redis.svc.cluster.local","port":"6379"},
-            {"alias":"searxng-cache","host":"searxng-cache-master.redis.svc.cluster.local","port":"6379"},
-            {"alias":"bifrost-cache","host":"bifrost-cache-master.redis.svc.cluster.local","port":"6379"}
+            {"alias":"searxng-cache","host":"searxng-cache-master.redis.svc.cluster.local","port":"6379"}
             ]
           # Tailscale terminates TLS in front of this - Secure cookies.
           WHODB_SECURE: "true"
