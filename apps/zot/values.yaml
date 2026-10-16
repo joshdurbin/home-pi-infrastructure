@@ -232,3 +232,26 @@ resources:
   limits:
     cpu: "1"
     memory: 1Gi
+
+# Placement. Every wave after 0 waits for this to be Healthy, so where it lands sets how fast the
+# whole bootstrap goes: unpinned, the scheduler put it on a Pi 4B (USB SSD, slower to pull and start)
+# and the rebuild stalled behind it. Required: a Pi 5 (NVMe). Preferred: a Longhorn storage node
+# (rpi-5-1 / rpi-5-5, `storage=true`), where its 40Gi volume has a local replica so it attaches
+# without a network hop. Preferred, not required, so losing both storage nodes does not leave it
+# unschedulable. The priority class keeps it from being evicted or preempted by ordinary workloads.
+priorityClassName: system-cluster-critical
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: pi5
+              operator: In
+              values: ["true"]
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: storage
+              operator: In
+              values: ["true"]

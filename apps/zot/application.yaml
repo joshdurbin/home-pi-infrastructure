@@ -10,6 +10,8 @@ metadata:
     # syncing in parallel) is ready, then binds. Pulls made before Zot is up simply
     # go to the upstream registry (the node-level fallback), so the order only affects
     # how warm the cache is, never whether anything starts.
+    # Every later wave waits for this Application to be Healthy, so it is pinned to a fast
+    # node (values.yaml, "Placement"): on a Pi 4B it delayed the whole bootstrap.
     argocd.argoproj.io/sync-wave: "0"
 spec:
   project: home-pi
