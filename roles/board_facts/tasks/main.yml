@@ -1,0 +1,52 @@
+---
+# Works out what each node IS from the hardware itself instead of trusting a name in the inventory.
+#
+# The board model is in the device tree (/proc/device-tree/model, NUL-terminated), e.g.
+#   Raspberry Pi 5 Model B Rev 1.0 / Raspberry Pi 4 Model B Rev 1.1 / Raspberry Pi 3 Model B Plus Rev 1.3
+# Ansible's own facts cannot tell these apart (all aarch64, no DMI on ARM).
+#
+# Sets, for every host:
+#   board_model   pi5 | pi4 | pi3   (a host fact: it outranks group_vars, so everything that already
+#                                    reads board_model - config.txt, USB read-ahead, the pi5 node label -
+#                                    uses the detected value)
+#   board_model_string              the raw string, for the record
+# and puts the host in a group of that name (pi5, pi4, pi3) so plays can say `hosts: pi4` etc. These
+# groups exist only for the run: `--limit pi4` on the command line cannot see them (limit is resolved
+# before any play runs) - limit by host name instead.
+#
+# Families: Pi 5, 500 and Compute Module 5 -> pi5; Pi 4, 400 and Compute Module 4 -> pi4; Pi 3 (any) and
+# Compute Module 3 -> pi3. Anything else stops the run rather than guessing: a board that matches none of
+# these would be given settings (overclock, cgroups) meant for another one.
+- name: Read the board model from the device tree
+  ansible.builtin.slurp:
+    src: /proc/device-tree/model
+  register: board_facts_raw
+  check_mode: false
+
+- name: Decode it
+  ansible.builtin.set_fact:
+    board_model_string: "{{ board_facts_raw.content | b64decode | regex_replace('[\\x00\\s]+$', '') }}"
+
+# No backslashes in these patterns on purpose: in a YAML double-quoted string \b is a backspace and in a
+# folded scalar \\b is a literal backslash - either silently breaks the match. ([^0-9]|$) stands in for a
+# word boundary after the model number (so "Pi 5" and "Pi 500" match, "Pi 50x" would not).
+- name: Map it to a board family
+  ansible.builtin.set_fact:
+    board_model: >-
+      {{ 'pi5' if board_model_string is search('^Raspberry Pi (Compute Module )?(5|500)([^0-9]|$)')
+         else 'pi4' if board_model_string is search('^Raspberry Pi (Compute Module )?(4|400)([^0-9]|$)')
+         else 'pi3' if board_model_string is search('^Raspberry Pi (Compute Module )?3([^0-9]|$)')
+         else 'unknown' }}
+
+- name: Stop on a board this repo has no settings for
+  ansible.builtin.assert:
+    that: board_model != 'unknown'
+    fail_msg: >-
+      {{ inventory_hostname }} reports "{{ board_model_string }}", which maps to no known board
+      family (pi5 / pi4 / pi3). Add it to roles/board_facts/tasks/main.yml and give it settings
+      in roles/setup/templates/config.txt.j2.
+    quiet: true
+
+- name: Put the host in its board group
+  ansible.builtin.group_by:
+    key: "{{ board_model }}"

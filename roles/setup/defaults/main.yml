@@ -15,3 +15,6 @@ unattended_upgrades_blacklist:
 # nodes (rpi-5-1/2/3) end up 30+ minutes apart.
 unattended_upgrades_first_run_minutes: 120    # 02:00
 unattended_upgrades_spacing_minutes: 30
+
+# Read-ahead cap for USB-attached disks (Pi 4B only; see tasks/usb_read_ahead.yml).
+usb_disk_read_ahead_kb: 256

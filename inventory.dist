@@ -18,22 +18,9 @@ rpi-3bplus-1
 #rpi-4b-3     ansible_host=192.168.1.18
 #rpi-3bplus-1 ansible_host=192.168.1.15
 
-# Hardware classes. These pick board-specific settings (group_vars/pi*/); they
-# say nothing about a node's role in the cluster - that is [server]/[agent].
-[pi5]
-rpi-5-1
-rpi-5-2
-rpi-5-3
-rpi-5-4
-rpi-5-5
-
-[pi4]
-rpi-4b-1
-rpi-4b-2
-rpi-4b-3
-
-[pi3]
-rpi-3bplus-1
+# There are no hardware-class groups: the board model (pi5 / pi4 / pi3) is read from each node's device
+# tree at the start of every run (roles/board_facts), which sets board_model and builds those groups for
+# the run. Only DECISIONS live here: what is a server, an agent, audio.
 
 # Control plane (k3s server: etcd + API server). Exactly three, deliberately:
 # etcd needs an odd-sized quorum, and a fourth member would tolerate no more

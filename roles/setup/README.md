@@ -92,7 +92,7 @@ Run it on its own with `ansible-playbook site.yml -i inventory.dist --ask-vault-
 
 ## Overclocking
 
-Applied per `board_model` (set in `group_vars/{pi4,pi5}/main.yaml`, not by inventory group name or
+Applied per `board_model` (detected from the hardware by `roles/board_facts`, not by inventory group name or
 hostname — see `templates/config.txt.j2`, rendered by `tasks/config_txt.yml`):
 
 - **Pi 4**: `arm_freq=1900` (stock 1500MHz), no `over_voltage_delta`. Note `arm_boost=1` (the documented
@@ -116,7 +116,7 @@ To check a real board's revision before assuming any documented overclock step a
 
 ## USB disk read-ahead
 
-On the Pi 4B nodes (`group_vars/pi4`: `usb_disk_read_ahead_kb: 256`) a udev rule
+On the Pi 4B nodes (`board_model == 'pi4'`; `usb_disk_read_ahead_kb: 256` in the role defaults) a udev rule
 (`/etc/udev/rules.d/99-usb-read-ahead.rules`, `tasks/usb_read_ahead.yml`) caps read-ahead on USB-attached
 disks. The USB-SATA bridge reports a huge optimal I/O size, so the kernel picks `read_ahead_kb=65532`; under
 memory pressure each page fault then reads up to 64MB and saturates the SSD. It is applied live

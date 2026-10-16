@@ -1,6 +1,7 @@
-{# One Node patch per host that declares labels and/or a Longhorn disk reservation. #}
+{# One Node patch per host that has labels (declared in host_vars, plus the ones DERIVED from the detected
+   hardware: pi5=true on a Pi 5) and/or a Longhorn disk reservation. #}
 {% for host in groups['all'] %}
-{%   set labels = hostvars[host].k8s_labels | default({}) %}
+{%   set labels = (hostvars[host].k8s_labels | default({})) | combine({'pi5': 'true'} if (hostvars[host].board_model | default('')) == 'pi5' else {}) %}
 {%   set reserved = hostvars[host].longhorn_disk_reserved_gib | default(none) %}
 {%   if labels or reserved is not none %}
 - apiVersion: v1

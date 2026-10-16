@@ -1,14 +1,7 @@
 ---
 k8s_labels:
   storage: "true"
-  # "config" (not "true"): Longhorn builds this node's disk from the
-  # node.longhorn.io/default-disks-config annotation (roles/k8s_labels) instead of
-  # taking the whole filesystem - see longhorn_disk_reserved_gib below.
   "node.longhorn.io/create-default-disk": "config"
-  # See host_vars/rpi-5-1.yaml's comment - Pi 4B's CPU can't run the Amazon Linux images.
-  pi5: "true"
-# The root filesystem is ~470GiB (512GB SSD - check `df -h /` on first boot and adjust); Longhorn gets 256GiB of it. This much is held back
-# (storageReserved), so schedulable = filesystem - reserved = 256GiB. Read when the node
-# first registers with Longhorn; changing it later means editing the Longhorn node
-# (`kubectl -n longhorn edit nodes.longhorn.io <node>`), not just this file.
+# See host_vars/rpi-5-1.yaml. ~470GiB filesystem (512GB SSD - check `df -h /` on first boot and
+# adjust); Longhorn gets 256GiB of it.
 longhorn_disk_reserved_gib: 214

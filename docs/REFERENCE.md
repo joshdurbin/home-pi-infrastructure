@@ -58,12 +58,12 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - **Control plane** (`[server]`): the three Pi 5s are the etcd members. etcd is very sensitive to disk fsync
   latency, and the Pi 4B disks are too slow for it, so only Pi 5s are control plane. The membership is
   deliberately fixed at three (an odd-sized quorum; a fourth member would tolerate no more failures than three).
-  `rpi-5-4` is a Pi 5 that is a worker only (`[pi5]`/`[agent]`, never `[server]`).
+  `rpi-5-4` is a Pi 5 that is a worker only (`[agent]`, never `[server]`).
 - **Pi 5 nodes** also carry the disk-heavy workloads (Longhorn replicas, VictoriaMetrics, OpenSearch, Postgres
   by default), alongside etcd. Revisit if their disks don't keep up with both.
 - **Longhorn**: `rpi-5-1` and `rpi-5-5` carry `storage=true` and hold every volume's replica *data* (256GiB each: `longhorn_disk_reserved_gib` in their host vars); the volumes
   attach over the network to pods on any node.
-- **`pi5=true`** marks the Pi 5s; OpenSearch requires it (its Amazon Linux images won't run on a Pi 4B).
+- **`pi5=true`** marks the Pi 5s (derived from the board model each node reports, not declared per host); OpenSearch requires it (its Amazon Linux images won't run on a Pi 4B).
 - **Audio node** (`[audio]`): see [Audio node and shairport-sync](#audio-node-and-shairport-sync). It runs only the
   k3s agent, node-exporter, Vector and shairport-sync.
 - Everything else, including VictoriaMetrics and (by default) Postgres, is unpinned and can schedule
@@ -156,7 +156,9 @@ ansible_password=ansible
 ansible_become_password=ansible
 ```
 
-The rest of the file defines the groups: `[pi5]`, `[pi4]`, `[pi3]` (hardware class), `[server]` (the three
+There are no hardware-class groups: each node's board model (`pi5` / `pi4` / `pi3`) is read from its device tree at the
+start of every run (`roles/board_facts`), which sets `board_model` and creates those groups for the run (so `hosts: pi4` works in
+a play, but `--limit pi4` does not: limit by host name). The inventory defines only decisions: `[server]` (the three
 control-plane nodes), `[agent]` (all workers, including the audio node), `[audio]` (the audio node) and
 `[k3s_cluster]` (server + agent).
 
@@ -808,13 +810,14 @@ curl -k -u admin:<opensearch_admin_password> "https://localhost:9200/logs-*/_sea
 | Label | Nodes | Used by |
 |---|---|---|
 | `storage=true` | rpi-5-1, rpi-5-5 | Longhorn replica placement (physical data) |
-| `pi5=true` | rpi-5-1..4 | OpenSearch (Amazon Linux images need a Pi 5 CPU) |
+| `pi5=true` | rpi-5-1..5 | OpenSearch (Amazon Linux images need a Pi 5 CPU) |
 
 The former `telemetry=true` (VictoriaMetrics) and `database=true` (Postgres) labels are gone -
 those workloads are unpinned. Postgres's optional `local` storage mode pins to `rpi-5-1`/`rpi-5-4` by
 hostname instead (`apps/postgres/cluster/components/local`), so no custom label is needed for it.
 
-Labels are declared per-host in `host_vars/rpi-5-*.yaml` under the `k8s_labels` key, and applied to the live
+Labels are declared per-host in `host_vars/rpi-5-*.yaml` under the `k8s_labels` key (decisions such as `storage=true`; `pi5=true` is
+derived from the hardware by `roles/board_facts`), and applied to the live
 cluster by the `k8s_labels` role (which reads every host's `k8s_labels` var and patches the matching
 Kubernetes Node object — not tied to any single chart-deploying role). Labels are deliberately *not* driven
 by group_vars, since this repo's `ansible.cfg` doesn't set `hash_behaviour = merge`, so a
@@ -1584,7 +1587,7 @@ How it is kept to that job:
 shairport-sync runs `hostNetwork` (mDNS discovery and the stream come straight from the sender), `Recreate` strategy
 (one USB device, one owner), privileged for `/dev/snd`. It outputs to ALSA `hw:CARD=AUDIO` (the USB DAC, by name, since its card number changes once the onboard audio is
 disabled). Vector tolerates the taint, so logs ship to OpenSearch like everywhere else; its 256Mi
-request is the heaviest item on the 1GB node besides the k3s agent. Tailscale is installed on the host (the `[pi3]`
+request is the heaviest item on the 1GB node besides the k3s agent. Tailscale is installed on the host (the `pi3` board
 group is in that play).
 
 ## Availability and node maintenance
@@ -2113,8 +2116,8 @@ ansible-playbook site.yml -i inventory.dist --ask-vault-pass --limit server
 # Only run on k3s agents
 ansible-playbook site.yml -i inventory.dist --ask-vault-pass --limit agent
 
-# Only run on pi4 nodes
-ansible-playbook site.yml -i inventory.dist --ask-vault-pass --limit pi4
+# Only run on the Pi 4B nodes (limit by name: the pi4 group only exists once the run has started)
+ansible-playbook site.yml -i inventory.dist --ask-vault-pass --limit 'rpi-4b-*'
 ```
 
 ### K3S Management Playbooks

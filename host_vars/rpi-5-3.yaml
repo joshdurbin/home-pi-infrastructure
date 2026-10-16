@@ -1,6 +1,3 @@
 ---
-k8s_labels:
-  # See host_vars/rpi-5-1.yaml's own comment - Pi 4B's CPU can't run
-  # apps/opensearch's Amazon-Linux-based images at all (confirmed live,
-  # "Fatal glibc error"), not opensearch-specific.
-  pi5: "true"
+# Control-plane node. No host-specific settings: its labels (pi5) come from the detected board model.
+k8s_labels: {}

@@ -12,6 +12,16 @@
 #       changed_when: false
 #       no_log: true
 
+# What each node IS, read from the hardware (device tree) rather than named in the inventory: sets
+# board_model (pi5 / pi4 / pi3) and the pi5 / pi4 / pi3 groups for the rest of the run. Tagged
+# `always`, so partial runs (--tags ...) get it too.
+- name: Detect each node's board model
+  hosts: all
+  gather_facts: false
+  roles:
+    - role: board_facts
+      tags: [always]
+
 - name: System preparation and user management
   hosts: all
   # apt index refreshes (the many update_cache: true tasks across these roles and k3s-ansible) are
@@ -176,7 +186,7 @@
 # the Tailscale Kubernetes Operator (apps/tailscale-operator/) that exposes
 # in-cluster UIs - see "Exposing UIs via Tailscale Operator" in README.md.
 - name: Deploy Tailscale
-  hosts: pi4,pi5,pi3
+  hosts: all
   # In parallel; only the tailscaled restart (a handler, when the logging opt-out changes) is limited to
   # one node at a time (throttle: 1 in the role), since it drops that node's tailnet connection for a
   # few seconds.

@@ -19,6 +19,12 @@
     name: python3-kubernetes
     state: present
 
+# `pi5=true` is not declared anywhere: it is derived from the board model the hardware reports
+# (roles/board_facts). A Pi 5's Cortex-A76 is ARMv8.2-A with crypto extensions; a Pi 4B's Cortex-A72 is
+# not, and apps/opensearch's Amazon Linux based images crash on it ("Fatal glibc error: ... requires a
+# newer ARM64 processor compliant with at least ARM architecture 8.2-a with Cryptographic extensions"),
+# so anything with that requirement selects on this label. Not OpenSearch specific.
+#
 # Applies, in ONE API call, everything node-level that hostvars declare: Kubernetes labels (each
 # host's k8s_labels, see host_vars/rpi-5-*.yaml) and the Longhorn disk-config annotation. Runs once
 # and covers every inventory host rather than just the current play's hosts (this play is `hosts:

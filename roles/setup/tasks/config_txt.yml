@@ -1,6 +1,6 @@
 ---
 # The whole of /boot/firmware/config.txt is rendered from one template, per
-# board_model (group_vars/{pi3,pi4,pi5}/main.yaml), so each board only gets
+# board_model (detected from the hardware by roles/board_facts), so each board only gets
 # the settings that apply to it - no [pi5]/[cm4]/[cm5] filter sections, no
 # lineinfile appends. Replaces the former per-setting tasks (radios, onboard
 # audio, cgroups, GPU memory, HAT/HDMI disables, Pi 5 overclock).
