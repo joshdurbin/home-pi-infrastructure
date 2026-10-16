@@ -1,0 +1,14 @@
+# llama-server's Prometheus endpoint (--metrics): prompt and generation tokens per second, requests in
+# flight, KV cache use. vmagent picks it up automatically (selectAllByDefault).
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: llm
+  namespace: llm
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: llm
+  endpoints:
+    - port: http
+      path: /metrics

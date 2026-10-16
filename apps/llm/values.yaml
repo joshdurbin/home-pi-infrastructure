@@ -1,0 +1,144 @@
+# Qwen2.5-1.5B-Instruct (4-bit) served by llama.cpp's llama-server: an OpenAI-compatible API on :8080.
+#
+# Why llama.cpp: it is the leanest inference stack that runs on a Pi - a single C++ binary (no Python
+# runtime, no framework), the model is memory-mapped straight from the GGUF file, and it has ARM NEON
+# kernels. vLLM/TGI/Ollama carry far more overhead; Ollama is llama.cpp plus a Go server.
+#
+# Memory, MEASURED with these exact flags (cgroup memory.stat, after serving requests):
+#   Pi 5: anon 1.11 GB (the weights, repacked by llama.cpp's ARMv8.2 kernels into anonymous memory, plus KV
+#         cache and buffers) + 0.6 GB file cache (reclaimable; the GGUF is not needed once repacked)
+# So the pod needs about 1.2-1.3 GB that cannot be given back. The limit of 1.5 GiB leaves a little
+# room for that and for the reclaimable cache; a limit BELOW the working set makes the kernel evict model pages
+# and re-read them from disk on every token (the thrash that hurt Vector on the Pi 4Bs - see
+# apps/opensearch/values-vector.yaml). To tighten further, watch the working set (README.md) and lower it
+# only while it stays well under the limit.
+controllers:
+  main:
+    replicas: 1
+    strategy: Recreate   # one pod owns the model cache volume and the node's memory; never two at once
+    containers:
+      main:
+        image:
+          repository: ghcr.io/ggml-org/llama.cpp
+          # Pinned build (the repo's convention is pinned tags, here by build number; the multi-arch index
+          # digest at pin time was sha256:8ffe0d28ff5261cc2f78ca1f67db1515bc2529b904a3c25f5b24f4cedfc3411d).
+          tag: server-b11669
+        # The image's entrypoint is /app/llama-server; these are its flags.
+        args:
+          # The model: downloaded from Hugging Face on first start into LLAMA_CACHE (the PVC below), then
+          # reused. Q4_K_M is the usual quality/size sweet spot for 1.5B (about 1.04 GiB).
+          - --hf-repo
+          - Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M
+          - --alias
+          - qwen2.5-1.5b-instruct
+          - --host
+          - 0.0.0.0
+          - --port
+          - "8080"
+          # Context: 4096 tokens in ONE slot. The KV cache is allocated up front for the whole context, so this
+          # is the knob that scales memory; one slot because a second concurrent request would need its own.
+          - --ctx-size
+          - "4096"
+          - --parallel
+          - "1"
+          # KV cache at 8 bits instead of 16 (half the size, negligible quality loss). A quantized V cache
+          # requires flash attention, which also shrinks the compute buffer.
+          - --flash-attn
+          - "on"
+          - --cache-type-k
+          - q8_0
+          - --cache-type-v
+          - q8_0
+          # Smaller batch sizes shrink the prompt-processing scratch buffers (slower prefill, less memory).
+          - --batch-size
+          - "256"
+          - --ubatch-size
+          - "128"
+          # One thread per core of the Pi 5 (4). More threads than cores only adds contention.
+          - --threads
+          - "4"
+          # Default mmap on: the weights stay file-backed and reclaimable instead of being copied into
+          # anonymous memory (--no-mmap would roughly double the footprint while loading).
+          - --jinja          # use the model's own chat template, which enables tool/function calling
+          - --metrics        # Prometheus metrics on /metrics (scraped by manifests/vmservicescrape.yaml)
+          - --no-webui       # API only; the built-in chat UI is not needed behind Bifrost/Open WebUI
+        env:
+          LLAMA_CACHE: /models
+          # No telemetry or update checks exist in llama-server; the only outbound call is the model download.
+          HF_HUB_DISABLE_TELEMETRY: "1"
+        probes:
+          startup:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /health
+                port: 8080
+              periodSeconds: 5
+              failureThreshold: 180   # up to 15 minutes: the first start downloads ~1.1 GB
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /health
+                port: 8080
+              periodSeconds: 20
+              failureThreshold: 6
+          readiness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /health
+                port: 8080
+              periodSeconds: 10
+        resources:
+          requests:
+            cpu: "1"
+            memory: 1280Mi
+          limits:
+            cpu: "4"
+            memory: 1536Mi
+
+defaultPodOptions:
+  # A Pi 5, but not one of the nodes doing the cluster's critical work. `pi5` is derived from the hardware
+  # (roles/board_facts). Required: a Pi 5 (token speed is bound by memory bandwidth, and the Pi 4B has about a
+  # third of it). Preferred: a worker that is neither a
+  # control-plane node (etcd) nor a Longhorn storage node (storage=true), i.e. rpi-5-4.
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: pi5
+                operator: In
+                values: ["true"]
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+              - key: storage
+                operator: DoesNotExist
+
+service:
+  main:
+    controller: main
+    ports:
+      http:
+        port: 8080
+
+persistence:
+  # The downloaded model. k3s's local-path provisioner, not Longhorn: the pod is pinned to one node anyway,
+  # the file is re-downloadable (1.1 GB), and there is no point in a network volume with two replicas for it.
+  # WaitForFirstConsumer binds the volume to whichever node the pod is scheduled on.
+  models:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 2Gi
+    storageClass: local-path
+    globalMounts:
+      - path: /models

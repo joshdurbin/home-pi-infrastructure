@@ -56,6 +56,35 @@ bifrost:
     # keys - same stance as the rest of the cluster's UIs.
     enforceAuthOnInference: false
     logRetentionDays: 30
+  # Providers declared in git (the chart renders them into config.json). Hosted providers' API keys are
+  # not here: those are added in Bifrost's UI and kept in its database (sourceOfTruth is the default,
+  # "split": this file and the database coexist).
+  providers:
+    # The in-cluster Qwen2.5-1.5B (apps/llm/), a llama.cpp server. A custom provider named "llm" built on
+    # the OpenAI wire protocol, so a request for model "llm/qwen2.5-1.5b-instruct" is sent to it.
+    llm:
+      custom_provider_config:
+        base_provider_type: openai
+        is_key_less: true          # llama-server has no API key here (access is limited by NetworkPolicy)
+      keys:
+        - name: llm-local
+          value: ""
+          weight: 1
+          models: ["qwen2.5-1.5b-instruct"]   # the --alias llama-server was started with
+      network_config:
+        # No /v1: Bifrost appends the OpenAI paths (/v1/chat/completions) itself.
+        base_url: http://llm.llm.svc.cluster.local:8080
+        # Bifrost refuses private addresses by default (SSRF protection); this is a ClusterIP.
+        allow_private_network: true
+        # Generation on a Pi 5 is ~6-7 tokens/s, so a long answer takes minutes: do not give up early, and
+        # do not retry a generation that has already started (a retry would queue behind itself).
+        default_request_timeout_in_seconds: 600
+        stream_idle_timeout_in_seconds: 120
+        max_retries: 0
+      # llama-server runs ONE request at a time (--parallel 1); more concurrent calls just wait.
+      concurrency_and_buffer_size:
+        concurrency: 1
+        buffer_size: 8
 
 resources:
   requests:

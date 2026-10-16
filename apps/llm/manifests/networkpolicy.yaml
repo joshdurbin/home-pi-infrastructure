@@ -1,0 +1,50 @@
+# llama-server has no authentication here (no --api-key) and answers any origin (CORS), so who can reach it
+# is decided by the network: only Bifrost and Open WebUI may call it, and Prometheus (vmagent) may scrape
+# /metrics. Egress is DNS plus HTTPS to the internet for the one-off model download from Hugging Face
+# (its hosts are CDN-backed, so this cannot be pinned to addresses); private ranges are excluded so the pod
+# cannot reach anything on the LAN or in the cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: llm
+  namespace: llm
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: bifrost
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: open-webui
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
