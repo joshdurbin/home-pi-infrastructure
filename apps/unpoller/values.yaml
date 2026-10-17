@@ -1,0 +1,89 @@
+# UnPoller (https://github.com/unpoller/unpoller): polls the UniFi controller on the UDM (UniFi Network API) and
+# serves what it finds - sites, gateway, switches, access points, every client, optionally DPI - as Prometheus
+# metrics on :9130/metrics, which vmagent scrapes (manifests/vmservicescrape.yaml). One small Go binary
+# (10 MB image, arm64 build, no phone-home that I know of - check the first start's log).
+#
+# All configuration is environment variables (UP_<SECTION>_<KEY>, per its example config): the non-secret ones
+# are below, the credential is in the unpoller-credentials Secret, which `make deploy-secrets` creates from
+# the vault (group_vars/all/cluster_secrets.yaml).
+controllers:
+  main:
+    replicas: 1
+    containers:
+      main:
+        image:
+          repository: ghcr.io/unpoller/unpoller
+          tag: v5.5.1
+        env:
+          # The UDM itself. Only host (and port): no path. On a UDM do NOT use :8443.
+          UP_UNIFI_DEFAULT_URL: https://192.168.1.1
+          # The UDM's certificate is self-signed.
+          UP_UNIFI_DEFAULT_VERIFY_SSL: "false"
+          # Give up on a request to the UDM after 30 s. Without a timeout UnPoller waits forever, and a UDM that is
+          # unreachable at start (reboot, firmware update) would hang it BEFORE it opens :9130, failing the probes.
+          # With one, it logs the error, serves :9130 and retries every refresh interval (checked in a test pod).
+          UP_UNIFI_DEFAULT_TIMEOUT: 30s
+          UP_UNIFI_DEFAULT_SITES: "all"
+          # Site-level numbers (the Network Sites dashboard). Cheap.
+          UP_UNIFI_DEFAULT_SAVE_SITES: "true"
+          # Deep packet inspection: ~150 extra series per client, and more API calls. Off; set "true" to feed the
+          # "Client DPI" dashboard (grafana.com 11310) if you want it.
+          UP_UNIFI_DEFAULT_SAVE_DPI: "false"
+          # Events, IDS, alarms and anomalies only matter for InfluxDB/Loki outputs, and can contain client names.
+          # Left at their defaults (off).
+          # Outputs: Prometheus only. InfluxDB is on by default in UnPoller and must be switched off, or it
+          # retries a database at 127.0.0.1:8086 forever.
+          UP_PROMETHEUS_DISABLE: "false"
+          UP_PROMETHEUS_HTTP_LISTEN: 0.0.0.0:9130
+          # The UDM refreshes its numbers about every 30 s; UnPoller caches what /metrics serves and refreshes
+          # it in the background on this interval.
+          UP_PROMETHEUS_INTERVAL: 30s
+          UP_INFLUXDB_DISABLE: "true"
+          UP_LOKI_DISABLE: "true"
+        # UP_UNIFI_DEFAULT_API_KEY, or UP_UNIFI_DEFAULT_USER + UP_UNIFI_DEFAULT_PASS - whichever keys the Secret
+        # holds (see group_vars/all/cluster_secrets.yaml).
+        envFrom:
+          - secretRef:
+              name: unpoller-credentials
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              tcpSocket:
+                port: 9130
+              periodSeconds: 30
+              failureThreshold: 4
+          readiness:
+            enabled: true
+            custom: true
+            spec:
+              tcpSocket:
+                port: 9130
+              periodSeconds: 10
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        resources:
+          requests:
+            cpu: 25m
+            memory: 48Mi
+          limits:
+            cpu: 250m
+            memory: 128Mi
+
+defaultPodOptions:
+  # The image runs as root by default; it needs no privileges (it only makes outbound HTTPS calls).
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+
+service:
+  main:
+    controller: main
+    ports:
+      metrics:
+        port: 9130

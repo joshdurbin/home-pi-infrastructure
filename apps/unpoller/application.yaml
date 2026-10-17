@@ -1,0 +1,40 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: unpoller
+  namespace: argocd
+  annotations:
+    # Needs the unpoller-credentials Secret (seeded by `make deploy-secrets`, group_vars/all/cluster_secrets.yaml)
+    # and the VMServiceScrape CRD (victoria-metrics, wave 1). Nothing depends on it.
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: unpoller
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  sources:
+    - repoURL: https://bjw-s-labs.github.io/helm-charts
+      chart: app-template
+      targetRevision: 5.3.0
+      helm:
+        releaseName: unpoller
+        valueFiles:
+          - $values/apps/unpoller/values.yaml
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      ref: values
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      path: apps/unpoller/manifests

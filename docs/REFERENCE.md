@@ -19,6 +19,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [GitOps (Argo CD)](#gitops-argo-cd)
 - [Storage (Longhorn)](#storage-longhorn)
 - [Monitoring (VictoriaMetrics, Grafana)](#monitoring-victoriametrics-grafana)
+- [UniFi telemetry (UnPoller)](#unifi-telemetry-unpoller)
 - [Logging (OpenSearch; VictoriaLogs scaled to zero)](#logging-opensearch)
 - [DNS (Blocky)](#dns-blocky)
 - [Search (SearXNG)](#search-searxng)
@@ -734,6 +735,24 @@ kubectl -n monitoring port-forward svc/vmselect-vmks-victoria-metrics-k8s-stack 
 ```
 VictoriaMetrics' own UI is at `http://localhost:8481/select/0/vmui/`; the raw PromQL-compatible API is at
 `/select/0/prometheus/api/v1/query`. (Over Tailscale: `https://victoriametrics.<tailnet>.ts.net/select/0/vmui/`.)
+
+## UniFi telemetry (UnPoller)
+
+[UnPoller](https://github.com/unpoller/unpoller) (`apps/unpoller/`, namespace `unpoller`, one pod) logs in to the UniFi Network
+application on the UDM (`https://192.168.1.1`) and exposes what it reads - sites, the gateway, switches, access points and every
+client - as Prometheus metrics on `:9130/metrics`. vmagent scrapes it (`VMServiceScrape`), so the data lands in VictoriaMetrics next
+to everything else, and the Prometheus-datasource UniFi-Poller dashboards (grafana.com 11311 Network Sites, 11313 USG/UDM, 11312
+switches, 11314 access points, 11315 clients; 11310 DPI if enabled) are in `roles/grafana_dashboards`.
+
+- **Credential**: a UniFi API key (UniFi Network > Settings > Control Plane > Integrations), or a local read-only account.
+  Vault variable `unifi_poller_api_key` (`ansible-vault encrypt_string`, see Secrets & Variables) -> Secret `unpoller-credentials`
+  (key `UP_UNIFI_DEFAULT_API_KEY`) via `make deploy-secrets`. UnPoller only issues GET requests.
+- **Configuration** is environment variables (`UP_<SECTION>_<KEY>`) in `apps/unpoller/values.yaml`: Prometheus output on, InfluxDB and
+  Loki off (InfluxDB is ON by default in UnPoller and would otherwise retry a database that does not exist), self-signed certificate
+  accepted, DPI off (about 150 extra series per client).
+- **Network**: a NetworkPolicy lets it reach DNS and `192.168.1.1:443` only; only the `monitoring` namespace may reach `:9130`. If the
+  UDM's address ever changes, update the policy and `UP_UNIFI_DEFAULT_URL`.
+- **Footprint**: a 10 MB image, requests 25m / 48Mi, limit 128Mi.
 
 ## Logging (OpenSearch)
 

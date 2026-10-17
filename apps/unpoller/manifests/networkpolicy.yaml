@@ -1,0 +1,39 @@
+# Egress-only plus a narrow ingress: UnPoller may reach DNS and the UDM's HTTPS port and nothing else, and only
+# the metrics scraper (vmagent, in the monitoring namespace) may reach its /metrics. Its credential can read
+# your whole network's client list, so it is kept off every other path.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: unpoller
+  namespace: unpoller
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9130
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # The UDM (UniFi OS). If its address changes, change this and UP_UNIFI_DEFAULT_URL in values.yaml.
+    - to:
+        - ipBlock:
+            cidr: 192.168.1.1/32
+      ports:
+        - protocol: TCP
+          port: 443

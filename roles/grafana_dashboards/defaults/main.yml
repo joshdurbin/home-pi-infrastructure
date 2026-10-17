@@ -87,3 +87,15 @@ grafana_community_dashboards:
     name: 'Trivy Operator - Vulnerabilities'
   - id: 20501
     name: 'Zot'
+  # UnPoller (apps/unpoller/). The Prometheus-datasource versions of the UniFi-Poller dashboards. The UDM is the
+  # gateway, so "USG Insights" is its dashboard. "Client DPI" (11310) only has data with UP_UNIFI_DEFAULT_SAVE_DPI=true.
+  - id: 11311
+    name: 'UniFi-Poller: Network Sites'
+  - id: 11313
+    name: 'UniFi-Poller: USG Insights'
+  - id: 11312
+    name: 'UniFi-Poller: USW Insights'
+  - id: 11314
+    name: 'UniFi-Poller: UAP Insights'
+  - id: 11315
+    name: 'UniFi-Poller: Client Insights'

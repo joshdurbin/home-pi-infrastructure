@@ -116,6 +116,7 @@ Ansible owns the machines and the secrets; Argo CD owns everything that runs in 
    searxng_secret_key: "<output of: openssl rand -hex 32>"
    searxng_metrics_password: "<output of: openssl rand -hex 32>"
    opensearch_admin_password: "<strong password - min 8 chars, upper, lower, digit, special char>"
+   unifi_poller_api_key: "<UniFi API key created for UnPoller on the UDM>"   # apps/unpoller; only if you deploy it
    k3s_secrets_encryption_key: "<output of: openssl rand -base64 32>"   # optional; Secrets-at-rest key for a rebuild (derived from k3s_join_token if unset)
    openwebui_secret_key: "<output of: openssl rand -hex 32>"
    openwebui_db_password: "<output of: openssl rand -hex 32>"
