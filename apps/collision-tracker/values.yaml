@@ -1,0 +1,35 @@
+# Collision tracker: finds news reports of collisions involving vulnerable road users, extracts
+# facts with an LLM, merges duplicates, and shows them on a map. Chart and application code:
+# https://github.com/joshdurbin/fuck_cars (deploy/helm/collision-tracker, docs/runbooks/).
+#
+# UI: https://collisions.<tailnet> (Tailscale Ingress, tailnet only).
+
+image:
+  # Pin by digest once CI has published images (`crane digest ghcr.io/joshdurbin/fuck_cars/<name>:<tag>`),
+  # same convention as the rest of this repo. The packages must be pullable by the nodes and by
+  # Zot (make them public, or give Zot credentials for ghcr.io).
+  collisionctl: { tag: latest }
+  crawler: { tag: latest }
+  web: { tag: latest }
+
+llm:
+  # Set before the first sync (the chart refuses to render without it, on purpose): the model id
+  # configured in Bifrost's OpenRouter provider, for example a Qwen3 or gpt-oss variant after
+  # `collisionctl eval` has scored it. Add the OpenRouter provider and key in Bifrost's UI first.
+  model: ""
+  fallbackModel: ""
+  # Safety net per worker process while the pipeline is new; remove or raise once spend is understood.
+  budgetUSD: 2
+  # Prices let spend be tracked ($ per million tokens), e.g.
+  # prices: { "<model id>": { input_per_m: 0.2, output_per_m: 0.6 } }
+  prices: {}
+
+temporal:
+  retention: 72h
+  uiUrl: https://temporal.tailb42321.ts.net
+
+# Small cluster: modest replicas. The worker must stay at one replica (provider rate limits are per process).
+api:
+  replicas: 2
+web:
+  replicas: 2

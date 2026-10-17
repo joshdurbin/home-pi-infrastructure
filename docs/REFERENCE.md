@@ -32,6 +32,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [Open WebUI](#open-webui)
 - [Bifrost](#bifrost)
 - [GO Feature Flag](#go-feature-flag)
+- [Collision tracker](#collision-tracker)
 - [Snowflake (Tor)](#snowflake-tor)
 - [Audio node and shairport-sync](#audio-node-and-shairport-sync)
 - [Availability and node maintenance](#availability-and-node-maintenance)
@@ -1568,6 +1569,54 @@ is on the tailnet at `https://flags.<tailnet>.ts.net`.
 
 **First-time order**: add the three Vault variables -> `make deploy-secrets` -> `make deploy-argocd` (allows the new
 namespace in the Argo CD project) -> push. The Argo CD app then creates the table and starts the relay proxy.
+
+## Collision tracker
+
+Finds news reports of motor-vehicle collisions involving pedestrians, cyclists and other vulnerable road users, extracts
+structured facts with an LLM, merges reports of the same collision, and shows them on a map with trends and a review queue
+(`apps/collision-tracker/`, namespace `collision-tracker`). The application, its Helm chart, design and runbooks live in
+[joshdurbin/fuck_cars](https://github.com/joshdurbin/fuck_cars) (`docs/design.md`, `deploy/helm/collision-tracker`,
+`docs/runbooks/`); this repo only holds the Argo CD Application and its values (`apps/collision-tracker/`) plus the pieces
+that belong to the cluster.
+
+- **Pieces**: `api` (Go REST API), `worker` (Go Temporal workflows and activities), `crawler` (Python Temporal worker that
+  fetches and parses pages), `web` (nginx + React). Go and Python never call each other directly: they meet through
+  Temporal task queues.
+- **Postgres**: database `collisions`, role `collisions` (`apps/postgres/manifests/collisions-database.yaml`), through
+  `postgres-pooler-rw` (session mode, so pgx prepared statements are safe). It needs **PostGIS**, so the shared cluster
+  image (`apps/postgres/cluster/cluster.yaml`) is the CloudNativePG PostGIS variant: same PostgreSQL 18.6 and Debian 13,
+  plus the extension files. The `Database` resource creates `postgis`, `pg_trgm`, `btree_gist` and `pgcrypto` because the
+  role is not a superuser and PostGIS is not a trusted extension.
+- **Temporal**: namespace `collisions` with 72 h retention (the app's database is the system of record, so history is
+  disposable), and seven custom search attributes. A PreSync Job in the chart creates both, idempotently. Schedules (one per
+  discovery source, plus a daily retention job) are created by a PostSync Job and keep any pause set in the Temporal UI.
+- **LLM**: through Bifrost (`bifrost.bifrost:8080/v1`) with an OpenRouter provider. Add the provider and key in Bifrost's UI,
+  then set `llm.model` in `apps/collision-tracker/values.yaml`. The chart refuses to render until it is set.
+- **Network**: egress-only NetworkPolicies per component. The worker and crawler may reach public HTTP(S) but never private
+  ranges (a second layer behind the crawler's own SSRF guard); the API only reaches Postgres and Temporal.
+- **Metrics and alerts**: `/metrics` on port 9100 of the api, worker and crawler, scraped by a `VMPodScrape`. The chart
+  also ships a `VMRule` (stalled pipeline, failing sources, queue backlog, spend, API errors) and a Grafana dashboard
+  ConfigMap in `monitoring` (labelled for the Grafana sidecar).
+- **Images**: built by the app repo's CI and pushed to `ghcr.io/joshdurbin/fuck_cars/{collisionctl,crawler,web}`. The nodes
+  pull through Zot, which must be able to read them: make the packages public or give Zot credentials. The Argo CD
+  AppProject lists the app repo as a source; if it is private, Argo CD needs a repository credential for it.
+
+**Secrets** (Vault variables in `group_vars/all/main.yaml`, seeded by `k8s_secrets` via `make deploy-secrets`):
+| Variable | Used for |
+|---|---|
+| `collisions_db_password` | the `collisions` Postgres role (also embedded in the app's connection URL Secret) |
+| `collisions_api_admin_token` | bearer token for the API's POST routes (review decisions, schedule control); unset disables them |
+
+Generate each with `openssl rand -hex 32` and add with `ansible-vault encrypt_string '<value>' --name <variable>`.
+**Add both before `make deploy-secrets`**, or the play fails on an undefined variable.
+
+**Order of operations for a first deploy**: add the Vault variables and run `make deploy-secrets`; merge the PostGIS image
+change in a quiet window and wait for both Postgres instances to be healthy (`kubectl cnpg status postgres -n postgres`);
+add the OpenRouter provider in Bifrost; set `llm.model`; let Argo CD sync the Application. Keep most sources disabled at first
+and enable them as the pipeline proves itself (see the app's `docs/runbooks/deploy.md`).
+
+**Access**: `https://collisions.<tailnet>.ts.net` (Tailscale Ingress, tailnet only). Dashboard: Grafana, folder "Collision
+Tracker".
 
 ## Snowflake (Tor)
 

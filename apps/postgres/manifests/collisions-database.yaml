@@ -1,0 +1,48 @@
+# The collision tracker's own Postgres user and database (apps/collision-tracker/), via
+# CloudNativePG's DatabaseRole/Database CRDs - same pattern as go-feature-flag-database.yaml
+# beside this file.
+#
+# The role owns its database and runs the application's migrations, but it is not a superuser,
+# and PostGIS is not a "trusted" extension, so it cannot create it. The operator creates the
+# extensions here instead (it connects as a superuser); the migration's
+# `CREATE EXTENSION IF NOT EXISTS` then finds them and does nothing. Needs the PostGIS image
+# in apps/postgres/cluster/cluster.yaml. Verified: as a non-superuser owner, the migration
+# fails without these and succeeds with them.
+#
+# The password Secret (collisions-db-credentials) is seeded by the k8s_secrets Ansible role
+# from the Vault-encrypted collisions_db_password - here in basic-auth shape for CNPG, and
+# again in the collision-tracker namespace as a ready-made connection URL.
+apiVersion: postgresql.cnpg.io/v1
+kind: DatabaseRole
+metadata:
+  name: collisions
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  name: collisions
+  ensure: present
+  login: true
+  passwordSecret:
+    name: collisions-db-credentials
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: collisions
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  name: collisions
+  owner: collisions
+  ensure: present
+  extensions:
+    - name: postgis
+      ensure: present
+    - name: pg_trgm
+      ensure: present
+    - name: btree_gist
+      ensure: present
+    - name: pgcrypto
+      ensure: present
