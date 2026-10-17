@@ -89,7 +89,7 @@ deploy-tailscale:
 
 deploy-dashboards:
 	@echo "Importing Grafana dashboards (needs Grafana up and the control host on the tailnet)..."
-	ansible-playbook site.yml -i $(INVENTORY) $(VAULT_PASS) --tags dashboards
+	ansible-playbook dashboards.yml -i $(INVENTORY) $(VAULT_PASS)
 
 build-proxysql-operator:
 	@echo "Building the ProxySQL operator image and pushing it to Zot..."

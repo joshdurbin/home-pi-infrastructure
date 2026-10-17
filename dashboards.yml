@@ -1,0 +1,16 @@
+---
+# Pure HTTP against Grafana's own API over its tailnet ingress - no Pi/kubectl
+# access needed, so this runs on the control host itself rather than being
+# delegated per-task. Needs apps/victoria-metrics already synced by Argo CD
+# (Grafana pod Ready) and the control host on the tailnet with working
+# MagicDNS. See roles/grafana_dashboards/README.md.
+#
+# Its own playbook, not part of site.yml: it touches no node, so it shouldn't pay for
+# site.yml's per-node board detection and fact gathering. Not part of `make deploy` either
+# (it would fail on a freshly bootstrapped cluster where Grafana isn't up yet).
+# Run with `make deploy-dashboards`.
+- name: Import community Grafana dashboards
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - grafana_dashboards
