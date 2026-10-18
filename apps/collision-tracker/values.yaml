@@ -13,15 +13,15 @@ image:
   web: { tag: latest }
 
 llm:
-  # Set before the first sync (the chart refuses to render without it, on purpose): the model id
-  # configured in Bifrost's OpenRouter provider, for example a Qwen3 or gpt-oss variant after
-  # `collisionctl eval` has scored it. Add the OpenRouter provider and key in Bifrost's UI first.
-  model: ""
+  # Through Bifrost (the chart's default base URL, open inside the cluster, no key). The only model
+  # routed today is the local llama.cpp one (apps/llm/), addressed as <provider>/<model> - confirm with
+  # `curl http://bifrost.bifrost.svc.cluster.local:8080/v1/models`. When an OpenRouter provider is added
+  # to Bifrost, change this to one of its ids (and set fallbackModel).
+  model: llm/qwen2.5-1.5b-instruct
   fallbackModel: ""
   # Safety net per worker process while the pipeline is new; remove or raise once spend is understood.
+  # (The local model costs nothing, so this only matters once a paid model is used.)
   budgetUSD: 2
-  # Prices let spend be tracked ($ per million tokens), e.g.
-  # prices: { "<model id>": { input_per_m: 0.2, output_per_m: 0.6 } }
   prices: {}
 
 temporal:
