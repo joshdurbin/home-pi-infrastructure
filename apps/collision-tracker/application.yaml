@@ -32,7 +32,7 @@ spec:
         maxDuration: 3m
   sources:
     # The chart lives with the application's own code; only its values live here.
-    - repoURL: https://github.com/joshdurbin/fuck_cars.git
+    - repoURL: https://github.com/joshdurbin/vulnerable_user_incident_tracking.git
       targetRevision: main
       path: deploy/helm/collision-tracker
       helm:

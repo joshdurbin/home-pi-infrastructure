@@ -30,7 +30,7 @@ spec:
     # The collision tracker's own Helm chart (deploy/helm/collision-tracker). Its values live in
     # this repo (apps/collision-tracker/values.yaml). If that repository is private, Argo CD also
     # needs a repository credential for it.
-    - https://github.com/joshdurbin/fuck_cars.git
+    - https://github.com/joshdurbin/vulnerable_user_incident_tracking.git
   # Scoped to the namespaces these apps actually use.
   destinations:
     - namespace: {{ argocd_vars.kubernetes.namespace }}

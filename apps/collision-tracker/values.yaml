@@ -1,11 +1,11 @@
 # Collision tracker: finds news reports of collisions involving vulnerable road users, extracts
 # facts with an LLM, merges duplicates, and shows them on a map. Chart and application code:
-# https://github.com/joshdurbin/fuck_cars (deploy/helm/collision-tracker, docs/runbooks/).
+# https://github.com/joshdurbin/vulnerable_user_incident_tracking (deploy/helm/collision-tracker, docs/runbooks/).
 #
 # UI: https://collisions.<tailnet> (Tailscale Ingress, tailnet only).
 
 image:
-  # Pin by digest once CI has published images (`crane digest ghcr.io/joshdurbin/fuck_cars/<name>:<tag>`),
+  # Pin by digest once CI has published images (`crane digest ghcr.io/joshdurbin/vulnerable_user_incident_tracking/<name>:<tag>`),
   # same convention as the rest of this repo. The packages must be pullable by the nodes and by
   # Zot (make them public, or give Zot credentials for ghcr.io).
   collisionctl: { tag: latest }

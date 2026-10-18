@@ -1575,7 +1575,7 @@ namespace in the Argo CD project) -> push. The Argo CD app then creates the tabl
 Finds news reports of motor-vehicle collisions involving pedestrians, cyclists and other vulnerable road users, extracts
 structured facts with an LLM, merges reports of the same collision, and shows them on a map with trends and a review queue
 (`apps/collision-tracker/`, namespace `collision-tracker`). The application, its Helm chart, design and runbooks live in
-[joshdurbin/fuck_cars](https://github.com/joshdurbin/fuck_cars) (`docs/design.md`, `deploy/helm/collision-tracker`,
+[joshdurbin/vulnerable_user_incident_tracking](https://github.com/joshdurbin/vulnerable_user_incident_tracking) (`docs/design.md`, `deploy/helm/collision-tracker`,
 `docs/runbooks/`); this repo only holds the Argo CD Application and its values (`apps/collision-tracker/`) plus the pieces
 that belong to the cluster.
 
@@ -1597,7 +1597,7 @@ that belong to the cluster.
 - **Metrics and alerts**: `/metrics` on port 9100 of the api, worker and crawler, scraped by a `VMPodScrape`. The chart
   also ships a `VMRule` (stalled pipeline, failing sources, queue backlog, spend, API errors) and a Grafana dashboard
   ConfigMap in `monitoring` (labelled for the Grafana sidecar).
-- **Images**: built by the app repo's CI and pushed to `ghcr.io/joshdurbin/fuck_cars/{collisionctl,crawler,web}`. The nodes
+- **Images**: built by the app repo's CI and pushed to `ghcr.io/joshdurbin/vulnerable_user_incident_tracking/{collisionctl,crawler,web}`. The nodes
   pull through Zot, which must be able to read them: make the packages public or give Zot credentials. The Argo CD
   AppProject lists the app repo as a source; if it is private, Argo CD needs a repository credential for it.
 
