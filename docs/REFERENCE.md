@@ -1589,15 +1589,19 @@ that belong to the cluster.
   role is not a superuser and PostGIS is not a trusted extension.
 - **Temporal**: namespace `collisions` with 72 h retention (the app's database is the system of record, so history is
   disposable), and seven custom search attributes. A PreSync Job in the chart creates both, idempotently. Schedules (one per
-  discovery source, plus a daily retention job) are created by a PostSync Job and keep any pause set in the Temporal UI.
+  discovery source, plus a daily retention job) are kept in step with the configured sources by a PostSync Job (and by the
+  admin UI whenever a source is saved) and keep any pause set in the Temporal UI.
+- **Sources**: none are built in. Discovery sources and search queries are configured in the app's `/admin` page (admin token
+  required) or imported with `collisionctl sources import --file docs/examples/sources.yaml` (in the app repo); a fresh
+  install collects nothing until some exist.
 - **LLM**: through Bifrost (`bifrost.bifrost:8080/v1`) with an OpenRouter provider. Add the provider and key in Bifrost's UI,
   then set `llm.model` in `apps/collision-tracker/values.yaml`. The chart refuses to render until it is set.
 - **Network**: egress-only NetworkPolicies per component. The worker and crawler may reach public HTTP(S) but never private
   ranges (a second layer behind the crawler's own SSRF guard); the API only reaches Postgres and Temporal.
 - **Metrics and alerts**: `/metrics` on port 9100 of the api, worker and crawler, scraped by a `VMPodScrape`. The chart
-  also ships a `VMRule` (stalled pipeline, failing sources, queue backlog, spend, API errors) and a Grafana dashboard
+  also ships a `VMRule` (stalled pipeline, failing sources, queue backlog, API errors) and a Grafana dashboard
   ConfigMap in `monitoring` (labelled for the Grafana sidecar).
-- **Images**: built by the app repo's CI and pushed to `ghcr.io/joshdurbin/vulnerable_user_incident_tracking/{collisionctl,crawler,web}`. The nodes
+- **Images**: built by the app repo's CI and pushed to `ghcr.io/joshdurbin/vulnerable_user_incident_tracking/{collisionctl,crawler,crawler-render,web}` (`crawler-render` is only used when `render.enabled`). The nodes
   pull through Zot, which must be able to read them: make the packages public or give Zot credentials. The Argo CD
   AppProject lists the app repo as a source; if it is private, Argo CD needs a repository credential for it.
 
@@ -1605,7 +1609,7 @@ that belong to the cluster.
 | Variable | Used for |
 |---|---|
 | `collisions_db_password` | the `collisions` Postgres role (also embedded in the app's connection URL Secret) |
-| `collisions_api_admin_token` | bearer token for the API's POST routes (review decisions, schedule control); unset disables them |
+| `collisions_api_admin_token` | bearer token for review decisions and every `/admin` route (sources, queries, schedules); unset disables them |
 
 Generate each with `openssl rand -hex 32` and add with `ansible-vault encrypt_string '<value>' --name <variable>`.
 **Add both before `make deploy-secrets`**, or the play fails on an undefined variable.

@@ -20,10 +20,7 @@ llm:
   # to Bifrost, change this to one of its ids (and set fallbackModel).
   model: omlx/Qwen3.6-35B-A3B-4bit
   fallbackModel: llm/qwen2.5-1.5b-instruct
-  # Safety net per worker process while the pipeline is new; remove or raise once spend is understood.
-  # (The local model costs nothing, so this only matters once a paid model is used.)
-  budgetUSD: 2
-  prices: {}
+  # LLM spend is tracked outside the app (Bifrost / the provider), so the chart has no budget or price settings.
 
 temporal:
   retention: 72h
