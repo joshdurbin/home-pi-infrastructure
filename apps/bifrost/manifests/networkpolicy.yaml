@@ -4,6 +4,8 @@
 # - Postgres poolers, 5432 in the postgres namespace (the poolers' own
 #   ingress is open by design, see apps/postgres/manifests/networkpolicy.yaml)
 # - the in-cluster LLM server, 8080 in the llm namespace (apps/llm/)
+# - omlx on the Mac (platypus) over the tailnet, 8000 to Tailscale's 100.64.0.0/10 range (nodes reach the
+#   tailnet through their own tailscaled; nothing else in that range is a target)
 # - HTTPS (443) to anywhere outside the cluster/LAN: the LLM provider APIs
 #   (Anthropic, OpenAI, ...) and Bifrost's pricing-data sync. Private ranges
 #   are excluded so this doesn't double as a path to other in-cluster or LAN
@@ -52,3 +54,9 @@ spec:
       ports:
         - protocol: TCP
           port: 443
+    - to:
+        - ipBlock:
+            cidr: 100.64.0.0/10
+      ports:
+        - protocol: TCP
+          port: 8000
