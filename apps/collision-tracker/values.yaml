@@ -5,12 +5,13 @@
 # UI: https://collisions.<tailnet> (Tailscale Ingress, tailnet only).
 
 image:
-  # Pin by digest once CI has published images (`crane digest ghcr.io/joshdurbin/vulnerable_user_incident_tracking/<name>:<tag>`),
-  # same convention as the rest of this repo. The packages must be pullable by the nodes and by
-  # Zot (make them public, or give Zot credentials for ghcr.io).
-  collisionctl: { tag: latest }
-  crawler: { tag: latest }
-  web: { tag: latest }
+  # Pinned to one commit of the app repo (tag + digest; the digest wins). Zot never rechecks a tag it
+  # already holds, so a floating `latest` would not roll out. To update: take the new commit from the app
+  # repo's CI, set its sha as the tag here and in application.yaml (targetRevision), and the digests from
+  # `curl -sI -H "Authorization: Bearer $(curl -s 'https://ghcr.io/token?scope=repository:joshdurbin/vulnerable_user_incident_tracking/<name>:pull' | jq -r .token)" -H 'Accept: application/vnd.oci.image.index.v1+json' https://ghcr.io/v2/joshdurbin/vulnerable_user_incident_tracking/<name>/manifests/<sha>`.
+  collisionctl: { tag: a76468c4b2ad3682fc93fe1c48aa0ec0a07bd903, digest: "sha256:0d30f30a595d5619a327287fd5bec5c1a785b304f1a8c36087f102d1845c2ced" }
+  crawler: { tag: a76468c4b2ad3682fc93fe1c48aa0ec0a07bd903, digest: "sha256:d90308f815c13d86f8b75ede94703cc2012366c4da4988cb38a93e6f57fc4394" }
+  web: { tag: a76468c4b2ad3682fc93fe1c48aa0ec0a07bd903, digest: "sha256:51d55f31a31faa5c71b3b8b1a0586550055003d9bee85ccf2c0eec23beab26ce" }
 
 llm:
   # Through Bifrost (the chart's default base URL, open inside the cluster, no key). Models are
