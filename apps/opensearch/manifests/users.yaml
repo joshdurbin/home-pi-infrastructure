@@ -42,6 +42,46 @@ spec:
   roles: [vector-logs-writer]
   users: [vector]
 ---
+# The collision tracker's incident search index (apps/collision-tracker). It creates and fills
+# collision-incidents* and reads it back; nothing else. Derived data: it can be rebuilt from the app's
+# database at any time, so no snapshot or ISM policy is needed.
+apiVersion: opensearch.org/v1
+kind: OpensearchRole
+metadata:
+  name: collision-incidents
+  namespace: opensearch
+spec:
+  opensearchCluster:
+    name: opensearch
+  clusterPermissions:
+    - cluster_composite_ops
+  indexPermissions:
+    - indexPatterns: ['collision-incidents*']
+      allowedActions: [create_index, 'indices:admin/exists', read, write, delete]
+---
+apiVersion: opensearch.org/v1
+kind: OpensearchUser
+metadata:
+  name: collision
+  namespace: opensearch
+spec:
+  opensearchCluster:
+    name: opensearch
+  passwordFrom:
+    name: opensearch-collision-credentials
+    key: password
+---
+apiVersion: opensearch.org/v1
+kind: OpensearchUserRoleBinding
+metadata:
+  name: collision-incidents
+  namespace: opensearch
+spec:
+  opensearchCluster:
+    name: opensearch
+  roles: [collision-incidents]
+  users: [collision]
+---
 # Temporal advanced visibility (apps/temporal/values.yaml): full control of its own index
 # (temporal_visibility_v1*) plus the index-template calls its schema job makes.
 apiVersion: opensearch.org/v1

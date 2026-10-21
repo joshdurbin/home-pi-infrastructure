@@ -1596,10 +1596,18 @@ that belong to the cluster.
   replaces it, `sources.seedFile: ""` turns seeding off) and creates their schedules. After that sources and search queries
   are managed in the app's `/admin` page (admin token required) and the seed file is never read again. Deleting every source
   and restarting the API seeds again.
+- **Search**: full-text search over incidents (the map page's search box) in the shared OpenSearch cluster, index
+  `collision-incidents-v1`. The index is derived from Postgres, so it needs no backup: a schedule in Temporal copies changed
+  incidents in every minute, and "Rebuild index" on the app's Admin page refills it. The `collision` OpenSearch user
+  (`apps/opensearch/manifests/users.yaml`) can touch only `collision-incidents*`; its password is derived from
+  `collisions_db_password` in `group_vars/all/cluster_secrets.yaml`, so there is no new Vault variable, but `make deploy-secrets`
+  must run before the first sync. The API and worker reach OpenSearch on `opensearch.opensearch:9200` over TLS (self-signed,
+  so no verification), allowed by the chart's NetworkPolicies. Set `search.enabled: false` to turn it off; the schedule is
+  removed on the next sync and the map's search box answers "search is not configured".
 - **LLM**: through Bifrost (`bifrost.bifrost:8080/v1`) with an OpenRouter provider. Add the provider and key in Bifrost's UI,
   then set `llm.model` in `apps/collision-tracker/values.yaml`. The chart refuses to render until it is set.
 - **Network**: egress-only NetworkPolicies per component. The worker and crawler may reach public HTTP(S) but never private
-  ranges (a second layer behind the crawler's own SSRF guard); the API only reaches Postgres and Temporal.
+  ranges (a second layer behind the crawler's own SSRF guard); the API only reaches Postgres, Temporal and (for search) OpenSearch.
 - **Metrics and alerts**: `/metrics` on port 9100 of the api, worker and crawler, scraped by a `VMPodScrape`. The chart
   also ships a `VMRule` (stalled pipeline, failing sources, queue backlog, API errors) and a Grafana dashboard
   ConfigMap in `monitoring` (labelled for the Grafana sidecar).
