@@ -1591,9 +1591,11 @@ that belong to the cluster.
   disposable), and seven custom search attributes. A PreSync Job in the chart creates both, idempotently. Schedules (one per
   discovery source, plus a daily retention job) are kept in step with the configured sources by a PostSync Job (and by the
   admin UI whenever a source is saved) and keep any pause set in the Temporal UI.
-- **Sources**: none are built in. Discovery sources and search queries are configured in the app's `/admin` page (admin token
-  required) or imported with `collisionctl sources import --file docs/examples/sources.yaml` (in the app repo); a fresh
-  install collects nothing until some exist.
+- **Sources**: none are compiled in. On every start the API checks whether its database has any source and, only if it has
+  none, loads a seed list (`COLLISION_SOURCES_SEED_FILE`; the image carries a starter set, `sources.seed` in the values
+  replaces it, `sources.seedFile: ""` turns seeding off) and creates their schedules. After that sources and search queries
+  are managed in the app's `/admin` page (admin token required) and the seed file is never read again. Deleting every source
+  and restarting the API seeds again.
 - **LLM**: through Bifrost (`bifrost.bifrost:8080/v1`) with an OpenRouter provider. Add the provider and key in Bifrost's UI,
   then set `llm.model` in `apps/collision-tracker/values.yaml`. The chart refuses to render until it is set.
 - **Network**: egress-only NetworkPolicies per component. The worker and crawler may reach public HTTP(S) but never private
