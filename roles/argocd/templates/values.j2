@@ -1,3 +1,8 @@
+# Image tag pinned ahead of the chart's appVersion (10.10.x ships v3.5.5): v3.5.6 is built on Go 1.26.10
+# (fixes the stdlib CVE Trivy flags on 3.5.5) and bumps dompurify. Drop this once the chart's appVersion catches up.
+global:
+  image:
+    tag: v3.5.6
 dex:
   enabled: false
 notifications:
