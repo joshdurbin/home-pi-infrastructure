@@ -57,7 +57,11 @@ spec:
     - cluster_composite_ops
   indexPermissions:
     - indexPatterns: ['collision-incidents*']
-      allowedActions: [create_index, 'indices:admin/exists', read, write, delete]
+      # indices_all, only on its own index pattern: the app checks, creates and maps its index
+      # (indices:admin/get, indices:admin/create, mapping puts) as well as reading and writing it. The narrower
+      # list that was here (create_index, exists, read, write, delete) lacked indices:admin/get, so the
+      # indexer's "does the index exist" check got a 403 and search never started.
+      allowedActions: [indices_all]
 ---
 apiVersion: opensearch.org/v1
 kind: OpensearchUser
