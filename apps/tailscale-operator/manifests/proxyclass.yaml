@@ -26,6 +26,9 @@ spec:
         env:
           - name: TS_NO_LOGS_NO_SUPPORT
             value: "true"
+          # SSH forwarding off (https://tailscale.com/ssh-investigation-update).
+          - name: TS_SSH_DISABLE_FORWARDING
+            value: "1"
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:

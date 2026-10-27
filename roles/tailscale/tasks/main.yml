@@ -60,6 +60,22 @@
   tags:
     - tailscale
 
+# Tailscale's SSH investigation update (https://tailscale.com/ssh-investigation-update):
+# turn off SSH forwarding if unused. Tailscale SSH isn't enabled on these nodes (no --ssh,
+# access is plain sshd), so this is defence in depth in case it is turned on later.
+- name: disable Tailscale SSH forwarding
+  ansible.builtin.lineinfile:
+    path: /etc/default/tailscaled
+    regexp: '^#?\s*TS_SSH_DISABLE_FORWARDING='
+    line: 'TS_SSH_DISABLE_FORWARDING=1'
+    create: true
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart tailscaled
+  tags:
+    - tailscale
+
 - name: enable and start tailscale service
   ansible.builtin.systemd:
     name: tailscaled
