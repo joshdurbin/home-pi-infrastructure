@@ -35,10 +35,12 @@
   tags:
     - tailscale
 
+# latest, not present: the Tailscale SSH fixes ship in 1.104.4
+# (https://tailscale.com/blog/tailscale-ssh-findings-fixes), and `present` never upgrades.
 - name: install tailscale
   ansible.builtin.apt:
     name: tailscale
-    state: present
+    state: latest
   tags:
     - tailscale
 
