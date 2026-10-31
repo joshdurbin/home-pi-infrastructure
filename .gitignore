@@ -22,3 +22,11 @@ __pycache__/
 *.tmp
 *.bak
 .ansible/tmp/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform/**/backend.hcl
+terraform/**/*.tfvars
+crash.log

@@ -1,0 +1,23 @@
+// STARTER ONLY - not your live policy. Before the first apply run `make tf-export-policy`
+// to overwrite this file with the tailnet's current policy, then edit it. Applying this
+// starter over a real policy would drop every rule not listed here.
+{
+  "tagOwners": {
+    "tag:k8s-operator": [],
+    "tag:k8s":          ["tag:k8s-operator"],
+    "tag:pi-node":      [],
+  },
+
+  // Without this the operator registers each UI as a Tailscale Service that is never
+  // approved to serve traffic (see docs/REFERENCE.md).
+  "autoApprovers": {
+    "services": {
+      "tag:k8s": ["tag:k8s"],
+    },
+  },
+
+  // Tailscale SSH (see https://tailscale.com/blog/tailscale-ssh-findings-fixes): keep rules
+  // scoped to the users/devices that need them; use "action": "check" for sensitive hosts.
+  // None are defined here because nothing in this repo enables Tailscale SSH.
+  "ssh": [],
+}

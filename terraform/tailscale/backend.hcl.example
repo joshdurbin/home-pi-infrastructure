@@ -1,0 +1,15 @@
+# cp backend.hcl.example backend.hcl (gitignored), fill in, then `make tf-init`.
+bucket       = "CHANGE-ME-tfstate"
+key          = "home-pi-infrastructure/tailscale.tfstate"
+region       = "us-east-1"
+encrypt      = true
+use_lockfile = true # S3-native locking, no DynamoDB table needed
+
+# S3-compatible stores (MinIO, R2, ...): uncomment and adjust.
+# endpoints                   = { s3 = "https://CHANGE-ME" }
+# use_path_style              = true
+# skip_credentials_validation = true
+# skip_region_validation      = true
+# skip_requesting_account_id  = true
+# skip_metadata_api_check     = true
+# skip_s3_checksum            = true

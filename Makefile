@@ -1,4 +1,4 @@
-.PHONY: help install upgrade-os upgrade-k3s reconfigure-k3s deploy deploy-system deploy-k3s deploy-users deploy-secrets deploy-argocd deploy-dashboards deploy-registries deploy-tailscale build-proxysql-operator destroy-cluster verify logs clean status syntax-check lint
+.PHONY: help install upgrade-os upgrade-k3s reconfigure-k3s deploy deploy-system deploy-k3s deploy-users deploy-secrets deploy-argocd deploy-dashboards deploy-registries deploy-tailscale tf-init tf-plan tf-apply tf-export-policy tf-oauth-secrets build-proxysql-operator destroy-cluster verify logs clean status syntax-check lint
 
 INVENTORY := inventory.dist
 VAULT_PASS := --ask-vault-pass
@@ -19,6 +19,11 @@ help:
 	@echo "  make deploy-argocd        Bootstrap Argo CD only"
 	@echo "  make deploy-dashboards    Import Grafana dashboards (not part of make deploy)"
 	@echo "  make deploy-tailscale     Apply the Tailscale node config (restarts tailscaled, one node at a time)"
+	@echo "  make tf-init              terraform init for terraform/tailscale (needs terraform/tailscale/backend.hcl)"
+	@echo "  make tf-export-policy     Overwrite terraform/tailscale/policy.hujson with the tailnet's live policy"
+	@echo "  make tf-plan              terraform plan for the tailnet config"
+	@echo "  make tf-apply             terraform apply for the tailnet config"
+	@echo "  make tf-oauth-secrets     Print the Terraform-managed OAuth client IDs/secrets (to paste into ansible-vault)"
 	@echo "  make upgrade-os           Full apt dist-upgrade on every node (not part of make deploy; may need reboots)"
 	@echo "  make upgrade-k3s          Rolling k3s upgrade to k3s_version, one node at a time (etcd snapshot first)"
 	@echo "  make reconfigure-k3s      Apply group_vars/server/main.yaml to the servers (rolling restart, then re-encrypt Secrets)"
@@ -129,3 +134,20 @@ clean:
 	find . -name "__pycache__" -type d -delete
 	rm -rf .ansible_cache
 	@echo "✓ Cleaned"
+
+TF_DIR := terraform/tailscale
+
+tf-init:
+	terraform -chdir=$(TF_DIR) init -backend-config=backend.hcl
+
+tf-export-policy:
+	scripts/tailscale-export-policy.sh
+
+tf-plan:
+	terraform -chdir=$(TF_DIR) plan
+
+tf-apply:
+	terraform -chdir=$(TF_DIR) apply
+
+tf-oauth-secrets:
+	@terraform -chdir=$(TF_DIR) output -json
