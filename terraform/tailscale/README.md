@@ -32,13 +32,13 @@ policy and drop every rule not in it.
 4. `make tf-plan` - the ACL should show no change. Fix `policy.hujson` until it does.
 5. `make tf-apply`
 
-## OAuth clients and ansible-vault
+## OAuth clients
 
-`oauth.tf` creates *new* clients; the ones already in `group_vars/all/main.yaml` are not
-imported (their secrets can't be recovered). After apply, `make tf-oauth-secrets`, re-encrypt
-the values with `ansible-vault encrypt_string` into `tailscale_oauth_client_*` and
-`tailscale_node_oauth_client_*`, run `make deploy-secrets`, then delete the old clients in
-the admin console.
+Both existing clients are adopted with `import` blocks in `imports.tf`, so nothing is
+re-created and the secrets already in ansible-vault stay valid (the API never returns a
+secret, so state holds none; `ignore_changes = [key]`). `scopes`, `tags` and `description`
+must match the live clients exactly: a plan that shows a *replace* would destroy the client
+and its secret, so never apply one. Fix `oauth.tf` until the plan is clean.
 
 `acls_externally_managed_on = true` blocks console edits to the policy; change it in
 `settings.tf` if you'd rather keep the console editable.

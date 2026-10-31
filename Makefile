@@ -1,4 +1,4 @@
-.PHONY: help install upgrade-os upgrade-k3s reconfigure-k3s deploy deploy-system deploy-k3s deploy-users deploy-secrets deploy-argocd deploy-dashboards deploy-registries deploy-tailscale tf-init tf-plan tf-apply tf-export-policy tf-oauth-secrets build-proxysql-operator destroy-cluster verify logs clean status syntax-check lint
+.PHONY: help install upgrade-os upgrade-k3s reconfigure-k3s deploy deploy-system deploy-k3s deploy-users deploy-secrets deploy-argocd deploy-dashboards deploy-registries deploy-tailscale tf-init tf-plan tf-apply tf-export-policy build-proxysql-operator destroy-cluster verify logs clean status syntax-check lint
 
 INVENTORY := inventory.dist
 VAULT_PASS := --ask-vault-pass
@@ -23,7 +23,7 @@ help:
 	@echo "  make tf-export-policy     Overwrite terraform/tailscale/policy.hujson with the tailnet's live policy"
 	@echo "  make tf-plan              terraform plan for the tailnet config"
 	@echo "  make tf-apply             terraform apply for the tailnet config"
-	@echo "  make tf-oauth-secrets     Print the Terraform-managed OAuth client IDs/secrets (to paste into ansible-vault)"
+	@echo "  make     Print the Terraform-managed OAuth client IDs/secrets (to paste into ansible-vault)"
 	@echo "  make upgrade-os           Full apt dist-upgrade on every node (not part of make deploy; may need reboots)"
 	@echo "  make upgrade-k3s          Rolling k3s upgrade to k3s_version, one node at a time (etcd snapshot first)"
 	@echo "  make reconfigure-k3s      Apply group_vars/server/main.yaml to the servers (rolling restart, then re-encrypt Secrets)"
@@ -148,6 +148,3 @@ tf-plan:
 
 tf-apply:
 	terraform -chdir=$(TF_DIR) apply
-
-tf-oauth-secrets:
-	@terraform -chdir=$(TF_DIR) output -json
