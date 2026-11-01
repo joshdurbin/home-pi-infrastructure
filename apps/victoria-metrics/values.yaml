@@ -323,12 +323,15 @@ vmcluster:
       # (-memory.allowedPercent=60 of the limit) blew past 1Gi. Each OOM kill
       # leaves an unclean shutdown, which makes the next start slower and the
       # backlog bigger - a loop only more headroom breaks.
+      # Raised to 3Gi: both replicas sit at ~1.4-1.5Gi working set in steady state, so 2Gi left
+      # little room for merges. Both land on Pi 5s (8GB); at 35% allowedPercent the caches
+      # grow to ~1GB and the rest is merge/catch-up headroom.
       resources:
         limits:
-          memory: 2Gi
+          memory: 3Gi
         requests:
           cpu: 50m
-          memory: 2Gi
+          memory: 3Gi
       # Each vmstorage's data is its own Longhorn volume (default 2 Longhorn
       # replicas, deliberately NOT 1: with 1, draining the storage=true node
       # that holds it would be blocked by Longhorn's last-replica drain policy).

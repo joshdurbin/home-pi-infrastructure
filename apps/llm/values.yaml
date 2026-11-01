@@ -14,7 +14,9 @@
 # only while it stays well under the limit.
 controllers:
   main:
-    replicas: 1
+    # Scaled to zero (the Service and PVC stay; set back to 1 to bring the model back). Bifrost's
+    # llm provider and Open WebUI's local model are unavailable meanwhile.
+    replicas: 0
     strategy: Recreate   # one pod owns the model cache volume and the node's memory; never two at once
     containers:
       main:
