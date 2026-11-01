@@ -1,0 +1,45 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: flagsmith
+  namespace: argocd
+  # Cascade-delete this app's resources if the Application is removed. Stateless in the
+  # cluster (all state is rows in the shared Postgres), so removing the file can never
+  # delete data - same as the go-feature-flag app this replaced.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    # Needs the `flagsmith` database and role (CRs in apps/postgres, wave 2) and its
+    # migrate-db init container retries until they exist. No PVC or CRDs of its own.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: home-pi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: flagsmith
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      selfHeal: true
+      prune: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  sources:
+    - repoURL: https://flagsmith.github.io/flagsmith-charts/
+      chart: flagsmith
+      targetRevision: 0.85.0
+      helm:
+        releaseName: flagsmith
+        valueFiles:
+          - $values/apps/flagsmith/values.yaml
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      ref: values
+    - repoURL: https://github.com/joshdurbin/home-pi-infrastructure.git
+      targetRevision: master
+      path: apps/flagsmith/manifests

@@ -422,18 +422,17 @@ spec:
                 port:
                   number: 8080
 ---
-# GO Feature Flag relay proxy - https://flags.<tailnet>.ts.net. The Swagger UI
-# (an evaluation test console) is at /swagger/index.html; the whole API is
-# reachable on the tailnet and every call still needs an X-API-Key. Other
-# services use the in-cluster Service instead
-# (go-feature-flag.go-feature-flag.svc.cluster.local:1031). Service name
-# "go-feature-flag" and port 1031 confirmed via a local `helm template` render
-# of apps/go-feature-flag.
+# Flagsmith - https://flags.<tailnet>.ts.net. The chart's frontend Service serves the UI and
+# proxies /api/* to the API (frontend.apiProxy), so one Ingress covers both; the
+# browser-visible API URL is FLAGSMITH_API_URL in apps/flagsmith/values.yaml. Other services use
+# the in-cluster API Service instead (flagsmith-api.flagsmith.svc.cluster.local:8000). Service
+# name and port confirmed against a local `helm template` render of the chart with release
+# name "flagsmith".
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: flags
-  namespace: go-feature-flag
+  namespace: flagsmith
   annotations:
     tailscale.com/proxy-group: ingress-proxies
 spec:
@@ -447,9 +446,9 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: go-feature-flag
+                name: flagsmith-frontend
                 port:
-                  number: 1031
+                  number: 8080
 ---
 # Headlamp (Kubernetes web UI). Chart's Service is named after the release.
 # Read-only, no login: the pod only accepts traffic from these Tailscale proxies

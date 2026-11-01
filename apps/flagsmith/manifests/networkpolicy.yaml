@@ -1,11 +1,12 @@
-# Egress-only (ingress - Tailscale, other services, vmagent - is unaffected and
-# allowed by default): DNS, and Postgres (the rw pooler, 5432) in the postgres
-# namespace. Nothing else: the relay proxy talks to no external service.
+# Egress-only (ingress - Tailscale, other services, vmagent - is unaffected and allowed by
+# default): DNS, the pods of this namespace (the frontend proxies to the API), and Postgres
+# (the rw pooler, 5432) in the postgres namespace. Nothing else: Flagsmith sends no email and
+# its analytics features are switched off by the chart (DISABLE_ANALYTICS_FEATURES).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: go-feature-flag-egress
-  namespace: go-feature-flag
+  name: flagsmith-egress
+  namespace: flagsmith
 spec:
   podSelector: {}
   policyTypes:
@@ -21,6 +22,8 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    - to:
+        - podSelector: {}
     - to:
         - namespaceSelector:
             matchLabels:

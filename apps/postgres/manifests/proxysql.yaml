@@ -122,9 +122,9 @@ spec:
     - username: bifrost
       defaultHostgroup: 0
       passwordSecretRef: {name: bifrost-db-credentials, key: password}
-    - username: goff
+    - username: flagsmith
       defaultHostgroup: 0
-      passwordSecretRef: {name: goff-db-credentials, key: password}
+      passwordSecretRef: {name: flagsmith-db-credentials, key: password}
     # Read-only -> replica (apps/postgres/manifests/whodb-role.yaml).
     - username: whodb
       defaultHostgroup: 1

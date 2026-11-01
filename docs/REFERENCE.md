@@ -31,7 +31,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [Vulnerability Scanning (Trivy Operator)](#vulnerability-scanning-trivy-operator)
 - [Open WebUI](#open-webui)
 - [Bifrost](#bifrost)
-- [GO Feature Flag](#go-feature-flag)
+- [Flagsmith](#flagsmith)
 - [Collision tracker](#collision-tracker)
 - [Snowflake (Tor)](#snowflake-tor)
 - [Audio node and shairport-sync](#audio-node-and-shairport-sync)
@@ -94,7 +94,7 @@ home-pi-infrastructure/
 │   ├── cloudnative-pg, proxysql-operator (ProxySQL, scaled to zero), zot, postgres, temporal
 │   ├── redis-operator, redis-operator-metrics, redis
 │   ├── blocky, searxng, homepage, whodb
-│   ├── bifrost, open-webui, go-feature-flag
+│   ├── bifrost, open-webui, flagsmith
 │   ├── shairport-sync, snowflake
 │   ├── descheduler, trivy-operator
 │   └── tailscale-operator
@@ -470,7 +470,7 @@ installs, Bifrost's model pricing list, SearXNG's search queries, Argo CD readin
 every new service against this list before adding it, and put its opt-out in git, not in the UI.
 
 **Defence in depth.** The switches below are the primary control. Some namespaces also have egress NetworkPolicies that cannot reach
-the internet at all (Temporal, WhoDB, Open WebUI, Go Feature Flag, Postgres, Redis), which contains a service even if a switch is
+the internet at all (Temporal, WhoDB, Open WebUI, Flagsmith, Postgres, Redis), which contains a service even if a switch is
 missed or an image update adds a new call. Namespaces without one (`monitoring`, `kube-system`, `trivy-system`, `tailscale`, ...)
 rely on the switches alone, so those are the ones to re-check after an upgrade.
 
@@ -1118,7 +1118,7 @@ directly.
   - **To bring it back**: set `image.tag` in `apps/postgres/manifests/proxysql.yaml` to the fixed release; delete the
     `directory` block from `apps/postgres/application.yaml`; point the apps' hosts at `postgres-proxy` (the
     `postgres-pooler-rw`/`-ro` references in `apps/*/values.yaml`, `group_vars/all/cluster_secrets.yaml` and
-    `apps/go-feature-flag/`); remove `pooler-*.yaml` once it is verified; `make deploy-secrets`.
+    `apps/flagsmith/`); remove `pooler-*.yaml` once it is verified; `make deploy-secrets`.
   - **Design, as built**: one `ProxySQLCluster` `postgres-proxy` (2 pods, no PVC) on port 5432 behind one Service;
     read/write split per *user* (hostgroup 0 = `postgres-rw`, 1 = `postgres-ro`; only `whodb` defaults to 1; no query
     rules); user passwords read from the existing `*-db-credentials` Secrets; backend TLS to CNPG's CA
@@ -1506,69 +1506,52 @@ connection on first start; afterwards edit it in Admin Settings -> Connections.
 
 **Access it**: `https://bifrost.<tailnet>.ts.net`.
 
-## GO Feature Flag
+## Flagsmith
 
-[GO Feature Flag](https://github.com/thomaspoignant/go-feature-flag) relay proxy (`apps/go-feature-flag/`, namespace
-`go-feature-flag`): an HTTP API that evaluates feature flags, so other services ask it instead of embedding flag logic.
-Image `gofeatureflag/go-feature-flag:v1.56.0` (ARM64), run through the generic `bjw-s-labs/app-template` chart rather
-than the official `relay-proxy` chart: that chart builds its config from a ConfigMap, but this config embeds the
-database password and API keys, so it is rendered by Ansible into a Secret and mounted instead
-(`roles/k8s_secrets/templates/go-feature-flag-config.yaml.j2`). Env-var overrides for flag sets/retrievers are undocumented,
-so the chart can't carry the secrets any other way.
+[Flagsmith](https://github.com/Flagsmith/flagsmith) (`apps/flagsmith/`, namespace `flagsmith`): feature flags and remote
+config with a web UI, an admin API and an SDK API, so other services ask it instead of embedding flag logic. It replaced GO
+Feature Flag. Deployed from the project's own Helm chart (`flagsmith/flagsmith` 0.85.0, app 2.286.0), which already wires
+the pieces below.
 
-- **Storage**: Postgres. Database `go_feature_flag`, role `goff` (`apps/postgres/manifests/go-feature-flag-database.yaml`),
-  reached through `postgres-pooler-rw`. Flags are rows in the `go_feature_flag` table (`flag_name`, `flagset`, `config`
-  JSONB). The relay proxy reads but doesn't create the table, so a PreSync Job (`manifests/schema-job.yaml`) creates it
-  (idempotent). The relay proxy polls every 10 s, so an edited row is live within that long;
-  `POST /admin/v1/retriever/refresh` (admin key) forces an immediate re-poll.
-- **No Redis**: GO Feature Flag has no cache feature (Redis is only supported as a flag-storage *retriever*), and flags are
-  in Postgres, so a Redis cache would have nothing to attach to. None is provisioned.
-- **Availability**: 2 replicas on different nodes with a PDB (a tiny Go service others will depend on); updates start the
-  new pod first. Flip `replicas` to 1 in `values.yaml` if memory ever matters more.
-- **Logs**: nothing to configure. The relay proxy logs JSON to stdout (`logFormat: json`), and Vector tails every pod, so it
-  lands in OpenSearch like everything else. Evaluation events are also emitted as log lines (the `log`
-  exporter is on by default).
-- **Metrics**: Prometheus `/metrics` on the monitoring port (1032), scraped by a `VMServiceScrape`
-  (`manifests/vmservicescrape.yaml`). No API key needed on that port.
-- **Egress NetworkPolicy**: DNS and Postgres (5432) only.
+- **Pieces**: `flagsmith-api` (Django; a `migrate-db` init container runs migrations on every start), `flagsmith`
+  (the frontend, which proxies `/api/*` to the API), and `flagsmith-task-processor` (async work such as webhooks). One
+  replica each - flip `replicacount` in `values.yaml` if SDK traffic must survive a drain.
+- **Storage**: Postgres. Database `flagsmith`, role `flagsmith` (`apps/postgres/manifests/flagsmith-database.yaml`), reached
+  through `postgres-pooler-rw`. No Redis and no InfluxDB. The chart's bundled dev Postgres is off.
+- **Logs**: JSON to stdout (`api.logging.format: json`); Vector ships it to OpenSearch like everything else.
+- **Metrics**: Prometheus on port 9100 of the API and task processor, scraped by `manifests/vmservicescrape.yaml`.
+- **Egress NetworkPolicy**: DNS, the namespace itself, and Postgres (5432) only.
 
 **Secrets** (Vault variables in `group_vars/all/main.yaml`, seeded by `k8s_secrets` via `make deploy-secrets`):
 | Variable | Used for |
 |---|---|
-| `goff_db_password` | the `goff` Postgres role (also the writable WhoDB connection) |
-| `goff_admin_api_key` | `X-API-Key` for `/admin/v1/*` (retriever refresh) |
-| `goff_evaluation_api_key` | `X-API-Key` that consumers send to evaluate flags in flag set `main` |
+| `flagsmith_db_password` | the `flagsmith` Postgres role (also embedded in the app's `DATABASE_URL` Secret) |
+| `flagsmith_django_secret_key` | Django's `SECRET_KEY`; rotating it signs everyone out |
 
 Generate each with `openssl rand -hex 32`.
 
-**Using it from another service** (none exist yet). In-cluster, no hostname or TLS needed:
-`http://go-feature-flag.go-feature-flag.svc.cluster.local:1031`. Ingress to the namespace is open (the cluster's
-NetworkPolicies are egress-only); the API key is the gate, and the consuming namespace's own egress policy has to allow
-port 1031 to `go-feature-flag`. Evaluate a flag:
+**Using it from another service**. In-cluster, no hostname or TLS needed:
+`http://flagsmith-api.flagsmith.svc.cluster.local:8000/api/v1/`. Ingress to the namespace is open (the cluster's
+NetworkPolicies are egress-only); the per-environment SDK key (`X-Environment-Key`) is the gate, and the consuming
+namespace's own egress policy has to allow port 8000 to `flagsmith`.
 ```bash
-curl -s -X POST http://go-feature-flag.go-feature-flag.svc.cluster.local:1031/v1/feature/new-checkout/eval \
-  -H "X-API-Key: <goff_evaluation_api_key>" -H 'Content-Type: application/json' \
-  -d '{"evaluationContext":{"key":"user-1"},"defaultValue":false}'
+curl -s http://flagsmith-api.flagsmith.svc.cluster.local:8000/api/v1/flags/ -H "X-Environment-Key: <environment key>"
 ```
-The API also speaks [OFREP](https://openfeature.dev/specification/appendix-c) (`/ofrep/v1/evaluate/flags`) for OpenFeature
-clients. A service that needs its own isolated flags gets its own flag set (and key) added in the config template.
 
-**Authoring flags.** In this release (v1.56.0) the relay proxy has **no flag create/update/delete API** (the PR adding one is
-still unmerged), and the "UI" is Swagger - an evaluation console only. Flags are edited as rows in Postgres. WhoDB has a
-writable **`go_feature_flag (writable)`** connection (the `goff` role through the primary): open the `go_feature_flag`
-table and add or edit rows, with `flagset` = `main` and `config` = the flag's JSON. Or with SQL:
-```sql
-INSERT INTO go_feature_flag (flag_name, flagset, config) VALUES
-  ('new-checkout', 'main', '{"variations":{"on":true,"off":false},"defaultRule":{"variation":"off"}}');
-```
-`config` is the flag object from GO Feature Flag's [flag format](https://gofeatureflag.org/docs/configure_flag/flag_format)
-(variations, targeting, defaultRule, ...). Test a flag in the Swagger UI, then check it in the metrics.
+**Authoring flags**: in the UI. The first visitor to `/signup` creates the initial organisation and admin, so do that
+straight after the first deploy. Create a project, then an environment; its client-side/server-side keys are under
+Settings -> Keys. Django admin is at `/admin/` (password login is enabled).
 
-**Access**: `https://flags.<tailnet>.ts.net/swagger/index.html` (Swagger / evaluation console; also on Homepage). The whole API
-is on the tailnet at `https://flags.<tailnet>.ts.net`.
+**Access**: `https://flags.<tailnet>.ts.net` (also on Homepage). One Tailscale Ingress on the frontend Service covers the UI and
+the proxied API; `FLAGSMITH_API_URL` in `values.yaml` is the URL the browser uses and must match that hostname.
 
-**First-time order**: add the three Vault variables -> `make deploy-secrets` -> `make deploy-argocd` (allows the new
-namespace in the Argo CD project) -> push. The Argo CD app then creates the table and starts the relay proxy.
+**First-time order**: add the two Vault variables -> `make deploy-secrets` -> `make deploy-argocd` (allows the new
+namespace in the Argo CD project) -> push. The Argo CD app then runs the migrations and starts the API.
+
+**Leftovers from GO Feature Flag**: removing its app does not drop its data. The `go_feature_flag` database and `goff` role
+stay in Postgres (the `Database` CR's reclaim policy is retain), as do the old `goff-*` Secrets. Clean up with
+`kubectl exec -n postgres postgres-1 -- psql -c 'DROP DATABASE go_feature_flag; DROP ROLE goff;'` (on the primary) and
+`kubectl delete secret -n postgres goff-db-credentials` once nothing needs the old flags.
 
 ## Collision tracker
 
@@ -1702,7 +1685,7 @@ does **not** have the spare capacity for more than one node out at a time, so th
 | VictoriaMetrics (vminsert, vmstorage, vmselect, vmagent) | 2 of each on different nodes + PDBs; vmstorage holds a full copy per pod (`replicationFactor: 2`), vmagents scrape independently and are de-duplicated. Ingestion and queries continue with either node out |
 | Tailscale ingress proxies | 2, required anti-affinity + PDB |
 | Redis caches (2 clusters) | master/replica and the 3 sentinels each on different nodes, PDB `maxUnavailable: 1` (keeps sentinel quorum) |
-| GO Feature Flag relay proxy | 2 replicas on different nodes + PDB + readiness probe; rolling update starts the new pod first |
+| Flagsmith | 1 replica of each piece (API, frontend, task processor); readiness-probed |
 | shairport-sync (audio node) | 1 replica, only schedulable on `rpi-3bplus-1`; a drain of that node stops AirPlay until it returns |
 | Bifrost, Homepage | 1 replica each (stateless - state is in Postgres/Redis); a drain reschedules them, gaps of roughly 1-2 min, 30-90s and 10-30s (Pi start-up, plus an image pull on a node that hasn't run them) |
 
@@ -1856,7 +1839,7 @@ hostname shown there):
 | Open WebUI | `https://chat.<tailnet>.ts.net` |
 | WhoDB | `https://whodb.<tailnet>.ts.net` |
 | Bifrost | `https://bifrost.<tailnet>.ts.net` |
-| GO Feature Flag (Swagger) | `https://flags.<tailnet>.ts.net/swagger/index.html` |
+| Flagsmith | `https://flags.<tailnet>.ts.net` |
 
 Confirmed working from a phone with the Tailscale app active. If you test from a **Mac terminal or
 Safari** and it doesn't resolve, see the Troubleshooting note below before assuming the deployment is

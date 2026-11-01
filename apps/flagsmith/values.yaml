@@ -1,0 +1,97 @@
+# Flagsmith (https://github.com/Flagsmith/flagsmith): feature flags and remote config with a
+# web UI, an admin API and a client/SDK API. Replaces GO Feature Flag.
+#
+# Other services reach the SDK API in-cluster at
+#   http://flagsmith-api.flagsmith.svc.cluster.local:8000/api/v1/
+# (ingress to this namespace is open; every SDK request carries an environment key). The UI is
+# on the tailnet at https://flags.<tailnet>.ts.net (apps/tailscale-operator/manifests/ingresses.yaml).
+#
+# State is rows in the shared CloudNativePG cluster (database `flagsmith`, role `flagsmith`,
+# apps/postgres/manifests/flagsmith-database.yaml), reached through the rw pooler. The connection
+# URL and Django secret key come from Secrets seeded by Ansible (group_vars/all/cluster_secrets.yaml)
+# so neither lands in git.
+
+# Unlike the other apps this uses the project's own chart (not bjw-s app-template): it already
+# wires the migrate-db init container, the task processor and the frontend-to-API proxy.
+
+# The chart's bundled throwaway Postgres is off; the shared cluster is used.
+devPostgresql:
+  enabled: false
+
+databaseExternal:
+  enabled: true
+  urlFromExistingSecret:
+    enabled: true
+    name: flagsmith-database
+    key: url
+
+api:
+  # One replica of each piece: this is a small cluster and the Pis are already ~75% full.
+  # Flip replicacount to 2 (with anti-affinity) if SDK traffic ever needs to survive a drain.
+  replicacount: 1
+  secretKeyFromExistingSecret:
+    enabled: true
+    name: flagsmith-django
+    key: secret_key
+  extraEnv:
+    # Local email+password login to Django admin (/admin/) - the UI itself needs no such switch.
+    ENABLE_ADMIN_ACCESS_USER_PASS: true
+    # The UI is reached through the Tailscale proxies, which present the tailnet hostname.
+    DJANGO_CSRF_TRUSTED_ORIGINS: "https://flags.tailb42321.ts.net"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 768Mi
+  logging:
+    # One JSON object per line, which Vector's parser remap ships to OpenSearch like every other app.
+    format: json
+
+frontend:
+  enabled: true
+  replicacount: 1
+  # The browser talks to the API through the frontend (apiProxy, on by default), so a single
+  # Ingress on the frontend Service is enough. This must be the URL the browser uses.
+  extraEnv:
+    FLAGSMITH_API_URL: "https://flags.tailb42321.ts.net/api/v1"
+  resources:
+    requests:
+      cpu: 25m
+      memory: 128Mi
+    limits:
+      memory: 384Mi
+
+# Async work (webhooks, flag-change audit, analytics buckets) is handled by the task processor
+# instead of in-request threads; the chart sets TASK_RUN_METHOD=TASK_PROCESSOR for the API when on.
+taskProcessor:
+  enabled: true
+  replicacount: 1
+  resources:
+    requests:
+      cpu: 25m
+      memory: 192Mi
+    limits:
+      memory: 512Mi
+
+# Prometheus metrics (port 9100) on the api and task processor; scraped by
+# manifests/vmservicescrape.yaml.
+prometheus:
+  enabled: true
+  port: 9100
+
+# Not used: the chart only creates Ingress objects when enabled, and ours is a Tailscale
+# Ingress in apps/tailscale-operator.
+ingress:
+  frontend:
+    enabled: false
+  api:
+    enabled: false
+
+# The chart enables these by default even with the SSE and ingestion deployments off, which
+# renders HorizontalPodAutoscalers pointing at Deployments that don't exist.
+hpa:
+  sse:
+    enabled: false
+  ingestion:
+    enabled: false

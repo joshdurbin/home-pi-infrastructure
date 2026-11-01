@@ -172,8 +172,8 @@ configMaps:
                 description: LLM gateway (API, providers, logs, spend)
                 icon: mdi-router-network
             - Feature Flags:
-                href: https://flags.{{ $d }}/swagger/index.html
-                description: GO Feature Flag - evaluation console (edit flags in WhoDB)
+                href: https://flags.{{ $d }}
+                description: Flagsmith - feature flags and remote config
                 icon: mdi-flag-outline
 
 persistence:

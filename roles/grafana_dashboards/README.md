@@ -79,7 +79,7 @@ dashboard matches the metric names: **PgBouncer (CloudNativePG poolers)** (`cnpg
 (`vector_*`).
 
 **No dashboard**, because nothing useful exists or the app exposes no metrics worth one: Bifrost, SearXNG,
-go-feature-flag, the redis-operator controller, descheduler, Headlamp, WhoDB, Open WebUI, Homepage,
+Flagsmith, the redis-operator controller, descheduler, Headlamp, WhoDB, Open WebUI, Homepage,
 shairport-sync, Tailscale (the community dashboard polls the admin API, not the proxies' `/metrics`).
 etcd, the scheduler and the controller manager are scraped (k3s exposes them via `group_vars/server/main.yaml`; the targets are the three servers' LAN IPs in `apps/victoria-metrics/manifests/control-plane-scrapes.yaml`), so the chart's etcd, scheduler and controller-manager dashboards fill in once the servers have been restarted with those settings.
 

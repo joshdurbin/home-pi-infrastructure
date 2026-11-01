@@ -34,15 +34,12 @@ spec:
   # stale image to one node and a newer one to another. The digest is the multi-arch
   # index of the image the instances were running when this was pinned (it includes
   # arm64); the tag is kept so the version stays readable. To upgrade, change both -
-  # `crane digest ghcr.io/cloudnative-pg/postgresql:<tag>` gives the new digest. Keep the
-  # go-feature-flag schema Job's image (apps/go-feature-flag/manifests/schema-job.yaml)
-  # on the same one.
+  # `crane digest ghcr.io/cloudnative-pg/postgresql:<tag>` gives the new digest.
   #
   # This is the PostGIS variant of that image (apps/collision-tracker needs PostGIS): the same
   # PostgreSQL 18.6 on the same Debian 13 base (so C collation and glibc are unchanged and no
   # index is affected), plus the PostGIS 3.6 extension files. Nothing existing uses PostGIS;
-  # it only adds files. The schema Job keeps the plain image, which has psql and is already
-  # cached on the nodes. Changing this image rolls the instances one at a time (replica first,
+  # it only adds files. Changing this image rolls the instances one at a time (replica first,
   # then a switchover), so Temporal, Bifrost and Grafana see a brief failover: do it in a quiet
   # window and check `kubectl cnpg status postgres -n postgres` between instances.
   # Tag `18-3.6-standard-trixie` is the PostgreSQL major, PostGIS minor and Debian release;

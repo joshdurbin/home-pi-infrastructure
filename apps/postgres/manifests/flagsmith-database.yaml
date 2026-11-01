@@ -1,0 +1,33 @@
+# Flagsmith's own Postgres user and database (apps/flagsmith/), via CloudNativePG's
+# DatabaseRole/Database CRDs - same pattern as open-webui-database.yaml and
+# bifrost-database.yaml beside this file.
+#
+# The role owns its database: Flagsmith's migrate-db init container creates and alters the
+# whole schema. The password Secret (flagsmith-db-credentials) is seeded by the k8s_secrets
+# Ansible role from the Vault-encrypted flagsmith_db_password, in basic-auth shape for CNPG;
+# the app reads a ready-made connection URL from its own namespace (flagsmith-database).
+apiVersion: postgresql.cnpg.io/v1
+kind: DatabaseRole
+metadata:
+  name: flagsmith
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  name: flagsmith
+  ensure: present
+  login: true
+  passwordSecret:
+    name: flagsmith-db-credentials
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: flagsmith
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres
+  name: flagsmith
+  owner: flagsmith
+  ensure: present

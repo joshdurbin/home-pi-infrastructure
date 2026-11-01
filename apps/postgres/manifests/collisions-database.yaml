@@ -1,5 +1,5 @@
 # The collision tracker's own Postgres user and database (apps/collision-tracker/), via
-# CloudNativePG's DatabaseRole/Database CRDs - same pattern as go-feature-flag-database.yaml
+# CloudNativePG's DatabaseRole/Database CRDs - same pattern as flagsmith-database.yaml
 # beside this file.
 #
 # The role owns its database and runs the application's migrations, but it is not a superuser,

@@ -1,0 +1,18 @@
+# Scrapes Flagsmith's Prometheus metrics (requests, task queue, flag evaluations), served on
+# port 9100 (`prom` on the chart's api and task-processor Services) - separate from the API
+# port, so no auth is needed. Both Services carry app.kubernetes.io/name: flagsmith; the
+# frontend Service has no `prom` port so it is simply not matched. Same pattern as
+# apps/searxng/manifests/vmservicescrape.yaml.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: flagsmith
+  namespace: flagsmith
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: flagsmith
+  endpoints:
+    - port: prom
+      path: /metrics/
+      scheme: http

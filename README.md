@@ -124,9 +124,8 @@ Ansible owns the machines and the secrets; Argo CD owns everything that runs in 
    pgadmin_db_password: "<output of: openssl rand -hex 32>"   # the WhoDB Postgres login (name kept from an earlier tool)
    litellm_salt_key: "<output of: openssl rand -hex 24>"        # Bifrost's encryption key is derived from this; never change once set
    litellm_db_password: "<output of: openssl rand -hex 32>"     # Bifrost's DB password (name kept until renamed in the vault)
-   goff_db_password: "<output of: openssl rand -hex 32>"
-   goff_admin_api_key: "<output of: openssl rand -hex 32>"
-   goff_evaluation_api_key: "<output of: openssl rand -hex 32>"
+   flagsmith_db_password: "<output of: openssl rand -hex 32>"
+   flagsmith_django_secret_key: "<output of: openssl rand -hex 32>"
    # LLM provider keys are added in Bifrost's UI, not here (see docs/REFERENCE.md#bifrost)
    ```
 
@@ -144,7 +143,7 @@ Ansible owns the machines and the secrets; Argo CD owns everything that runs in 
 From there, Longhorn (storage), VictoriaMetrics/Grafana (metrics), OpenSearch
 (logs and a shared search cluster; VictoriaLogs is scaled to zero), Blocky (DNS), SearXNG (search), the redis-operator
 (Blocky's and SearXNG's own small caching clusters), WhoDB (a UI for browsing Postgres, OpenSearch and those caches),
-CloudNativePG (a two-instance Postgres cluster on Longhorn volumes, free to schedule anywhere, behind PgBouncer poolers), Bifrost (an LLM gateway backed by Postgres and its own Redis cache), GO Feature Flag (a feature-flag service stored in that Postgres), Temporal (a
+CloudNativePG (a two-instance Postgres cluster on Longhorn volumes, free to schedule anywhere, behind PgBouncer poolers), Bifrost (an LLM gateway backed by Postgres and its own Redis cache), Flagsmith (feature flags and remote config, stored in that Postgres), Temporal (a
 workflow orchestration platform, backed by that same Postgres cluster), shairport-sync on the dedicated audio node (AirPlay to a USB DAC), a Tor Snowflake proxy (committed, scaled to 0), Homepage (a dashboard linking out
 to every other UI below), Open WebUI (a chat UI for LLMs, backed by Bifrost), the descheduler (periodically rebalances pods across nodes), Trivy Operator (continuous
 vulnerability scanning), and the Tailscale Operator all come up on their own — Argo CD manages them from
@@ -234,8 +233,8 @@ Common ones:
 | OpenSearch admin | `opensearch` / `opensearch-admin-credentials` | `username`, `password` |
 | Bifrost encryption key | `bifrost` / `bifrost-encryption` | `encryption-key` |
 | Postgres app user (full connection info) | `postgres` / `postgres-app` | `password`, `uri`, `jdbc-uri`, `pgpass` ... |
-| A database role's password (e.g. Grafana) | `postgres` / `<name>-db-credentials` (`grafana-`, `bifrost-`, `goff-`, `whodb-`, `temporal-`, `open-webui-`) | `username`, `password` |
-| GO Feature Flag config (API keys, DB URI) | `go-feature-flag` / `goff-config` | `goff-proxy.yaml` |
+| A database role's password (e.g. Grafana) | `postgres` / `<name>-db-credentials` (`grafana-`, `bifrost-`, `flagsmith-`, `whodb-`, `temporal-`, `open-webui-`) | `username`, `password` |
+| Flagsmith DB URL / Django secret key | `flagsmith` / `flagsmith-database`, `flagsmith-django` | `url`, `secret_key` |
 
 The source of truth for the values *you* chose is the Vault, not the cluster:
 ```bash
@@ -265,7 +264,7 @@ Once Tailscale is set up and synced:
 | Open WebUI | `https://chat.<tailnet>.ts.net` |
 | WhoDB | `https://whodb.<tailnet>.ts.net` |
 | Bifrost | `https://bifrost.<tailnet>.ts.net` |
-| GO Feature Flag (Swagger) | `https://flags.<tailnet>.ts.net/swagger/index.html` |
+| Flagsmith | `https://flags.<tailnet>.ts.net` |
 
 (Replace `<tailnet>` with your tailnet's `.ts.net` domain — run `tailscale status` on any connected device
 to find it.)
