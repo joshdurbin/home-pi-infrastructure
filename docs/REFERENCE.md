@@ -32,6 +32,7 @@ A comprehensive Ansible-based infrastructure automation for Raspberry Pi cluster
 - [Open WebUI](#open-webui)
 - [Bifrost](#bifrost)
 - [Flagsmith](#flagsmith)
+- [Ladder](#ladder)
 - [Collision tracker](#collision-tracker)
 - [Snowflake (Tor)](#snowflake-tor)
 - [Audio node and shairport-sync](#audio-node-and-shairport-sync)
@@ -1553,6 +1554,23 @@ stay in Postgres (the `Database` CR's reclaim policy is retain), as do the old `
 `kubectl exec -n postgres postgres-1 -- psql -c 'DROP DATABASE go_feature_flag; DROP ROLE goff;'` (on the primary) and
 `kubectl delete secret -n postgres goff-db-credentials` once nothing needs the old flags.
 
+## Ladder
+
+[Ladder](https://github.com/everywall/ladder) (`apps/ladder/`, namespace `ladder`): a proxy that fetches an article the way a
+search-engine crawler would (Googlebot user agent and forwarded-for address) and applies per-site rewrite rules, so soft
+paywalls load. Image `ghcr.io/everywall/ladder:v0.0.23` pinned by digest (arm64), run through the generic
+`bjw-s-labs/app-template` chart. Stateless: no database, PVC or Secrets.
+
+- **Use it**: open `https://ladder.<tailnet>.ts.net` and paste the article URL, or put the URL after the host:
+  `https://ladder.<tailnet>.ts.net/https://example.com/article`. It only helps with paywalls that serve full text to
+  crawlers; hard paywalls (content never sent) still won't load.
+- **Access**: tailnet-only, no login of its own (anyone on the tailnet can use it, like every UI here).
+- **Rules**: `RULESET` points at `everywall/ladder-rules` **pinned to a commit**, not `main`: some rules inject JavaScript
+  into the pages Ladder serves, so the rules shouldn't change underneath you. Bump the SHA in `values.yaml` to update.
+- **Privacy**: `LOG_URLS=false` (what you read isn't logged) and `EXPOSE_RULESET=false`.
+- **Egress NetworkPolicy**: DNS and ports 80/443 to the internet only, with private ranges excluded (cluster, LAN, tailnet,
+  link-local). Ladder fetches whatever URL it is given, so this stops it being aimed at an internal service.
+
 ## Collision tracker
 
 Finds news reports of motor-vehicle collisions involving pedestrians, cyclists and other vulnerable road users, extracts
@@ -1840,6 +1858,7 @@ hostname shown there):
 | WhoDB | `https://whodb.<tailnet>.ts.net` |
 | Bifrost | `https://bifrost.<tailnet>.ts.net` |
 | Flagsmith | `https://flags.<tailnet>.ts.net` |
+| Ladder (paywall-bypass proxy) | `https://ladder.<tailnet>.ts.net` |
 
 Confirmed working from a phone with the Tailscale app active. If you test from a **Mac terminal or
 Safari** and it doesn't resolve, see the Troubleshooting note below before assuming the deployment is

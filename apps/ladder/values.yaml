@@ -1,0 +1,78 @@
+# Ladder (https://github.com/everywall/ladder): a self-hosted proxy that fetches a page the way a
+# search-engine crawler would (Googlebot user agent and forwarded-for address) and applies
+# per-site rewrite rules, so articles behind soft paywalls load. Use it by putting the article
+# URL after the host: https://ladder.<tailnet>.ts.net/https://example.com/some-article (or paste
+# it into the form on the front page).
+#
+# Tailnet-only (apps/tailscale-operator/manifests/ingresses.yaml). No auth of its own: anyone on
+# the tailnet can use it, which is the access model of every other UI here. It is an open fetcher
+# by design, so its egress policy (manifests/networkpolicy.yaml) allows the internet but not the
+# cluster, LAN or tailnet - a fetched URL can't be pointed at an internal service.
+controllers:
+  main:
+    # Stateless and tiny; a drain just reschedules it.
+    replicas: 1
+    strategy: RollingUpdate
+    pod:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+    containers:
+      main:
+        image:
+          repository: ghcr.io/everywall/ladder
+          # v0.0.23 is also :latest (2026-05); pinned by digest as well as tag, like the other
+          # images here - the multi-arch index (it includes arm64).
+          tag: v0.0.23@sha256:cf30c32ac046a5554a4e829f46546d68ed6056986ba5ba83c65a5a705828d5fe
+        env:
+          PORT: "8080"
+          # The ruleset is per-site rewrite rules, and some of them inject JavaScript into the
+          # pages Ladder serves (from Ladder's own origin). Pinned to a reviewed commit of
+          # everywall/ladder-rules instead of `main`, so the rules can't change under you; to
+          # update, bump the SHA. Fetched once at start-up.
+          RULESET: https://raw.githubusercontent.com/everywall/ladder-rules/0acc8697d1bbfe2f3b1ce66522d31fe2fe0fc84c/ruleset.yaml
+          # Don't log what you read, and don't publish the rule list at /ruleset.
+          LOG_URLS: "false"
+          EXPOSE_RULESET: "false"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /
+                port: 8080
+              periodSeconds: 20
+              timeoutSeconds: 5
+              failureThreshold: 3
+          readiness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /
+                port: 8080
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 3
+        resources:
+          requests:
+            cpu: 10m
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+
+service:
+  main:
+    controller: main
+    ports:
+      http:
+        port: 8080

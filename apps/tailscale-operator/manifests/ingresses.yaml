@@ -450,6 +450,30 @@ spec:
                 port:
                   number: 8080
 ---
+# Ladder paywall-bypass proxy - https://ladder.<tailnet>.ts.net. Service name "ladder" (the
+# app-template chart names it after the release) and port 8080; tailnet-only, no auth of its own.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ladder
+  namespace: ladder
+  annotations:
+    tailscale.com/proxy-group: ingress-proxies
+spec:
+  ingressClassName: tailscale
+  tls:
+    - hosts: [ladder]
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ladder
+                port:
+                  number: 8080
+---
 # Headlamp (Kubernetes web UI). Chart's Service is named after the release.
 # Read-only, no login: the pod only accepts traffic from these Tailscale proxies
 # (apps/headlamp/manifests/networkpolicy.yaml).

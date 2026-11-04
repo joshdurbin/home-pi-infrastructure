@@ -175,6 +175,10 @@ configMaps:
                 href: https://flags.{{ $d }}
                 description: Flagsmith - feature flags and remote config
                 icon: mdi-flag-outline
+            - Ladder:
+                href: https://ladder.{{ $d }}
+                description: Paywall-bypass reader proxy (paste an article URL)
+                icon: mdi-ladder
 
 persistence:
   config:

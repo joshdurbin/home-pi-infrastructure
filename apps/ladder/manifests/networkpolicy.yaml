@@ -1,0 +1,42 @@
+# Egress-only (Tailscale reaching the UI is ingress, unaffected): DNS, and HTTP/HTTPS to the
+# internet. Ladder fetches whatever URL it is given, so the destination can't be listed -
+# but private ranges are excluded, which stops it being used to reach cluster services, the LAN,
+# the node metadata/link-local range or other tailnet devices (SSRF).
+#   10.0.0.0/8       pod and service CIDRs (10.42/16, 10.43/16) and any other 10.x
+#   172.16.0.0/12, 192.168.0.0/16   RFC 1918, including the LAN
+#   100.64.0.0/10    Tailscale CGNAT range
+#   169.254.0.0/16   link-local
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ladder-egress
+  namespace: ladder
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 100.64.0.0/10
+              - 169.254.0.0/16
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443

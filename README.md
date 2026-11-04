@@ -265,6 +265,7 @@ Once Tailscale is set up and synced:
 | WhoDB | `https://whodb.<tailnet>.ts.net` |
 | Bifrost | `https://bifrost.<tailnet>.ts.net` |
 | Flagsmith | `https://flags.<tailnet>.ts.net` |
+| Ladder (paywall-bypass proxy) | `https://ladder.<tailnet>.ts.net` |
 
 (Replace `<tailnet>` with your tailnet's `.ts.net` domain — run `tailscale status` on any connected device
 to find it.)
