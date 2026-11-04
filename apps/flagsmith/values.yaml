@@ -38,12 +38,13 @@ api:
     ENABLE_ADMIN_ACCESS_USER_PASS: true
     # The UI is reached through the Tailscale proxies, which present the tailnet hostname.
     DJANGO_CSRF_TRUSTED_ORIGINS: "https://flags.tailb42321.ts.net"
+  # Measured: ~680Mi live (3 gunicorn workers), so the original 768Mi guess left no headroom.
   resources:
     requests:
       cpu: 50m
-      memory: 256Mi
+      memory: 384Mi
     limits:
-      memory: 768Mi
+      memory: 1Gi
   logging:
     # One JSON object per line, which Vector's parser remap ships to OpenSearch like every other app.
     format: json
@@ -67,12 +68,14 @@ frontend:
 taskProcessor:
   enabled: true
   replicacount: 1
+  # 512Mi was OOMKilled (exit 137, 500+ restarts): it runs the same Django app with gunicorn
+  # workers plus the task threads, like the API above.
   resources:
     requests:
       cpu: 25m
-      memory: 192Mi
+      memory: 384Mi
     limits:
-      memory: 512Mi
+      memory: 1Gi
 
 # Prometheus metrics (port 9100) on the api and task processor; scraped by
 # manifests/vmservicescrape.yaml.
