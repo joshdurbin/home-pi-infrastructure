@@ -24,7 +24,7 @@ controllers:
           repository: ghcr.io/ggml-org/llama.cpp
           # Pinned build (the repo's convention is pinned tags, here by build number; the multi-arch index
           # digest at pin time was sha256:8ffe0d28ff5261cc2f78ca1f67db1515bc2529b904a3c25f5b24f4cedfc3411d).
-          tag: server-b11669
+          tag: server-b12464
         # The image's entrypoint is /app/llama-server; these are its flags.
         args:
           # The model: downloaded from Hugging Face on first start into LLAMA_CACHE (the PVC below), then

@@ -29,7 +29,7 @@ controllers:
       main:
         image:
           repository: mikebrady/shairport-sync
-          tag: 5.5.2-classic
+          tag: 5.6.3-classic
         # Args go to shairport-sync: name it, then `--` passes the rest to the
         # ALSA backend. The USB DAC is addressed by card NAME (`aplay -l`:
         # "AUDIO [HIFI USB AUDIO]"), not number: it is card 1 today but becomes

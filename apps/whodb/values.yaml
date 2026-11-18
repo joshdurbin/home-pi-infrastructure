@@ -19,7 +19,7 @@ controllers:
       main:
         image:
           repository: clidey/whodb
-          tag: 0.134.0
+          tag: 0.139.0
         env:
           # Each Redis RedisReplication's operator-maintained "-master"
           # Service always points at the current master (see

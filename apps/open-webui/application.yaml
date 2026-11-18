@@ -29,7 +29,7 @@ spec:
     # per-commit -dev versions). Pinned deliberately: re-pin on bumps, don't track a floating tag.
     - repoURL: https://helm.openwebui.com/
       chart: open-webui
-      targetRevision: 17.0.0
+      targetRevision: 18.3.0
       helm:
         releaseName: open-webui
         valueFiles:

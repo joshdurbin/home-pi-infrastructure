@@ -33,7 +33,7 @@ spec:
   sources:
     - repoURL: https://zotregistry.dev/helm-charts
       chart: zot
-      targetRevision: 0.1.128
+      targetRevision: 0.1.134
       helm:
         releaseName: zot
         valueFiles:

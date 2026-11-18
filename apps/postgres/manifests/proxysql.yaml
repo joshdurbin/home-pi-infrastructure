@@ -40,7 +40,7 @@ spec:
   # tag). The multi-arch image includes linux/arm64, which the Pis need.
   image:
     repository: proxysql/proxysql
-    tag: "3.0.11"
+    tag: "3.0.12"
   auth:
     secretName: proxysql-auth
   persistence:

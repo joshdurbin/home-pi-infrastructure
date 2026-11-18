@@ -43,3 +43,10 @@ spec:
   name: open_webui
   owner: open_webui
   ensure: present
+  # pgvector ships in the cluster image (apps/postgres/cluster/cluster.yaml), but it is
+  # not a "trusted" extension, so the non-superuser owner cannot create it: the operator
+  # does, same as collisions-database.yaml. Open WebUI only uses it once its VECTOR_DB env
+  # var is set to pgvector (still the default, chroma, in apps/open-webui/values.yaml).
+  extensions:
+    - name: vector
+      ensure: present

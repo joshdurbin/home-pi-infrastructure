@@ -38,7 +38,7 @@ resources:
 # does not need it. To upgrade: bump the version and checksum together.
 initContainers:
   - name: install-trivy-plugin
-    image: curlimages/curl:8.22.0
+    image: curlimages/curl:8.23.0
     command:
       - sh
       - -c

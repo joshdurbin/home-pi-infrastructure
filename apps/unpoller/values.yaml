@@ -13,7 +13,7 @@ controllers:
       main:
         image:
           repository: ghcr.io/unpoller/unpoller
-          tag: v5.5.1
+          tag: v5.9.5
         env:
           # The UDM itself. Only host (and port): no path. On a UDM do NOT use :8443.
           UP_UNIFI_DEFAULT_URL: https://192.168.1.1

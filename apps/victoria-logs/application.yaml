@@ -32,7 +32,7 @@ spec:
   sources:
     - repoURL: https://victoriametrics.github.io/helm-charts
       chart: victoria-logs-single
-      targetRevision: 0.13.10
+      targetRevision: 0.13.13
       helm:
         releaseName: vls
         valueFiles:
@@ -41,7 +41,7 @@ spec:
     # pods above with a per-destination on-disk buffer. See values-agent.yaml.
     - repoURL: https://victoriametrics.github.io/helm-charts
       chart: victoria-logs-agent
-      targetRevision: 0.2.10
+      targetRevision: 0.2.11
       helm:
         releaseName: vla
         valueFiles:

@@ -17,10 +17,10 @@
 
 image:
   # The chart requires an explicit tag. Deliberately NOT the chart's own
-  # appVersion (1.5.12, stale): the gateway is on 2.x now (latest v2.2.5, has
+  # appVersion (1.5.12, stale): the gateway is on 2.x now (latest v2.5.1, has
   # arm64). Chart 2.1.43's generated config.json validates against the current
   # (v2) schema at https://www.getbifrost.ai/schema - re-check that when bumping.
-  tag: v2.2.5
+  tag: v2.5.1
   pullPolicy: IfNotPresent
 
 # One replica: stateless (state in Postgres), so a drain just reschedules it.

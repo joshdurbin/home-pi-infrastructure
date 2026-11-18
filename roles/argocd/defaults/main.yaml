@@ -5,7 +5,7 @@ argocd_vars:
     helm:
       chart:
         name: argo-cd
-        version: 10.10.3
+        version: 10.18.0
       repository:
         name: argo
         url: https://argoproj.github.io/argo-helm

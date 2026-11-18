@@ -40,7 +40,7 @@ controllers:
       main:
         image:
           repository: thetorproject/snowflake-proxy
-          tag: v2.14.1
+          tag: v2.15.3
         args:
           - -capacity
           - "4"
