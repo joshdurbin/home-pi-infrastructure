@@ -25,10 +25,12 @@
 # Ports, confirmed against CloudNativePG's own networking docs:
 # - 5432 (postgres) + 8000 (instance manager) from cnpg-system: the
 #   operator needs both to manage/coordinate each instance.
-# - 8000 from the node network (192.168.1.0/24): `kubectl cnpg status` reaches the
-#   instance manager through the API server proxy, which a replica on another
-#   node sees as coming from the node network, not from cnpg-system. Without
-#   this the plugin shows the replica as ServiceUnavailable (502 from the API server).
+# - 8000 from the control-plane nodes' flannel addresses: `kubectl cnpg status` reaches
+#   the instance manager through the API server proxy, and a replica on another node
+#   sees that traffic coming from the API server node's flannel.1 address (the first
+#   address of its pod CIDR), not its node IP and not cnpg-system. Without this the
+#   plugin shows the replica as ServiceUnavailable (502, connection refused). Update if
+#   the control-plane nodes (rpi-5-1/2/3) or their pod CIDRs change.
 # - 5432 from the two poolers (cnpg.io/poolerName label) - the actual
 #   client-facing path applications use.
 # - 9187 (metrics) from monitoring's vmagent.
@@ -78,7 +80,11 @@ spec:
           port: 8000
     - from:
         - ipBlock:
-            cidr: 192.168.1.0/24
+            cidr: 10.42.0.0/32 # rpi-5-1
+        - ipBlock:
+            cidr: 10.42.2.0/32 # rpi-5-2
+        - ipBlock:
+            cidr: 10.42.1.0/32 # rpi-5-3
       ports:
         - protocol: TCP
           port: 8000
